@@ -11,7 +11,7 @@
     const storageKey = `sac-chat:${shop}`;
     let storedChat = readStoredChat(storageKey);
     const sessionId = storedChat?.sessionId || crypto.randomUUID();
-    let identity = storedChat?.identity || null;
+    let identity = storedChat?.identity || { name: "", email: "" };
     let chatHistory = Array.isArray(storedChat?.messages) ? storedChat.messages.slice(-40) : [];
     const botAvatar = '<span class="sac-avatar" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4.5" y="8" width="15" height="11" rx="4"/><path d="M12 4v4M9 13h.01M15 13h.01M9 16h6M3 12v3M21 12v3"/></svg></span>';
 
@@ -21,7 +21,7 @@
     panel.setAttribute("aria-modal", "false");
     panel.setAttribute("aria-label", "ShopAI customer support chat");
     setThemeVariables(panel, { accent, background, textColor, fontSize, width });
-    panel.innerHTML = `<div class="sac-head"><div class="sac-brand"><span class="sac-brand-mark">✦</span><div class="sac-brand-copy"><strong>${escapeHtml(root.dataset.title || "How can we help?")}</strong><span class="sac-live">Here to help</span></div></div><button class="sac-close" type="button" aria-label="Close chat">×</button></div><div class="sac-welcome"><span>Product advice</span><i></i><span>Order updates</span><i></i><span>Store support</span><button type="button" class="sac-help-button" aria-label="Request help from a person"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11.5a7.5 7.5 0 0 1-8 7.5 8 8 0 0 1-3.5-.8L4 20l1.2-3.7A7.4 7.4 0 0 1 4 12.5 7.5 7.5 0 0 1 12 5a7.5 7.5 0 0 1 8 6.5Z"/><path d="M12 9v4m0 3h.01"/></svg><span>Human help</span></button></div><div class="sac-messages" aria-live="polite" aria-relevant="additions text"><div class="sac-identity-gate" hidden><div class="sac-identity-card"><span class="sac-identity-mark">✦</span><h3>Let’s get you the right help</h3><p>Share your details so the store team can follow up, or continue anonymously.</p><form class="sac-identity-form"><label>Your name <span>(optional)</span><input name="customerName" autocomplete="name" maxlength="120" placeholder="Name"></label><label>Email address <span>(optional)</span><input name="customerEmail" type="email" autocomplete="email" maxlength="254" placeholder="you@example.com"></label><button type="submit" class="sac-identity-start">Start chatting</button><button type="button" class="sac-identity-anon">Continue anonymously</button></form><small>Your details stay with this chat and are used only for support follow-up.</small></div></div><div class="sac-message-row sac-assistant-row sac-initial-greeting"><span class="sac-avatar" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4.5" y="8" width="15" height="11" rx="4"/><path d="M12 4v4M9 13h.01M15 13h.01M9 16h6M3 12v3M21 12v3"/></svg></span><div class="sac-message-content"><div class="sac-msg sac-greeting">Hi there! 👋 Tell me what you’re shopping for, ask about our policies, or track an order.</div><time class="sac-message-time" data-time="${Date.now()}">just now</time></div></div><div class="sac-faqs" hidden><div class="sac-faq-heading"><span>POPULAR QUESTIONS</span><small>Choose a question</small></div><div class="sac-faq-list"></div></div></div><div class="sac-form-wrap"><form class="sac-form"><textarea class="sac-input" rows="1" maxlength="1000" autocomplete="off" placeholder="Ask us anything…" aria-label="Your message"></textarea><button class="sac-send" type="submit" aria-label="Send message"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 2 11 13"/><path d="m22 2-7 20-4-9-9-4Z"/></svg></button></form><div class="sac-footer">Powered by <span>ShopAI Concierge</span></div></div><div class="sac-support-backdrop" hidden><section class="sac-support-card" role="dialog" aria-modal="true" aria-labelledby="sac-support-title"><button type="button" class="sac-support-close" aria-label="Close support request">×</button><span class="sac-support-icon">✦</span><p class="sac-support-kicker">STORE SUPPORT</p><h3 id="sac-support-title">Would you like a person to help?</h3><p class="sac-support-copy">We’ll create a ticket and the store team can follow up with you.</p><form class="sac-support-form"><label>Your name <span>(optional)</span><input name="customerName" autocomplete="name" maxlength="120" placeholder="Name"></label><label>Email for follow-up<input name="customerEmail" type="email" autocomplete="email" maxlength="254" placeholder="you@example.com" required></label><div class="sac-support-notice" aria-live="polite"></div><footer><button type="button" class="sac-support-cancel">Cancel</button><button type="submit" class="sac-support-submit">Create support ticket</button></footer></form></section></div>`;
+    panel.innerHTML = `<div class="sac-head"><div class="sac-brand"><span class="sac-brand-mark">✦</span><div class="sac-brand-copy"><strong>${escapeHtml(root.dataset.title || "How can we help?")}</strong><span class="sac-live">Here to help</span></div></div><button class="sac-close" type="button" aria-label="Close chat">×</button></div><div class="sac-welcome"><span>Product advice</span><i></i><span>Order updates</span><i></i><span>Store support</span><button type="button" class="sac-help-button" aria-label="Request help from a person"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11.5a7.5 7.5 0 0 1-8 7.5 8 8 0 0 1-3.5-.8L4 20l1.2-3.7A7.4 7.4 0 0 1 4 12.5 7.5 7.5 0 0 1 12 5a7.5 7.5 0 0 1 8 6.5Z"/><path d="M12 9v4m0 3h.01"/></svg><span>${escapeHtml(root.dataset.humanHelpLabel || "Human help")}</span></button></div><div class="sac-messages" aria-live="polite" aria-relevant="additions text"><div class="sac-message-row sac-assistant-row sac-initial-greeting"><span class="sac-avatar" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4.5" y="8" width="15" height="11" rx="4"/><path d="M12 4v4M9 13h.01M15 13h.01M9 16h6M3 12v3M21 12v3"/></svg></span><div class="sac-message-content"><div class="sac-msg sac-greeting">Hi there! 👋 Tell me what you’re shopping for, ask about our policies, or track an order.</div><time class="sac-message-time" data-time="${Date.now()}">just now</time></div></div><div class="sac-faqs" hidden><div class="sac-faq-heading"><span>POPULAR QUESTIONS</span><small>Choose a question</small></div><div class="sac-faq-list"></div></div></div><div class="sac-form-wrap"><form class="sac-form"><textarea class="sac-input" rows="1" maxlength="1000" autocomplete="off" placeholder="Ask us anything…" aria-label="Your message"></textarea><button class="sac-send" type="submit" aria-label="Send message"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 2 11 13"/><path d="m22 2-7 20-4-9-9-4Z"/></svg></button></form><div class="sac-footer">Powered by <span>ShopAI Concierge</span></div></div><div class="sac-support-backdrop" hidden><section class="sac-support-card" role="dialog" aria-modal="true" aria-labelledby="sac-support-title"><button type="button" class="sac-support-close" aria-label="Close support request">×</button><span class="sac-support-icon">✦</span><p class="sac-support-kicker">STORE SUPPORT</p><h3 id="sac-support-title">${escapeHtml(root.dataset.supportTitle || "Would you like a person to help?")}</h3><p class="sac-support-copy">${escapeHtml(root.dataset.supportDescription || "Share your contact details and our team will follow up with you.")}</p><form class="sac-support-form"><label>${escapeHtml(root.dataset.supportNameLabel || "Your name")}<input name="customerName" autocomplete="name" maxlength="120" placeholder="${escapeHtml(root.dataset.supportNamePlaceholder || "Name")}" required></label><label>${escapeHtml(root.dataset.supportEmailLabel || "Email for follow-up")}<input name="customerEmail" type="email" autocomplete="email" maxlength="254" placeholder="${escapeHtml(root.dataset.supportEmailPlaceholder || "you@example.com")}" required></label><div class="sac-support-notice" aria-live="polite"></div><footer><button type="button" class="sac-support-cancel">${escapeHtml(root.dataset.supportCancelLabel || "Cancel")}</button><button type="submit" class="sac-support-submit">${escapeHtml(root.dataset.supportSubmitLabel || "Create support ticket")}</button></footer></form></section></div>`;
 
     const launcher = document.createElement("button");
     launcher.type = "button";
@@ -38,8 +38,6 @@
     const input = panel.querySelector(".sac-input");
     const faqSection = panel.querySelector(".sac-faqs");
     const faqList = panel.querySelector(".sac-faq-list");
-    const identityGate = panel.querySelector(".sac-identity-gate");
-    const identityForm = panel.querySelector(".sac-identity-form");
     const initialGreeting = panel.querySelector(".sac-initial-greeting");
     const supportBackdrop = panel.querySelector(".sac-support-backdrop");
     const supportForm = panel.querySelector(".sac-support-form");
@@ -49,35 +47,14 @@
     const persistChat = () => {
       try { sessionStorage.setItem(storageKey, JSON.stringify({ sessionId, identity, messages: chatHistory.slice(-40) })); } catch { /* Session storage can be disabled by the browser. */ }
     };
-    const startChat = () => {
-      identityGate.hidden = true;
-      formWrap.hidden = false;
-      if (chatHistory.length) {
-        initialGreeting.remove();
-        chatHistory.forEach((item) => addMessage(messages, item.content, item.role === "user" ? "user" : "assistant", item.createdAt));
-      } else {
-        initialGreeting.hidden = false;
-        const greeting = initialGreeting.querySelector(".sac-greeting").textContent;
-        chatHistory.push({ role: "assistant", content: greeting, createdAt: Date.now() });
-        persistChat();
-      }
-      input.focus();
-    };
-    if (identity) startChat();
-    else { initialGreeting.hidden = true; formWrap.hidden = true; identityGate.hidden = false; }
-
-    identityForm.addEventListener("submit", (event) => {
-      event.preventDefault();
-      const values = new FormData(identityForm);
-      identity = { name: String(values.get("customerName") || "").trim() || "Anonymous shopper", email: String(values.get("customerEmail") || "").trim().toLowerCase() };
+    if (chatHistory.length) {
+      initialGreeting.remove();
+      chatHistory.forEach((item) => addMessage(messages, item.content, item.role === "user" ? "user" : "assistant", item.createdAt));
+    } else {
+      const greeting = initialGreeting.querySelector(".sac-greeting").textContent;
+      chatHistory.push({ role: "assistant", content: greeting, createdAt: Date.now() });
       persistChat();
-      startChat();
-    });
-    identityForm.querySelector(".sac-identity-anon").addEventListener("click", () => {
-      identity = { name: "Anonymous shopper", email: "" };
-      persistChat();
-      startChat();
-    });
+    }
     const resizeComposer = () => {
       input.style.height = "auto";
       input.style.height = `${Math.min(input.scrollHeight, 128)}px`;
@@ -93,22 +70,28 @@
     setInterval(() => panel.querySelectorAll(".sac-message-time[data-time]").forEach((time) => { time.textContent = relativeTime(Number(time.dataset.time)); }), 15000);
 
     {
-      fetch(`${apiEndpoint}?shop=${encodeURIComponent(shop)}`)
-        .then((response) => response.ok ? response.json() : null)
+      fetch(apiEndpoint, { headers: { accept: "application/json" } })
+        .then((response) => readApiJson(response, "chat settings"))
         .then((config) => {
           if (!config) return;
           const greeting = panel.querySelector(".sac-greeting");
-          if (config.greeting && greeting) greeting.textContent = config.greeting;
+          if (config.greeting && greeting) {
+            greeting.textContent = config.greeting;
+            if (!chatHistory.some((item) => item.role === "user") && chatHistory[0]?.role === "assistant") {
+              chatHistory[0].content = config.greeting;
+              persistChat();
+            }
+          }
           if (config.humanHandoff === false) panel.querySelector(".sac-help-button").hidden = true;
           if (enableFaqs && Array.isArray(config.faqs) && config.faqs.length) renderFaqs(config.faqs, faqSection, faqList, sendMessage);
         })
-        .catch(() => {});
+        .catch((error) => console.error("ShopAI settings request failed", error));
     }
 
     launcher.addEventListener("click", () => {
       const open = panel.classList.toggle("is-open");
       launcher.setAttribute("aria-expanded", String(open));
-      if (open) identity ? input.focus() : identityForm.elements.customerName.focus();
+      if (open) input.focus();
     });
     panel.querySelector(".sac-close").addEventListener("click", () => {
       panel.classList.remove("is-open");
@@ -137,8 +120,8 @@
       pending.bubble.setAttribute("aria-label", "ShopAI is replying");
       pending.bubble.innerHTML = '<span class="sac-typing" aria-hidden="true"><i></i><i></i><i></i></span><span class="sac-sr-only">ShopAI is replying</span>';
       try {
-        const response = await fetch(`${apiEndpoint}?shop=${encodeURIComponent(shop)}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message, shop, sessionId, customerName: identity?.name || "Anonymous shopper", customerEmail: identity?.email || "", pageUrl: location.href, ...(faqId ? { faqId } : {}) }) });
-        const data = await response.json();
+        const response = await fetch(apiEndpoint, { method: "POST", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify({ message, shop, sessionId, customerName: identity?.name || "", customerEmail: identity?.email || "", pageUrl: location.href, ...(faqId ? { faqId } : {}) }) });
+        const data = await readApiJson(response, "chat reply");
         if (!response.ok) throw new Error(data.error || "I couldn’t complete that request. Please try again.");
         pending.row.remove();
         const answer = data.answer || "I’m sorry, I couldn’t find an answer to that just yet.";
@@ -164,9 +147,11 @@
       const supportValues = supportForm.elements;
       supportValues.customerName.value = identity?.name === "Anonymous shopper" ? "" : identity?.name || "";
       supportValues.customerEmail.value = identity?.email || "";
-      panel.querySelector(".sac-support-notice").textContent = identity?.email ? `We have ${identity.email} saved for this chat. Confirm it or enter a different email.` : "Add an email address so the store team can reply to your request.";
+      panel.querySelector(".sac-support-notice").textContent = identity?.email
+        ? (root.dataset.supportSavedEmailNotice || "Saved for this chat: {email}. Confirm it or enter a different email.").replace("{email}", identity.email)
+        : (root.dataset.supportContactNotice || "Please add a name and email so the team can reply to your request.");
       supportBackdrop.hidden = false;
-      supportValues.customerEmail.focus();
+      (identity?.email ? supportValues.customerName : supportValues.customerEmail).focus();
     });
     panel.querySelector(".sac-support-close").addEventListener("click", closeSupport);
     panel.querySelector(".sac-support-cancel").addEventListener("click", closeSupport);
@@ -176,34 +161,28 @@
       const submit = supportForm.querySelector(".sac-support-submit");
       const notice = panel.querySelector(".sac-support-notice");
       const values = new FormData(supportForm);
-      const name = String(values.get("customerName") || "").trim() || "Anonymous shopper";
+      const name = String(values.get("customerName") || "").trim();
       const email = String(values.get("customerEmail") || "").trim().toLowerCase();
       submit.disabled = true;
-      submit.textContent = "Creating ticket…";
+      submit.textContent = root.dataset.supportSubmittingLabel || "Creating ticket…";
       notice.textContent = "";
       try {
         const ticketMessage = "I would like help from a person.";
-        const response = await fetch(`${apiEndpoint}?shop=${encodeURIComponent(shop)}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message: ticketMessage, shop, sessionId, customerName: name, customerEmail: email, supportRequest: true }) });
-        const data = await response.json();
+        const response = await fetch(apiEndpoint, { method: "POST", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify({ message: ticketMessage, shop, sessionId, customerName: name, customerEmail: email, supportRequest: true, supportSuccessMessage: root.dataset.supportSuccessMessage || "" }) });
+        const data = await readApiJson(response, "support ticket");
         if (!response.ok) throw new Error(data.error || "We couldn’t create your ticket. Please try again.");
         identity = { name, email };
-        if (!chatHistory.length) {
-          const greeting = initialGreeting.querySelector(".sac-greeting").textContent;
-          initialGreeting.hidden = false;
-          identityGate.hidden = true;
-          formWrap.hidden = false;
-          chatHistory.push({ role: "assistant", content: greeting, createdAt: Date.now() });
-        }
-        chatHistory.push({ role: "user", content: ticketMessage, createdAt: Date.now() }, { role: "assistant", content: data.answer, createdAt: Date.now() });
+        const ticketReply = data.answer;
+        chatHistory.push({ role: "user", content: ticketMessage, createdAt: Date.now() }, { role: "assistant", content: ticketReply, createdAt: Date.now() });
         persistChat();
         addMessage(messages, ticketMessage, "user");
-        addMessage(messages, data.answer, "assistant");
+        addMessage(messages, ticketReply, "assistant");
         closeSupport();
       } catch (error) {
         notice.textContent = error.message || "We couldn’t create your ticket. Please try again.";
       } finally {
         submit.disabled = false;
-        submit.textContent = "Create support ticket";
+        submit.textContent = root.dataset.supportSubmitLabel || "Create support ticket";
       }
     });
     window.addEventListener("beforeunload", (event) => {
@@ -220,6 +199,17 @@
     element.style.setProperty("--sac-text", values.textColor);
     element.style.setProperty("--sac-width", values.width);
     element.style.setProperty("--sac-font", values.fontSize);
+  }
+  async function readApiJson(response, purpose) {
+    const body = await response.text();
+    let data;
+    try { data = JSON.parse(body); }
+    catch {
+      console.error(`ShopAI ${purpose} endpoint returned non-JSON`, { status: response.status, contentType: response.headers.get("content-type"), preview: body.slice(0, 240) });
+      throw new Error("Shopify returned a web page instead of chat data. Check that the app proxy is enabled on the active Shopify app version.");
+    }
+    if (!response.ok) throw new Error(data?.error || `Chat request failed (${response.status}). Please try again.`);
+    return data;
   }
   function readStoredChat(key) {
     try {

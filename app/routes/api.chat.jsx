@@ -55,36 +55,43 @@ function extractFaqDocumentAnswer(question, faq) {
 }
 
 export const loader = async ({ request }) => {
-  await authenticate.public.appProxy(request);
-  if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors(request.headers.get("origin")) });
-  const shop = new URL(request.url).searchParams.get("shop")?.toLowerCase();
-  if (shop && /^[a-z0-9][a-z0-9.-]*\.myshopify\.com$/i.test(shop)) {
+  const origin = request.headers.get("origin");
+  const headers = cors(origin);
+  if (request.method === "OPTIONS") return new Response(null, { status: 204, headers });
+  try {
+    const { session } = await authenticate.public.appProxy(request);
+    const shop = session?.shop?.toLowerCase();
+    if (!shop || !/^[a-z0-9][a-z0-9.-]*\.myshopify\.com$/i.test(shop)) return Response.json({ error: "Shopify could not identify this store. Verify the app proxy configuration." }, { status: 400, headers });
     const allowed = (process.env.STOREFRONT_ALLOWED_ORIGINS || "").split(",").map((value) => value.trim()).filter(Boolean);
-    const origin = request.headers.get("origin");
-    if (allowed.length && origin && !allowed.includes(origin)) return Response.json({ error: "This storefront is not allowed." }, { status: 403, headers: cors(origin) });
+    if (allowed.length && origin && !allowed.includes(origin)) return Response.json({ error: "This storefront is not allowed." }, { status: 403, headers });
     const settings = await prisma.assistantSettings.findUnique({ where: { shop }, select: { defaultGreeting: true, faqs: true, humanHandoff: true } });
     const faqs = settings?.faqs === false ? [] : await prisma.faq.findMany({ where: { shop, active: true, featured: true }, select: { id: true, question: true }, orderBy: { createdAt: "desc" }, take: 6 });
-    return Response.json({ greeting: settings?.defaultGreeting || "Hi there! 👋 Tell me what you’re shopping for, ask about our policies, or track an order.", humanHandoff: settings?.humanHandoff !== false, faqs }, { headers: cors(origin) });
+    return Response.json({ greeting: settings?.defaultGreeting || "Hi there! 👋 Tell me what you’re shopping for, ask about our policies, or track an order.", humanHandoff: settings?.humanHandoff !== false, faqs }, { headers });
+  } catch (error) {
+    console.error("App proxy config request failed", error);
+    return Response.json({ error: "Shopify did not verify the app proxy request. Check that the active Shopify app version has the /apps/shopai-concierge proxy enabled." }, { status: error instanceof Response ? error.status : 500, headers });
   }
-  return Response.json({ error: "Use POST to send a chat message." }, { status: 405, headers: cors(request.headers.get("origin")) });
 };
 
 export const action = async ({ request }) => {
-  await authenticate.public.appProxy(request);
   const origin = request.headers.get("origin");
-  const allowed = (process.env.STOREFRONT_ALLOWED_ORIGINS || "").split(",").map((value) => value.trim()).filter(Boolean);
-  if (allowed.length && origin && !allowed.includes(origin)) return Response.json({ error: "This storefront is not allowed." }, { status: 403, headers: cors(origin) });
   const headers = cors(origin);
+  const allowed = (process.env.STOREFRONT_ALLOWED_ORIGINS || "").split(",").map((value) => value.trim()).filter(Boolean);
   let normalizedShop;
   let sessionId;
   let userMessage;
   let identity = {};
   let userCreatedAt;
+  let verifiedShop;
   try {
-    const { message, shop: bodyShop, sessionId: requestSessionId, customerName, customerEmail, faqId, supportRequest } = await request.json();
-    const shop = new URL(request.url).searchParams.get("shop") || bodyShop;
+    const proxyContext = await authenticate.public.appProxy(request);
+    verifiedShop = proxyContext.session?.shop?.toLowerCase();
+    if (!verifiedShop) return Response.json({ error: "Shopify could not identify this store. Verify the active app proxy configuration." }, { status: 401, headers });
+    if (allowed.length && origin && !allowed.includes(origin)) return Response.json({ error: "This storefront is not allowed." }, { status: 403, headers });
+    const { message, shop: bodyShop, sessionId: requestSessionId, customerName, customerEmail, faqId, supportRequest, supportSuccessMessage } = await request.json();
+    const shop = verifiedShop;
     if (typeof message !== "string" || !message.trim() || message.length > 1000) return Response.json({ error: "Please enter a message up to 1,000 characters." }, { status: 400, headers });
-    if (typeof shop !== "string" || !/^[a-z0-9][a-z0-9.-]*\.myshopify\.com$/i.test(shop) || (bodyShop && bodyShop.toLowerCase() !== shop.toLowerCase())) return Response.json({ error: "Invalid shop information." }, { status: 400, headers });
+    if (!/^[a-z0-9][a-z0-9.-]*\.myshopify\.com$/i.test(shop) || (typeof bodyShop === "string" && bodyShop.toLowerCase() !== shop)) return Response.json({ error: "Invalid shop information." }, { status: 400, headers });
     normalizedShop = shop.toLowerCase();
     sessionId = typeof requestSessionId === "string" ? requestSessionId : "";
     userMessage = message.trim();
@@ -94,10 +101,12 @@ export const action = async ({ request }) => {
     const activeFaqs = settings.faqs ? await prisma.faq.findMany({ where: { shop: normalizedShop, active: true }, select: { question: true, answer: true, sourceTitle: true, sourceContent: true }, take: 100 }) : [];
     if (supportRequest === true) {
       if (!settings.humanHandoff) return Response.json({ error: "Human support is currently unavailable. Please use the store’s contact page." }, { status: 403, headers });
+      if (!identity.name.trim() || identity.name.length > 120) return Response.json({ error: "Enter your name so the support team knows who they’re helping." }, { status: 400, headers });
       if (identity.email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identity.email)) return Response.json({ error: "Enter a valid email so the support team can follow up." }, { status: 400, headers });
       const reference = `SAC-${Date.now().toString(36).toUpperCase()}`;
       await prisma.ticket.create({ data: { reference, shop: normalizedShop, customer: identity.name || "Anonymous shopper", email: identity.email.toLowerCase(), subject: "Human support request", message: userMessage, status: "open" } });
-      const answer = `Your request is with the support team. Ticket ${reference} has been created, and they can follow up at ${identity.email}.`;
+      const successTemplate = typeof supportSuccessMessage === "string" && supportSuccessMessage.trim() ? supportSuccessMessage.trim().slice(0, 500) : "Your request is with the support team. Ticket {ticket} has been created, and they can follow up at {email}.";
+      const answer = successTemplate.replaceAll("{ticket}", reference).replaceAll("{email}", identity.email);
       await saveConversation(normalizedShop, sessionId, userMessage, answer, identity, userCreatedAt);
       return Response.json({ answer, ticket: { reference } }, { headers });
     }
@@ -197,6 +206,7 @@ export const action = async ({ request }) => {
   } catch (error) {
     console.error("Chat request failed", error);
     if (normalizedShop && userMessage) await saveConversation(normalizedShop, sessionId, userMessage, "Sorry, the assistant could not answer right now. Please try again shortly.", identity, userCreatedAt).catch((saveError) => console.error("Conversation save failed", saveError));
-    return Response.json({ error: "Sorry, the assistant could not answer right now. Please try again shortly." }, { status: 500, headers });
+    const proxyRejected = error instanceof Response;
+    return Response.json({ error: proxyRejected ? "Shopify did not verify this app proxy request. Check that the active Shopify app version has the /apps/shopai-concierge proxy enabled." : "Sorry, the assistant could not answer right now. Please try again shortly." }, { status: proxyRejected ? error.status : 500, headers });
   }
 };
