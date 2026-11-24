@@ -80,6 +80,7 @@ export const action = async ({ request }) => {
     const required = [...(needsGemini ? [needsGemini] : []), ...missing];
     return { saved: true, indexed: false, selectedCount: productIds.length + collectionIds.length + pageIds.length + policyIds.length + customSources.length, indexingWarning: `Your sources are saved. Indexing will start after this missing setup is added in Vercel: ${required.join(", ")}. Redeploy, then click Save and index again.` };
   }
+  let indexingStage = "Shopify content";
   try {
     const supabase = createSupabaseServerClient();
     const docs = [];
@@ -87,7 +88,9 @@ export const action = async ({ request }) => {
     for (let offset = 0; offset < idsToFetch.length; offset += 50) {
       const ids = idsToFetch.slice(offset, offset + 50);
       const result = await admin.graphql(`#graphql query SelectedKnowledge { nodes(ids: ${JSON.stringify(ids)}) { ... on Product { id title descriptionHtml vendor productType tags featuredImage { url } variants(first: 100) { edges { node { id title price availableForSale } } } } ... on Collection { id title handle description image { url } products(first: 100) { edges { node { title } } } } ... on Page { id title body handle } } }`);
-      const nodes = (await result.json()).data?.nodes ?? [];
+      const payload = await result.json();
+      if (payload.errors?.length) throw new Error(payload.errors.map((error) => error.message).join("; "));
+      const nodes = payload.data?.nodes ?? [];
       for (const node of nodes) {
         if (!node) continue;
         if (node.variants) docs.push({ source_type: "product", source_id: node.id, title: node.title, content: [node.title, node.descriptionHtml?.replace(/<[^>]+>/g, " "), node.vendor, node.productType, node.tags?.join(", "), ...(node.variants.edges ?? []).map(({ node: variant }) => `${variant.title} $${variant.price} ${variant.availableForSale ? "in stock" : "out of stock"}`)].filter(Boolean).join("\n"), metadata: { handle: node.handle, image: node.featuredImage?.url, variants: node.variants.edges?.map(({ node: variant }) => variant) } });
@@ -108,13 +111,16 @@ export const action = async ({ request }) => {
     const rows = [];
     for (let i = 0; i < docs.length; i += 100) {
       const batch = docs.slice(i, i + 100);
+      indexingStage = "Gemini embeddings";
       const embeddings = await embedTexts(batch.map((doc) => `${doc.title}\n${doc.content}`.slice(0, 6000)), "RETRIEVAL_DOCUMENT", embeddingKey);
       batch.forEach((doc, index) => rows.push({ ...doc, metadata: { ...doc.metadata, embedding_model: process.env.GEMINI_EMBEDDING_MODEL || "gemini-embedding-001" }, shop_domain: session.shop, embedding: embeddings[index] }));
     }
     if (rows.length) {
+      indexingStage = "Supabase vector save";
       const { error } = await supabase.from("shopai_knowledge").upsert(rows, { onConflict: "shop_domain,source_type,source_id" });
       if (error) throw error;
     }
+    indexingStage = "Supabase index cleanup";
     const retainedSources = new Set(rows.map((row) => `${row.source_type}:${row.source_id}`));
     const { data: existingSources, error: readError } = await supabase.from("shopai_knowledge").select("id,source_type,source_id").eq("shop_domain", session.shop);
     if (readError) throw readError;
@@ -124,7 +130,24 @@ export const action = async ({ request }) => {
       if (error) throw error;
     }
     return { saved: true, indexed: true, indexedCount: rows.length };
-  } catch (error) { console.error("Knowledge indexing failed", error); const policyAccessError = /shop.?policy|read_legal_policies|policy lookup/i.test(String(error?.message || "")); return { saved: true, indexed: false, indexingWarning: policyAccessError ? "Your sources are saved, but Shopify could not read the selected policies. Deploy and approve the app’s read_legal_policies permission, then save and index again." : "Your sources are saved, but indexing did not finish. Check the Gemini embedding key, Supabase server key, and vector database migration in Vercel logs." }; }
+  } catch (error) {
+    console.error("Knowledge indexing failed", error);
+    const detail = String(error?.message || "");
+    const code = String(error?.code || "");
+    const policyAccessError = /shop.?policy|read_legal_policies|policy lookup/i.test(detail);
+    let indexingWarning;
+    if (policyAccessError) indexingWarning = "Your sources were saved, but Shopify could not read the selected policies. Deploy and approve the app’s read_legal_policies permission, then save and index again.";
+    else if (indexingStage === "Gemini embeddings") {
+      if (/\b(401|403)\b|invalid.*key|api key.*invalid|permission denied/i.test(detail)) indexingWarning = "Your sources were saved, but Gemini rejected the saved API key. Reconnect Google Gemini in Assistant settings, then save and index again.";
+      else if (/\b429\b|quota|resource.?exhausted|rate.?limit/i.test(detail)) indexingWarning = "Your sources were saved, but Gemini’s free embedding quota is temporarily unavailable. Wait for quota to reset or try again later.";
+      else indexingWarning = "Your sources were saved, but Gemini could not create search vectors. Reconnect Gemini and check that the embedding model is available to your key.";
+    } else if (indexingStage.startsWith("Supabase")) {
+      if (/\b(401|403)\b|permission denied|invalid api key/i.test(detail)) indexingWarning = "Your sources were saved, but Supabase rejected the server key. Use this project’s Secret/service_role key in Vercel, redeploy, then try again.";
+      else if (/PGRST202|PGRST205|does not exist|schema cache|match_knowledge/i.test(`${code} ${detail}`)) indexingWarning = "Your sources were saved, but the vector database schema is not available to the app yet. Apply the latest Supabase migrations, then save and index again.";
+      else indexingWarning = "Your sources were saved, but Supabase could not store the search vectors. Check this project’s table permissions and database logs.";
+    } else indexingWarning = "Your sources were saved, but Shopify could not load all selected content. Refresh the library and try again.";
+    return { saved: true, indexed: false, indexingWarning };
+  }
 };
 
 const tabs = [
