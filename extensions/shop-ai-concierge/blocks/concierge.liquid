@@ -1,0 +1,33 @@
+<div
+  class="sac-root"
+  data-title="{{ block.settings.title | escape }}"
+  data-accent="{{ block.settings.accent }}"
+  data-background="{{ block.settings.background }}"
+  data-text="{{ block.settings.text_color }}"
+  data-width="{{ block.settings.width }}"
+  data-font-size="{{ block.settings.font_size }}"
+  data-icon="{{ block.settings.launcher_icon }}"
+  data-enable-faq="{{ block.settings.enable_faq }}"
+  data-enable-recommendations="{{ block.settings.enable_recommendations }}"
+></div>
+<link rel="stylesheet" href="{{ 'concierge.css' | asset_url }}">
+<script src="{{ 'concierge.js' | asset_url }}" defer></script>
+
+{% schema %}
+{
+  "name": "ShopAI Concierge",
+  "target": "body",
+  "settings": [
+    { "type": "text", "id": "title", "label": "Widget heading", "default": "How can we help?" },
+    { "type": "color", "id": "accent", "label": "Accent color", "default": "#f97316" },
+    { "type": "color", "id": "background", "label": "Widget background", "default": "#ffffff" },
+    { "type": "color", "id": "text_color", "label": "Text color", "default": "#171717" },
+    { "type": "range", "id": "width", "label": "Widget width", "min": 320, "max": 440, "step": 10, "unit": "px", "default": 380 },
+    { "type": "range", "id": "font_size", "label": "Font size", "min": 13, "max": 18, "step": 1, "unit": "px", "default": 14 },
+    { "type": "checkbox", "id": "enable_order_lookup", "label": "Enable order tracking", "default": true },
+    { "type": "checkbox", "id": "enable_faq", "label": "Enable FAQs", "default": true },
+    { "type": "checkbox", "id": "enable_recommendations", "label": "Enable product recommendations", "default": true },
+    { "type": "select", "id": "launcher_icon", "label": "Launcher icon", "default": "chat", "options": [{ "value": "chat", "label": "Chat bubble" }, { "value": "help", "label": "Help" }, { "value": "spark", "label": "Spark" }] }
+  ]
+}
+{% endschema %}

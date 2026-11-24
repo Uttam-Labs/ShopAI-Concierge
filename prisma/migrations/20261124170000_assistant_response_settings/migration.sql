@@ -1,0 +1,2 @@
+ALTER TABLE "AssistantSettings" ADD COLUMN "defaultGreeting" TEXT NOT NULL DEFAULT 'Hi there! 👋 Tell me what you’re shopping for, ask about our policies, or track an order.';
+ALTER TABLE "AssistantSettings" ADD COLUMN "responseGuidelines" TEXT NOT NULL DEFAULT 'Be concise, helpful, and on-brand. Use only approved store information. Never invent products, stock, policies, tracking details, or discounts.';

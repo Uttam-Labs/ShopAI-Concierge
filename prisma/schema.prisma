@@ -1,0 +1,105 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Note that some adapters may set a maximum length for the String type by default, please ensure your strings are long
+// enough when changing adapters.
+// See https://www.prisma.io/docs/orm/reference/prisma-schema-reference#string for more information
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Session {
+  id                  String    @id
+  shop                String
+  state               String
+  isOnline            Boolean   @default(false)
+  scope               String?
+  expires             DateTime?
+  accessToken         String
+  userId              BigInt?
+  firstName           String?
+  lastName            String?
+  email               String?
+  accountOwner        Boolean   @default(false)
+  locale              String?
+  collaborator        Boolean?  @default(false)
+  emailVerified       Boolean?  @default(false)
+  refreshToken        String?
+  refreshTokenExpires DateTime?
+}
+
+model Faq {
+  id        String   @id @default(cuid())
+  shop      String
+  question  String
+  answer    String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([shop, createdAt])
+}
+
+model Ticket {
+  id        String   @id @default(cuid())
+  reference String   @unique
+  shop      String
+  customer  String?
+  email     String?
+  subject   String
+  message   String
+  status    String   @default("open")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([shop, status, createdAt])
+}
+
+model Conversation {
+  id        String   @id @default(cuid())
+  shop      String
+  session   String
+  messages  Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([shop, session])
+  @@index([shop, updatedAt])
+}
+
+model KnowledgeConfig {
+  shop          String   @id
+  productIds    Json
+  pageIds       Json
+  collectionIds Json
+  policyIds     Json
+  customSources Json
+  updatedAt     DateTime @updatedAt
+}
+
+model AssistantSettings {
+  shop               String   @id
+  recommendations    Boolean  @default(true)
+  orderLookup        Boolean  @default(true)
+  humanHandoff       Boolean  @default(true)
+  faqs               Boolean  @default(true)
+  defaultGreeting    String   @default("Hi there! 👋 Tell me what you’re shopping for, ask about our policies, or track an order.")
+  responseGuidelines String   @default("Be concise, helpful, and on-brand. Use only approved store information. Never invent products, stock, policies, tracking details, or discounts.")
+  updatedAt          DateTime @updatedAt
+}
+
+model OrderLookupAttempt {
+  id        String   @id @default(cuid())
+  shop      String
+  orderHint String
+  result    Json
+  createdAt DateTime @default(now())
+
+  @@index([shop, createdAt])
+}

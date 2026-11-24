@@ -1,0 +1,99 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/legacy-sqlite-client"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:../prisma/dev.sqlite"
+}
+
+model Session {
+  id                  String    @id
+  shop                String
+  state               String
+  isOnline            Boolean   @default(false)
+  scope               String?
+  expires             DateTime?
+  accessToken         String
+  userId              BigInt?
+  firstName           String?
+  lastName            String?
+  email               String?
+  accountOwner        Boolean   @default(false)
+  locale              String?
+  collaborator        Boolean?  @default(false)
+  emailVerified       Boolean?  @default(false)
+  refreshToken        String?
+  refreshTokenExpires DateTime?
+}
+
+model Faq {
+  id        String   @id
+  shop      String
+  question  String
+  answer    String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime
+
+  @@index([shop, createdAt])
+}
+
+model Ticket {
+  id        String   @id
+  reference String   @unique
+  shop      String
+  customer  String?
+  email     String?
+  subject   String
+  message   String
+  status    String   @default("open")
+  createdAt DateTime @default(now())
+  updatedAt DateTime
+
+  @@index([shop, status, createdAt])
+}
+
+model Conversation {
+  id        String   @id
+  shop      String
+  session   String
+  messages  Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime
+
+  @@unique([shop, session])
+  @@index([shop, updatedAt])
+}
+
+model KnowledgeConfig {
+  shop          String   @id
+  productIds    Json
+  pageIds       Json
+  collectionIds Json     @default("[]")
+  policyIds     Json     @default("[]")
+  customSources Json     @default("[]")
+  updatedAt     DateTime
+}
+
+model AssistantSettings {
+  shop                String   @id
+  recommendations     Boolean  @default(true)
+  orderLookup         Boolean  @default(true)
+  humanHandoff        Boolean  @default(true)
+  faqs                Boolean  @default(true)
+  defaultGreeting     String   @default("Hi there! 👋 Tell me what you’re shopping for, ask about our policies, or track an order.")
+  responseGuidelines  String   @default("Be concise, helpful, and on-brand. Use only approved store information. Never invent products, stock, policies, tracking details, or discounts.")
+  updatedAt           DateTime
+}
+
+model OrderLookupAttempt {
+  id        String   @id
+  shop      String
+  orderHint String
+  result    Json
+  createdAt DateTime @default(now())
+
+  @@index([shop, createdAt])
+}
