@@ -2,7 +2,7 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:
 import { GoogleGenAI } from "@google/genai";
 
 export const AI_PROVIDERS = ["openai", "gemini", "anthropic"];
-const DEFAULT_MODELS = { openai: "gpt-4o-mini", gemini: "gemini-2.5-flash", anthropic: "claude-haiku-4-5-20251001" };
+const DEFAULT_MODELS = { openai: "gpt-4o-mini", gemini: "gemini-3.8-flash", anthropic: "claude-haiku-4-5-20251001" };
 
 function encryptionKey() {
   const secret = process.env.APP_ENCRYPTION_KEY || process.env.SHOPIFY_API_SECRET || process.env.SESSION_SECRET;
@@ -57,12 +57,25 @@ export async function generateProviderAnswer({ provider, apiKey, systemInstructi
   if (!apiKey) throw new Error(`Add a ${provider} API key in Assistant settings.`);
   if (provider === "gemini") {
     const client = new GoogleGenAI({ apiKey });
-    const result = await client.models.generateContent({
-      model: process.env.GEMINI_CHAT_MODEL || DEFAULT_MODELS.gemini,
-      contents: prompt,
-      config: { systemInstruction, temperature, maxOutputTokens },
-    });
-    return result.text?.trim() || "";
+    const configuredModel = process.env.GEMINI_CHAT_MODEL;
+    const models = configuredModel && configuredModel !== DEFAULT_MODELS.gemini ? [configuredModel, DEFAULT_MODELS.gemini] : [DEFAULT_MODELS.gemini];
+    let lastError;
+    for (const model of models) {
+      try {
+        const result = await client.models.generateContent({
+          model,
+          contents: prompt,
+          config: { systemInstruction, temperature, maxOutputTokens },
+        });
+        return result.text?.trim() || "";
+      } catch (error) {
+        lastError = error;
+        const message = String(error?.message || "");
+        if (model === DEFAULT_MODELS.gemini || !/(404|not found|not available|no longer available|model.*not)/i.test(message)) throw error;
+        console.warn(`Gemini model ${model} is unavailable; retrying with ${DEFAULT_MODELS.gemini}.`);
+      }
+    }
+    throw lastError;
   }
   if (provider === "openai") {
     const data = await requestJson("https://api.openai.com/v1/chat/completions", {
@@ -94,9 +107,14 @@ export async function verifyProviderKey(provider, apiKey) {
 }
 
 export function providerKeyError(error, provider) {
-  const message = String(error?.message || "");
+  let message = String(error?.message || "");
+  try {
+    const parsed = JSON.parse(message);
+    message = parsed.error?.message || parsed.message || message;
+  } catch { /* Provider errors are often plain text. */ }
   if (/401|403|unauthorized|invalid.*key|authentication|api key/i.test(message)) return `That ${provider} API key was rejected. Check the key and try again.`;
   if (/429|quota|billing|rate.?limit/i.test(message)) return `${provider} accepted the key but its quota or billing limit was reached. Check the provider account.`;
   if (/timeout|timed out|abort/i.test(message)) return `Could not reach ${provider} right now. Try saving again in a moment.`;
+  if (provider === "gemini" && /(404|not found|not available|no longer available|model.*not)/i.test(message)) return "Your Gemini key was reached, but its chat model is unavailable. The app now tries Gemini 3.8 Flash automatically; check that this model is enabled for your Google AI Studio project.";
   return `Could not connect to ${provider}: ${message.slice(0, 220) || "check the API key and model access"}`;
 }

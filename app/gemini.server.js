@@ -31,7 +31,7 @@ export async function generateGroundedAnswer({ systemInstruction, prompt, temper
   if (!apiKey) throw new Error("Gemini is not configured.");
   const client = getGemini(apiKey);
   const result = await client.models.generateContent({
-    model: process.env.GEMINI_CHAT_MODEL || "gemini-3.5-flash-lite",
+    model: process.env.GEMINI_CHAT_MODEL || "gemini-3.8-flash",
     contents: prompt,
     config: { systemInstruction, temperature, maxOutputTokens: 700 },
   });
