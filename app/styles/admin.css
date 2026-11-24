@@ -378,12 +378,17 @@ input[type="checkbox"] { width: 17px; height: 17px; margin-right: 8px; vertical-
 .ticket-main p { margin: 0 0 7px; color: #625c55; font-size: 10px; line-height: 1.5; white-space: pre-wrap; }
 .ticket-main > small { color: #877f77; font-size: 9px; }
 .ticket-actions, .ticket-actions form { display: flex; align-items: center; gap: 7px; }
-.ticket-actions s-select { min-width: 118px; }
+.ticket-actions .ticket-status-select { box-sizing: border-box; min-width: 118px; height: 36px; padding: 0 30px 0 11px; border: 1px solid #e3ded7; border-radius: 9px; outline: 0; color: #36312c; background: #fff; font: inherit; font-size: 11px; cursor: pointer; transition: border-color .15s, box-shadow .15s; }
+.ticket-actions .ticket-status-select:focus { border-color: #e96822; box-shadow: 0 0 0 3px #e9682218; }
 .ticket-view-button { display: inline-flex; min-height: 36px; align-items: center; gap: 6px; padding: 0 12px; border: 1px solid #e7e1d9; border-radius: 9px; color: #413b35; background: #fff; font: inherit; font-size: 11px; font-weight: 650; cursor: pointer; transition: border-color .15s, color .15s, background .15s, transform .15s; }
 .ticket-view-button:hover { transform: translateY(-1px); border-color: #e96822; color: #b94c15; background: #fff8f3; }
 .ticket-detail-backdrop { padding: 18px; }
-.ticket-detail-modal { width: min(680px, 100%); }
-.ticket-detail-modal .admin-modal-header { align-items: flex-start; margin-bottom: 16px; }
+.ticket-detail-modal { position: relative; width: min(820px, 100%); overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #e96822 #f3eee9; }
+.ticket-detail-modal::-webkit-scrollbar { width: 7px; }
+.ticket-detail-modal::-webkit-scrollbar-track { border-radius: 9px; background: #f3eee9; }
+.ticket-detail-modal::-webkit-scrollbar-thumb { border: 1px solid #f3eee9; border-radius: 9px; background: #e96822; }
+.ticket-detail-modal::-webkit-scrollbar-thumb:hover { background: #cf5416; }
+.ticket-detail-modal .admin-modal-header { position: sticky; top: -26px; z-index: 3; align-items: flex-start; margin: -26px -26px 16px; padding: 26px 26px 15px; border-bottom: 1px solid #eeeae5; background: #fff; }
 .ticket-detail-modal .admin-modal-header p { font-size: 12px; }
 .ticket-detail-badges { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; padding-bottom: 16px; border-bottom: 1px solid #f0ece7; }
 .ticket-detail-badges .ticket-id-badge { padding: 7px 10px; font-size: 11px; }
@@ -407,7 +412,7 @@ input[type="checkbox"] { width: 17px; height: 17px; margin-right: 8px; vertical-
 @keyframes dashboard-bar-grow { from { transform: scaleY(.08); opacity: .4; } to { transform: scaleY(1); opacity: 1; } }
 @keyframes dashboard-count-in { from { opacity: .25; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 @media (max-width: 1000px) { .dashboard-stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .dashboard-content-grid { grid-template-columns: 1fr; } .settings-layout { grid-template-columns: 1fr; } .settings-aside { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 700px) { .dashboard-stat-grid { grid-template-columns: 1fr 1fr; gap: 8px; } .dashboard-stat-card { align-items: flex-start; flex-wrap: wrap; padding: 11px; } .dashboard-stat-card > .admin-icon:last-child { margin-left: auto; } .dashboard-quick-links { align-items: flex-start; flex-direction: column; } .dashboard-quick-actions { width: 100%; } .settings-aside { grid-template-columns: 1fr; } .ticket-panel-heading { align-items: flex-start; flex-direction: column; } .ticket-panel-heading .admin-search-field { width: 100%; box-sizing: border-box; } .ticket-row { align-items: flex-start; flex-direction: column; } .ticket-actions { width: 100%; justify-content: flex-start; flex-wrap: wrap; } .faq-heading-actions { width: 100%; align-items: stretch; flex-direction: column; } .faq-heading-actions .admin-search-field { box-sizing: border-box; width: 100%; } .ticket-detail-meta { grid-template-columns: 1fr; } .ticket-detail-meta > div { grid-template-columns: 82px minmax(0, 1fr); align-items: baseline; } }
+@media (max-width: 700px) { .dashboard-stat-grid { grid-template-columns: 1fr 1fr; gap: 8px; } .dashboard-stat-card { align-items: flex-start; flex-wrap: wrap; padding: 11px; } .dashboard-stat-card > .admin-icon:last-child { margin-left: auto; } .dashboard-quick-links { align-items: flex-start; flex-direction: column; } .dashboard-quick-actions { width: 100%; } .settings-aside { grid-template-columns: 1fr; } .ticket-panel-heading { align-items: flex-start; flex-direction: column; } .ticket-panel-heading .admin-search-field { width: 100%; box-sizing: border-box; } .ticket-row { align-items: flex-start; flex-direction: column; } .ticket-actions { width: 100%; justify-content: flex-end; flex-wrap: wrap; } .faq-heading-actions { width: 100%; align-items: stretch; flex-direction: column; } .faq-heading-actions .admin-search-field { box-sizing: border-box; width: 100%; } .ticket-detail-meta { grid-template-columns: 1fr; } .ticket-detail-meta > div { grid-template-columns: 82px minmax(0, 1fr); align-items: baseline; } }
 @media (max-width: 420px) { .dashboard-stat-grid { grid-template-columns: 1fr; } .settings-feature-row { align-items: flex-start; } .settings-feature-row s-switch { margin-top: 5px; } .dashboard-bars { gap: 5px; } .ticket-actions form:first-child { flex-wrap: wrap; } }
 @media (prefers-reduced-motion: reduce) { .dashboard-bar-stack, .dashboard-stat-card strong { animation: none; } }
 
@@ -448,6 +453,38 @@ button:disabled, s-button[disabled] { cursor: not-allowed; }
 @keyframes admin-toast-in { from { opacity: 0; transform: translate3d(0,-10px,0) scale(.98); } to { opacity: 1; transform: translate3d(0,0,0) scale(1); } }
 @media (max-width: 600px) { .admin-toast { top: 10px; right: 10px; width: calc(100vw - 20px); } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: .01ms !important; } }
+
+/* Compact Polaris-style loading state shown while an admin route is fetching. */
+.admin-route-skeleton { box-sizing: border-box; min-height: calc(100vh - 56px); padding: 26px clamp(16px, 2.2vw, 34px) 36px; background: var(--admin-canvas); }
+.admin-skeleton-header, .admin-skeleton-panel { border: 1px solid var(--admin-line); border-radius: 16px; background: #fff; box-shadow: 0 3px 14px #30291e08; }
+.admin-skeleton-header { display: flex; min-height: 126px; align-items: center; justify-content: space-between; gap: 24px; padding: 23px 26px; }
+.admin-skeleton-intro { display: grid; width: min(56%, 520px); gap: 11px; }
+.admin-skeleton-line, .admin-skeleton-metrics > span, .admin-skeleton-list > span, .admin-skeleton-cards > span { display: block; border-radius: 7px; background: linear-gradient(100deg, #f0ede9 20%, #faf9f7 40%, #f0ede9 60%); background-size: 220% 100%; animation: admin-skeleton-shimmer 1.35s ease-in-out infinite; }
+.admin-skeleton-line.short { width: 120px; height: 9px; }
+.admin-skeleton-line.title { width: min(290px, 80%); height: 25px; }
+.admin-skeleton-line.description { width: min(480px, 95%); height: 12px; }
+.admin-skeleton-metrics { display: flex; gap: 9px; }
+.admin-skeleton-metrics > span { width: 94px; height: 60px; border: 1px solid #f0ece7; border-radius: 11px; }
+.admin-skeleton-content { display: grid; grid-template-columns: minmax(230px, .8fr) minmax(0, 1.6fr); gap: 18px; margin-top: 18px; }
+.admin-skeleton-panel { min-height: 315px; padding: 20px; }
+.admin-skeleton-line.panel-title { width: 180px; height: 17px; }
+.admin-skeleton-line.panel-copy { width: min(260px, 90%); height: 10px; margin-top: 9px; }
+.admin-skeleton-list { display: grid; gap: 10px; margin-top: 25px; }
+.admin-skeleton-list > span { height: 54px; border: 1px solid #f0ece7; border-radius: 11px; }
+.admin-skeleton-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 25px; }
+.admin-skeleton-cards > span { min-height: 108px; border: 1px solid #f0ece7; border-radius: 11px; }
+@keyframes admin-skeleton-shimmer { to { background-position-x: -220%; } }
+@media (max-width: 760px) { .admin-skeleton-header { align-items: flex-start; flex-direction: column; } .admin-skeleton-intro { width: 100%; } .admin-skeleton-metrics { width: 100%; } .admin-skeleton-metrics > span { flex: 1; } .admin-skeleton-content { grid-template-columns: 1fr; } .admin-skeleton-panel { min-height: 220px; } }
+@media (prefers-reduced-motion: reduce) { .admin-skeleton-line, .admin-skeleton-metrics > span, .admin-skeleton-list > span, .admin-skeleton-cards > span { animation: none; } }
+.admin-icon { width: 15px; height: 15px; flex: 0 0 15px; vertical-align: -2px; }
+.admin-cta .admin-icon, .admin-secondary .admin-icon, .admin-danger .admin-icon, .faq-status-button .admin-icon, .faq-icon-button .admin-icon, .ticket-view-button .admin-icon, .admin-pagination-controls .admin-icon, s-button .admin-icon { width: 14px; height: 14px; flex-basis: 14px; }
+.admin-route-error { display: grid; min-height: calc(100vh - 56px); place-items: center; box-sizing: border-box; padding: 28px; background: var(--admin-canvas); }
+.admin-route-error > section { width: min(460px, 100%); box-sizing: border-box; padding: 30px; border: 1px solid var(--admin-line); border-radius: 16px; background: #fff; box-shadow: 0 8px 28px #30291e10; text-align: center; }
+.admin-error-icon { display: grid; width: 42px; height: 42px; place-items: center; margin: 0 auto 14px; border-radius: 13px; color: #b94c15; background: #fff0e5; }
+.admin-route-error h1 { margin: 0; color: var(--admin-text); font-size: 21px; letter-spacing: -.025em; }
+.admin-route-error p { margin: 8px 0 20px; color: var(--admin-muted); font-size: 13px; line-height: 1.5; }
+.admin-route-error > section > div { display: flex; justify-content: center; gap: 9px; }
+@media (max-width: 480px) { .admin-route-error > section > div { align-items: stretch; flex-direction: column; } }
 .admin-modal:has(.faq-source-editor) { width: min(680px, 100%); }
 .faq-source-editor { display: grid; gap: 11px; margin: 16px 0; padding: 16px; border: 1px solid #e9e2dc; border-radius: 14px; background: #fbfaf8; }
 .faq-source-editor > div strong { color: #29231f; font-size: 13px; }

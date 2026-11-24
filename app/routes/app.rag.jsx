@@ -11,16 +11,23 @@ const parseList = (value, fallback = []) => { try { const parsed = JSON.parse(St
 
 export const loader = async ({ request }) => {
   const { admin, session } = await authenticate.admin(request);
-  const response = await admin.graphql(`#graphql
-    query KnowledgeLibrary {
-      products(first: 100, sortKey: TITLE) { edges { node { id title status vendor productType handle descriptionHtml featuredImage { url } variants(first: 50) { edges { node { id title price availableForSale } } } } } }
-      collections(first: 100, sortKey: TITLE) { edges { node { id title handle description productsCount { count } image { url } } } }
-      pages(first: 100, sortKey: TITLE) { edges { node { id title handle body } } }
-    }
-  `);
-  const data = (await response.json()).data ?? {};
-  const prisma = (await import("../db.server.js")).default;
-  const config = await prisma.knowledgeConfig.findUnique({ where: { shop: session.shop } });
+  // Keep the initial knowledge page response small. Full source content is
+  // fetched only when the merchant saves/indexes selected items.
+  const [response, prisma] = await Promise.all([
+    admin.graphql(`#graphql
+      query KnowledgeLibrary {
+        products(first: 100, sortKey: TITLE) { edges { node { id title status vendor productType handle featuredImage { url } variants(first: 1) { edges { node { id title price availableForSale } } } } } }
+        collections(first: 100, sortKey: TITLE) { edges { node { id title handle productsCount { count } image { url } } } }
+        pages(first: 100, sortKey: TITLE) { edges { node { id title handle } } }
+      }
+    `),
+    import("../db.server.js").then((module) => module.default),
+  ]);
+  const [result, config] = await Promise.all([
+    response.json(),
+    prisma.knowledgeConfig.findUnique({ where: { shop: session.shop } }),
+  ]);
+  const data = result.data ?? {};
   const products = data.products?.edges?.map(({ node }) => node) ?? [];
   const collections = data.collections?.edges?.map(({ node }) => node) ?? [];
   const pages = data.pages?.edges?.map(({ node }) => node) ?? [];

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import AdminPageHeader, { AdminIcon } from "../components/AdminPageHeader";
@@ -11,6 +12,7 @@ export const loader = async ({ request }) => {
 };
 
 export default function Conversations({ loaderData }) {
+  const navigate = useNavigate();
   const [now, setNow] = useState(Date.now());
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 15000); return () => clearInterval(timer); }, []);
   const [active, setActive] = useState(null);
@@ -31,7 +33,7 @@ export default function Conversations({ loaderData }) {
   const recentCount = conversations.filter((item) => Date.now() - new Date(item.updatedAt).getTime() < 7 * 24 * 60 * 60 * 1000).length;
 
   return <s-page heading="Live concierge" inlineSize="large">
-    <s-button slot="primary-action" href="/app/tickets" variant="secondary"><AdminIcon name="ticket"/> View tickets</s-button>
+    <s-button slot="primary-action" href="/app/tickets" onClick={(event) => { event.preventDefault(); navigate("/app/tickets"); }} variant="secondary"><AdminIcon name="ticket"/> View tickets</s-button>
     <AdminPageHeader title="Customer conversations" description="A live view of shopper questions and concierge replies. Open a conversation to review the full chat and customer request." metrics={[{ label: "Conversations", value: conversations.length }, { label: "Messages", value: totalMessages }, { label: "Last 7 days", value: recentCount }]} />
 
     <div className="conversation-workspace">

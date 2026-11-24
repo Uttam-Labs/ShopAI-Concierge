@@ -1,4 +1,4 @@
-import { useFetcher } from "react-router";
+import { useFetcher, useNavigate } from "react-router";
 import { useRef } from "react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
@@ -55,6 +55,7 @@ const features = [
 ];
 
 export default function Settings({ loaderData }) {
+  const navigate = useNavigate();
   const fetcher = useFetcher();
   useActionToast(fetcher);
   const formRef = useRef(null);
@@ -80,7 +81,7 @@ export default function Settings({ loaderData }) {
         </section>
       </div>
       <aside className="settings-aside">
-        <section className="settings-card settings-status-card"><span className="settings-eyebrow">STOREFRONT PREVIEW</span><div className="settings-preview"><div className="settings-preview-top"><span className="settings-preview-mark">✦</span><div><strong>ShopAI Concierge</strong><small>Here to help</small></div><i/></div><p>{settings.defaultGreeting}</p><div className="settings-preview-input">Ask us anything… <span>↑</span></div></div><p className="settings-aside-note">Colors, launcher icon, and widget width are managed in the theme app block.</p><s-button href="/app/rag" variant="secondary"><AdminIcon name="book"/> Review store knowledge</s-button></section>
+        <section className="settings-card settings-status-card"><span className="settings-eyebrow">STOREFRONT PREVIEW</span><div className="settings-preview"><div className="settings-preview-top"><span className="settings-preview-mark">✦</span><div><strong>ShopAI Concierge</strong><small>Here to help</small></div><i/></div><p>{settings.defaultGreeting}</p><div className="settings-preview-input">Ask us anything… <span>↑</span></div></div><p className="settings-aside-note">Colors, launcher icon, and widget width are managed in the theme app block.</p><s-button href="/app/rag" onClick={(event) => { event.preventDefault(); navigate("/app/rag"); }} variant="secondary"><AdminIcon name="book"/> Review store knowledge</s-button></section>
         <section className="settings-card"><span className="settings-eyebrow">CONNECTED SERVICES</span><div className="settings-connection"><i className="settings-connection-dot"/><span><strong>Shopify</strong><small>Store catalog and admin session</small></span><em>Connected</em></div><div className="settings-connection"><i className={`settings-connection-dot ${loaderData.connections.gemini ? "" : "is-off"}`}/><span><strong>Gemini</strong><small>Store answers and semantic search</small></span><em>{loaderData.connections.gemini ? "Configured" : "Add GEMINI_API_KEY"}</em></div><div className="settings-connection"><i className={`settings-connection-dot ${loaderData.connections.supabase ? "" : "is-off"}`}/><span><strong>Supabase</strong><small>Knowledge search database</small></span><em>{loaderData.connections.supabase ? "Configured" : "Add a server secret key"}</em></div></section>
       </aside>
     </fetcher.Form>
