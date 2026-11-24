@@ -242,7 +242,7 @@
       const pending = addMessage(messages, "", "assistant pending");
       pending.bubble.innerHTML = '<span class="sac-typing" aria-hidden="true"><i></i><i></i><i></i></span><span class="sac-sr-only">Checking your order</span>';
       try {
-        const response = await fetch(apiEndpoint, { method: "POST", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify({ message: customerText, shop, sessionId, customerName: identity?.name || "", customerEmail: emailValue, orderNumber: orderNumberValue, orderLookupRequest: true }) });
+        const response = await postProxyData({ message: customerText, shop, sessionId, customerName: identity?.name || "", customerEmail: emailValue, orderNumber: orderNumberValue, orderLookupRequest: true });
         const data = await readApiJson(response, "order lookup");
         if (!response.ok) throw new Error(data.error || "We couldn’t find that order. Check the details and try again.");
         pending.row.remove();
@@ -292,7 +292,7 @@
       pending.bubble.setAttribute("aria-label", "ShopAI is replying");
       pending.bubble.innerHTML = '<span class="sac-typing" aria-hidden="true"><i></i><i></i><i></i></span><span class="sac-sr-only">ShopAI is replying</span>';
       try {
-        const response = await fetch(apiEndpoint, { method: "POST", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify({ message, shop, sessionId, customerName: identity?.name || "", customerEmail: identity?.email || "", pageUrl: location.href, ...(faqId ? { faqId } : {}) }) });
+        const response = await postProxyData({ message, shop, sessionId, customerName: identity?.name || "", customerEmail: identity?.email || "", pageUrl: location.href, ...(faqId ? { faqId } : {}) });
         const data = await readApiJson(response, "chat reply");
         if (!response.ok) throw new Error(data.error || "I couldn’t complete that request. Please try again.");
         pending.row.remove();
@@ -368,7 +368,7 @@
       pending.bubble.innerHTML = '<span class="sac-typing" aria-hidden="true"><i></i><i></i><i></i></span><span class="sac-sr-only">Creating your support ticket</span>';
       try {
         const supportContext = chatHistory.slice(0, -1).slice(-12).map(({ role, content }) => ({ role, content }));
-        const response = await fetch(apiEndpoint, { method: "POST", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify({ message: ticketMessage, shop, sessionId, customerName: name, customerEmail: email, supportRequest: true, requestTypeId, requestDetails, supportContext, supportSuccessMessage: root.dataset.supportSuccessMessage || "" }) });
+        const response = await postProxyData({ message: ticketMessage, shop, sessionId, customerName: name, customerEmail: email, supportRequest: true, requestTypeId, requestDetails, supportContext, supportSuccessMessage: root.dataset.supportSuccessMessage || "" });
         const data = await readApiJson(response, "support ticket");
         if (!response.ok) throw new Error(data.error || "We couldn’t create your ticket. Please try again.");
         identity = { name, email };
@@ -417,6 +417,14 @@
     }
     if (!response.ok) throw new Error(data?.error || `Chat request failed (${response.status}). Please try again.`);
     return data;
+  }
+  function postProxyData(payload) {
+    const form = new URLSearchParams();
+    for (const [key, value] of Object.entries(payload)) {
+      if (value === undefined || value === null) continue;
+      form.set(key, typeof value === "string" ? value : JSON.stringify(value));
+    }
+    return fetch(apiEndpoint, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded;charset=UTF-8", accept: "application/json" }, body: form });
   }
   function readStoredChat(key) {
     try {

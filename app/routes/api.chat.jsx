@@ -26,6 +26,18 @@ function isValidEmail(value) {
     && /^[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?(?:\.[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?)+$/i.test(email);
 }
 
+async function readChatPayload(request) {
+  const contentType = request.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) return request.json();
+  const form = await request.formData();
+  const payload = Object.fromEntries(form.entries());
+  if (typeof payload.supportContext === "string") {
+    try { payload.supportContext = JSON.parse(payload.supportContext); } catch { payload.supportContext = []; }
+  }
+  for (const key of ["orderLookupRequest", "supportRequest"]) payload[key] = payload[key] === "true";
+  return payload;
+}
+
 function ticketSaveErrorMessage(error) {
   const code = error?.code;
   if (code === "P2021" || code === "P2022") return "Support tickets aren’t fully set up for this store yet. Please contact the store team another way while they finish setup.";
@@ -34,8 +46,6 @@ function ticketSaveErrorMessage(error) {
 }
 
 async function getShopifyAdminToken(shop) {
-  const cached = shopifyTokenCache.get(shop);
-  if (cached && cached.expiresAt > Date.now() + 60_000) return cached.token;
   // Prefer the app's installed offline Admin API session token. This token carries
   // the store's granted read_orders scope and avoids relying on a client-credentials
   // grant that may not be available for every app distribution.
@@ -45,6 +55,8 @@ async function getShopifyAdminToken(shop) {
     shopifyTokenCache.set(shop, { token: installedSession.accessToken, expiresAt });
     return installedSession.accessToken;
   }
+  const cached = shopifyTokenCache.get(shop);
+  if (cached && cached.expiresAt > Date.now() + 60_000) return cached.token;
   if (!process.env.SHOPIFY_API_KEY || !process.env.SHOPIFY_API_SECRET) return "";
   const body = new URLSearchParams({ grant_type: "client_credentials", client_id: process.env.SHOPIFY_API_KEY, client_secret: process.env.SHOPIFY_API_SECRET });
   const response = await fetch(`https://${shop}/admin/oauth/access_token`, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body });
@@ -163,7 +175,7 @@ export const action = async ({ request }) => {
     verifiedShop = proxyContext.session?.shop?.toLowerCase();
     if (!verifiedShop) return Response.json({ error: "Shopify could not identify this store. Verify the active app proxy configuration." }, { status: 401, headers });
     if (allowed.length && origin && !allowed.includes(origin)) return Response.json({ error: "This storefront is not allowed." }, { status: 403, headers });
-    const { message, shop: bodyShop, sessionId: requestSessionId, customerName, customerEmail, faqId, orderLookupRequest, orderNumber, supportRequest, supportSuccessMessage, requestTypeId, requestDetails, supportContext } = await request.json();
+    const { message, shop: bodyShop, sessionId: requestSessionId, customerName, customerEmail, faqId, orderLookupRequest, orderNumber, supportRequest, supportSuccessMessage, requestTypeId, requestDetails, supportContext } = await readChatPayload(request);
     supportSubmission = supportRequest === true;
     const shop = verifiedShop;
     if (typeof message !== "string" || !message.trim() || message.length > 1000) return Response.json({ error: "Please enter a message up to 1,000 characters." }, { status: 400, headers });
