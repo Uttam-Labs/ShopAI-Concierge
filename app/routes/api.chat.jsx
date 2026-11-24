@@ -19,6 +19,20 @@ function orderAttemptKey(orderNumber, email) {
   return createHash("sha256").update(`${orderNumber.trim().toLowerCase()}\n${email.trim().toLowerCase()}`).digest("hex");
 }
 
+function isValidEmail(value) {
+  const email = String(value || "").trim();
+  return email.length <= 254
+    && !email.includes("..")
+    && /^[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?(?:\.[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?)+$/i.test(email);
+}
+
+function ticketSaveErrorMessage(error) {
+  const code = error?.code;
+  if (code === "P2021" || code === "P2022") return "Support tickets aren’t fully set up for this store yet. Please contact the store team another way while they finish setup.";
+  if (["P1001", "P1002", "P2024"].includes(code)) return "We couldn’t reach the store’s ticket service just now. Your request wasn’t submitted. Please try again in a moment.";
+  return "We couldn’t save your support request just now. Your ticket wasn’t created. Please try again in a moment.";
+}
+
 async function getShopifyAdminToken(shop) {
   const cached = shopifyTokenCache.get(shop);
   if (cached && cached.expiresAt > Date.now() + 60_000) return cached.token;
@@ -126,12 +140,14 @@ export const action = async ({ request }) => {
   let identity = {};
   let userCreatedAt;
   let verifiedShop;
+  let supportSubmission = false;
   try {
     const proxyContext = await authenticate.public.appProxy(request);
     verifiedShop = proxyContext.session?.shop?.toLowerCase();
     if (!verifiedShop) return Response.json({ error: "Shopify could not identify this store. Verify the active app proxy configuration." }, { status: 401, headers });
     if (allowed.length && origin && !allowed.includes(origin)) return Response.json({ error: "This storefront is not allowed." }, { status: 403, headers });
     const { message, shop: bodyShop, sessionId: requestSessionId, customerName, customerEmail, faqId, orderLookupRequest, orderNumber, supportRequest, supportSuccessMessage, requestTypeId, requestDetails, supportContext } = await request.json();
+    supportSubmission = supportRequest === true;
     const shop = verifiedShop;
     if (typeof message !== "string" || !message.trim() || message.length > 1000) return Response.json({ error: "Please enter a message up to 1,000 characters." }, { status: 400, headers });
     if (!/^[a-z0-9][a-z0-9.-]*\.myshopify\.com$/i.test(shop) || (typeof bodyShop === "string" && bodyShop.toLowerCase() !== shop)) return Response.json({ error: "Invalid shop information." }, { status: 400, headers });
@@ -167,8 +183,9 @@ export const action = async ({ request }) => {
     }
     if (supportRequest === true) {
       if (!settings.humanHandoff) return Response.json({ error: "Customer support requests are currently unavailable. Please use the store’s contact page." }, { status: 403, headers });
-      if (!identity.name.trim() || identity.name.length > 120) return Response.json({ error: "Enter your name so the support team knows who they’re helping." }, { status: 400, headers });
-      if (identity.email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identity.email)) return Response.json({ error: "Enter a valid email so the support team can follow up." }, { status: 400, headers });
+      identity = { name: identity.name.trim().slice(0, 120), email: identity.email.trim().toLowerCase() };
+      if (!identity.name) return Response.json({ error: "Please enter your name so the store team knows who to reply to." }, { status: 400, headers });
+      if (!isValidEmail(identity.email)) return Response.json({ error: "Please enter a valid email address, such as name@example.com, so the team can follow up." }, { status: 400, headers });
       const selectedRequestId = String(requestTypeId || "");
       const requestOptions = normalizeTicketOptions(settings.ticketOptions);
       const selectedType = selectedRequestId === "other" ? { id: "other", label: "Other", question: "", answer: "" } : requestOptions.find((option) => option.id === selectedRequestId && option.active);
@@ -186,11 +203,24 @@ export const action = async ({ request }) => {
         ? `Request type: Other\nCustomer details: ${details || "No additional details provided."}${transcript ? `\n\nRecent chat context:\n${transcript}` : ""}`
         : `Request type: ${selectedType.label}${selectedType.question ? `\nSupport question: ${selectedType.question}` : ""}${selectedType.answer ? `\nCustomer guidance shown: ${selectedType.answer}` : ""}${transcript ? `\n\nRecent chat context:\n${transcript}` : ""}`;
       const dateCode = new Date().toISOString().slice(0, 10).replaceAll("-", "");
-      const reference = `${normalizeTicketPrefix(settings.ticketPrefix)}-${dateCode}-${randomBytes(4).toString("hex").toUpperCase()}`;
-      await prisma.ticket.create({ data: { reference, shop: normalizedShop, customer: identity.name, email: identity.email.toLowerCase(), subject, message: ticketMessage, status: "open" } });
+      let reference;
+      let ticketCreated = false;
+      for (let attempt = 0; attempt < 3 && !ticketCreated; attempt += 1) {
+        reference = `${normalizeTicketPrefix(settings.ticketPrefix)}-${dateCode}-${randomBytes(4).toString("hex").toUpperCase()}`;
+        try {
+          await prisma.ticket.create({ data: { reference, shop: normalizedShop, customer: identity.name, email: identity.email, subject, message: ticketMessage, status: "open" } });
+          ticketCreated = true;
+        } catch (error) {
+          if (error?.code === "P2002" && attempt < 2) continue;
+          console.error("Support ticket create failed", { code: error?.code, message: error?.message });
+          return Response.json({ error: ticketSaveErrorMessage(error), code: "TICKET_SAVE_FAILED" }, { status: 503, headers });
+        }
+      }
+      if (!ticketCreated) return Response.json({ error: "We couldn’t create a ticket number just now. Please try again in a moment.", code: "TICKET_REFERENCE_FAILED" }, { status: 503, headers });
       const successTemplate = typeof supportSuccessMessage === "string" && supportSuccessMessage.trim() ? supportSuccessMessage.trim().slice(0, 500) : "Request {ticket} created. We’ll contact you soon.";
-      const answer = successTemplate.replaceAll("{ticket}", reference).replaceAll("{email}", identity.email);
-      await saveConversation(normalizedShop, sessionId, userMessage, answer, identity, userCreatedAt);
+      const configuredAnswer = successTemplate.replaceAll("{ticket}", reference).replaceAll("{email}", identity.email);
+      const answer = configuredAnswer.toLowerCase().includes(reference.toLowerCase()) ? configuredAnswer : `${configuredAnswer.trim()} Ticket number: ${reference}.`;
+      await saveConversation(normalizedShop, sessionId, userMessage, answer, identity, userCreatedAt).catch((error) => console.error("Ticket conversation save failed after ticket creation", { code: error?.code, message: error?.message }));
       return Response.json({ answer, ticket: { reference } }, { headers });
     }
     const normalizedGreeting = userMessage.toLocaleLowerCase().trim().replace(/[.!?,\s]+$/g, "");
@@ -286,6 +316,11 @@ export const action = async ({ request }) => {
     console.error("Chat request failed", error);
     if (normalizedShop && userMessage) await saveConversation(normalizedShop, sessionId, userMessage, "Sorry, the assistant could not answer right now. Please try again shortly.", identity, userCreatedAt).catch((saveError) => console.error("Conversation save failed", saveError));
     const proxyRejected = error instanceof Response;
-    return Response.json({ error: proxyRejected ? "Shopify did not verify this app proxy request. Check that the active Shopify app version has the /apps/shopai-concierge proxy enabled." : "Sorry, the assistant could not answer right now. Please try again shortly." }, { status: proxyRejected ? error.status : 500, headers });
+    const errorMessage = proxyRejected
+      ? "Shopify could not verify this request. Please refresh the page and try again."
+      : supportSubmission
+        ? "We couldn’t submit your support request because the ticket service is temporarily unavailable. Your request wasn’t submitted. Please try again in a moment."
+        : "Sorry, the assistant could not answer right now. Please try again shortly.";
+    return Response.json({ error: errorMessage, ...(supportSubmission ? { code: "TICKET_SERVICE_UNAVAILABLE" } : {}) }, { status: proxyRejected ? error.status : supportSubmission ? 503 : 500, headers });
   }
 };

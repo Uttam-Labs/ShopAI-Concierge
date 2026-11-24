@@ -319,6 +319,10 @@
       const email = String(values.get("customerEmail") || "").trim().toLowerCase();
       const requestTypeId = String(values.get("requestTypeId") || "");
       const requestDetails = String(values.get("requestDetails") || "").trim();
+      const emailInput = supportForm.elements.customerEmail;
+      if (!name) { notice.textContent = "Please enter your name so the store team knows who to reply to."; supportForm.elements.customerName.focus(); return; }
+      if (!email) { notice.textContent = "Please enter an email address so the team can follow up with you."; emailInput.focus(); return; }
+      if (email.length > 254 || !/^[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?(?:\.[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?)+$/i.test(email) || email.includes("..")) { notice.textContent = "That email address doesn’t look quite right. Please check it and try again (for example, name@example.com)."; emailInput.focus(); return; }
       if (!requestTypeId) { notice.textContent = "Choose a support topic before creating your request."; supportIssueType.focus(); return; }
       submit.disabled = true;
       submit.textContent = root.dataset.supportSubmittingLabel || "Creating ticket…";
@@ -329,11 +333,14 @@
         const data = await readApiJson(response, "support ticket");
         if (!response.ok) throw new Error(data.error || "We couldn’t create your ticket. Please try again.");
         identity = { name, email };
-        const ticketReply = data.answer;
-        chatHistory.push({ role: "user", content: ticketMessage, createdAt: Date.now() }, { role: "assistant", content: ticketReply, createdAt: Date.now() });
+        const ticketReference = String(data.ticket?.reference || "").trim();
+        if (!ticketReference) throw new Error("We couldn’t confirm that your ticket was saved. Please try again. If this keeps happening, contact the store team directly.");
+        const ticketReply = String(data.answer || "Your support request has been sent. We’ll contact you soon.");
+        const confirmedReply = ticketReply.toLowerCase().includes(ticketReference.toLowerCase()) ? ticketReply : `${ticketReply} Ticket number: ${ticketReference}.`;
+        chatHistory.push({ role: "user", content: ticketMessage, createdAt: Date.now() }, { role: "assistant", content: confirmedReply, createdAt: Date.now() });
         persistChat();
         addMessage(messages, ticketMessage, "user");
-        addMessage(messages, ticketReply, "assistant");
+        addMessage(messages, confirmedReply, "assistant");
         closeSupport();
       } catch (error) {
         notice.textContent = error.message || "We couldn’t create your ticket. Please try again.";

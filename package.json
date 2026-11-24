@@ -2,7 +2,7 @@
   "name": "shop-ai-concierge",
   "private": true,
   "scripts": {
-    "build": "react-router build",
+    "build": "prisma generate && prisma migrate deploy && react-router build",
     "dev": "npm run setup && npm run db:migrate:legacy && shopify app dev",
     "config:link": "shopify app config link",
     "generate": "shopify app generate",
