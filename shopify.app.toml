@@ -1,7 +1,7 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
 client_id = "8ec458079251d0dbf12d7ed41b008094"
-application_url = "https://example.com"
+application_url = "https://shop-ai-concierge-n3vmosny3-wts24.vercel.app"
 embedded = true
 name = "ShopAI Concierge"
 
@@ -39,7 +39,7 @@ name = "Description"
 type = "multi_line_text_field"
 
 [auth]
-redirect_urls = [ "https://example.com/api/auth" ]
+redirect_urls = [ "https://shop-ai-concierge-n3vmosny3-wts24.vercel.app/api/auth" ]
 
 [webhooks]
 api_version = "2027-01"
