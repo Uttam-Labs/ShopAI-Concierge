@@ -110,6 +110,12 @@ export const action = async ({ request }) => {
       await saveConversation(normalizedShop, sessionId, userMessage, answer, identity, userCreatedAt);
       return Response.json({ answer, ticket: { reference } }, { headers });
     }
+    const normalizedGreeting = userMessage.toLocaleLowerCase().trim().replace(/[.!?,\s]+$/g, "");
+    if (/^(hi|hello|hey|hiya|howdy|good morning|good afternoon|good evening|হাই|হ্যালো|নমস্কার|আসসালামু আলাইকুম)$/i.test(normalizedGreeting)) {
+      const answer = settings.defaultGreeting || "Hi there! 👋 Tell me what you’re shopping for, ask about our policies, or track an order.";
+      await saveConversation(normalizedShop, sessionId, userMessage, answer, identity, userCreatedAt);
+      return Response.json({ answer, products: [] }, { headers });
+    }
     if (typeof faqId === "string" && faqId) {
       const selectedFaq = await prisma.faq.findFirst({ where: { id: faqId, shop: normalizedShop, active: true }, select: { question: true, answer: true, sourceTitle: true, sourceContent: true } });
       if (selectedFaq) {

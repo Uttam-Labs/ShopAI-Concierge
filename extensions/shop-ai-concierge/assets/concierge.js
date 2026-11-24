@@ -12,7 +12,9 @@
     let storedChat = readStoredChat(storageKey);
     const sessionId = storedChat?.sessionId || crypto.randomUUID();
     let identity = storedChat?.identity || { name: "", email: "" };
-    let chatHistory = Array.isArray(storedChat?.messages) ? storedChat.messages.slice(-40) : [];
+    let chatHistory = Array.isArray(storedChat?.messages)
+      ? storedChat.messages.filter((item) => !(item?.role === "assistant" && /Unexpected token|not valid JSON|returned a web page instead of chat data/i.test(String(item.content || "")))).slice(-40)
+      : [];
     const botAvatar = '<span class="sac-avatar" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4.5" y="8" width="15" height="11" rx="4"/><path d="M12 4v4M9 13h.01M15 13h.01M9 16h6M3 12v3M21 12v3"/></svg></span>';
 
     const panel = document.createElement("section");
