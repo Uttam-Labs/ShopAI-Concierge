@@ -13,6 +13,14 @@ const cors = (origin) => ({
   "Vary": "Origin",
 });
 
+// Shopify app proxies can replace failed upstream HTTP responses with a themed HTML
+// page. Keep expected app-proxy errors as JSON with HTTP 200 and carry the actual
+// status in the payload so the storefront widget can show the useful message.
+const proxyJson = (payload, headers, status = 200) => Response.json(
+  status === 200 ? payload : { ...payload, status },
+  { headers },
+);
+
 const shopifyTokenCache = new Map();
 
 function orderAttemptKey(orderNumber, email) {
@@ -49,7 +57,14 @@ async function getShopifyAdminToken(shop) {
   // Prefer the app's installed offline Admin API session token. This token carries
   // the store's granted read_orders scope and avoids relying on a client-credentials
   // grant that may not be available for every app distribution.
-  const installedSession = await prisma.session.findFirst({ where: { shop, isOnline: false }, select: { accessToken: true, expires: true } });
+  let installedSession = null;
+  try {
+    installedSession = await prisma.session.findFirst({ where: { shop, isOnline: false }, select: { accessToken: true, expires: true } });
+  } catch (error) {
+    // Fall through to the configured app credentials if session storage is
+    // temporarily unavailable; the order lookup itself still needs Shopify auth.
+    console.error("Could not load the installed Shopify session for order lookup", error);
+  }
   if (installedSession?.accessToken && (!installedSession.expires || installedSession.expires.getTime() > Date.now() + 60_000)) {
     const expiresAt = installedSession.expires?.getTime() || Date.now() + 2 * 60_000;
     shopifyTokenCache.set(shop, { token: installedSession.accessToken, expiresAt });
@@ -173,13 +188,13 @@ export const action = async ({ request }) => {
   try {
     const proxyContext = await authenticate.public.appProxy(request);
     verifiedShop = proxyContext.session?.shop?.toLowerCase();
-    if (!verifiedShop) return Response.json({ error: "Shopify could not identify this store. Verify the active app proxy configuration." }, { status: 401, headers });
-    if (allowed.length && origin && !allowed.includes(origin)) return Response.json({ error: "This storefront is not allowed." }, { status: 403, headers });
+    if (!verifiedShop) return proxyJson({ error: "Shopify could not identify this store. Verify the active app proxy configuration." }, headers, 401);
+    if (allowed.length && origin && !allowed.includes(origin)) return proxyJson({ error: "This storefront is not allowed." }, headers, 403);
     const { message, shop: bodyShop, sessionId: requestSessionId, customerName, customerEmail, faqId, orderLookupRequest, orderNumber, supportRequest, supportSuccessMessage, requestTypeId, requestDetails, supportContext } = await readChatPayload(request);
     supportSubmission = supportRequest === true;
     const shop = verifiedShop;
-    if (typeof message !== "string" || !message.trim() || message.length > 1000) return Response.json({ error: "Please enter a message up to 1,000 characters." }, { status: 400, headers });
-    if (!/^[a-z0-9][a-z0-9.-]*\.myshopify\.com$/i.test(shop) || (typeof bodyShop === "string" && bodyShop.toLowerCase() !== shop)) return Response.json({ error: "Invalid shop information." }, { status: 400, headers });
+    if (typeof message !== "string" || !message.trim() || message.length > 1000) return proxyJson({ error: "Please enter a message up to 1,000 characters." }, headers, 400);
+    if (!/^[a-z0-9][a-z0-9.-]*\.myshopify\.com$/i.test(shop) || (typeof bodyShop === "string" && bodyShop.toLowerCase() !== shop)) return proxyJson({ error: "Invalid shop information." }, headers, 400);
     normalizedShop = shop.toLowerCase();
     sessionId = typeof requestSessionId === "string" ? requestSessionId : "";
     userMessage = message.trim();
@@ -188,40 +203,48 @@ export const action = async ({ request }) => {
     const settings = { recommendations: true, orderLookup: true, orderEmailRequired: true, humanHandoff: true, faqs: true, responseGuidelines: "", ticketPrefix: "SAC", ticketOptions: [], ...(await prisma.assistantSettings.findUnique({ where: { shop: normalizedShop } }) || {}) };
     const activeFaqs = settings.faqs ? await prisma.faq.findMany({ where: { shop: normalizedShop, active: true }, select: { question: true, answer: true, sourceTitle: true, sourceContent: true }, take: 100 }) : [];
     if (orderLookupRequest === true) {
-      if (!settings.orderLookup) return Response.json({ error: "Order tracking is currently turned off." }, { status: 403, headers });
+      if (!settings.orderLookup) return proxyJson({ error: "Order tracking is currently turned off." }, headers, 403);
       const lookupEmail = String(customerEmail || "").trim().toLowerCase();
       const lookupNumber = String(orderNumber || "").trim().replace(/^#/, "");
-      if ((settings.orderEmailRequired || lookupEmail) && !isValidEmail(lookupEmail)) return Response.json({ error: "Enter a valid email address used for this order." }, { status: 400, headers });
-      if (!/^[A-Za-z0-9-]{1,30}$/.test(lookupNumber)) return Response.json({ error: "Enter a valid order number, such as 1001." }, { status: 400, headers });
+      if ((settings.orderEmailRequired || lookupEmail) && !isValidEmail(lookupEmail)) return proxyJson({ error: "Enter a valid email address used for this order." }, headers, 400);
+      if (!/^[A-Za-z0-9-]{1,30}$/.test(lookupNumber)) return proxyJson({ error: "Enter a valid order number, such as 1001." }, headers, 400);
       const attemptKey = orderAttemptKey(lookupNumber, lookupEmail);
-      const recent = await prisma.orderLookupAttempt.findFirst({ where: { shop: normalizedShop, orderHint: attemptKey, result: { path: ["ok"], equals: true }, createdAt: { gt: new Date(Date.now() - 30 * 1000) } } });
-      if (recent) return Response.json({ error: "Please wait a moment before trying this order number again." }, { status: 429, headers });
-      await prisma.orderLookupAttempt.create({ data: { shop: normalizedShop, orderHint: attemptKey, result: { ok: false } } });
+      // A lookup throttle must never prevent the actual Shopify order search if
+      // this optional audit table has a temporary database/migration problem.
+      let recent = null;
+      try {
+        recent = await prisma.orderLookupAttempt.findFirst({ where: { shop: normalizedShop, orderHint: attemptKey, result: { path: ["ok"], equals: true }, createdAt: { gt: new Date(Date.now() - 30 * 1000) } } });
+      } catch (error) { console.error("Order lookup throttle check failed", error); }
+      if (recent) return proxyJson({ error: "Please wait a moment before trying this order number again." }, headers, 429);
+      try { await prisma.orderLookupAttempt.create({ data: { shop: normalizedShop, orderHint: attemptKey, result: { ok: false } } }); }
+      catch (error) { console.error("Order lookup audit save failed", error); }
       try {
         const order = await lookupShopifyOrder(normalizedShop, lookupNumber, lookupEmail, settings.orderEmailRequired);
-        if (!order) return Response.json({ error: settings.orderEmailRequired ? "We couldn’t find an order matching that number and email. Check the order number and the email used at checkout, then try again." : "We couldn’t find that order number. Check it and try again." }, { status: 404, headers });
-        await prisma.orderLookupAttempt.updateMany({ where: { shop: normalizedShop, orderHint: attemptKey, result: { path: ["ok"], equals: false } }, data: { result: { ok: true, status: order.fulfillmentStatus } } });
+        if (!order) return proxyJson({ error: settings.orderEmailRequired ? "We couldn’t find an order matching that number and email. Check the order number and the email used at checkout, then try again." : "We couldn’t find that order number. Check it and try again." }, headers, 404);
+        try { await prisma.orderLookupAttempt.updateMany({ where: { shop: normalizedShop, orderHint: attemptKey, result: { path: ["ok"], equals: false } }, data: { result: { ok: true, status: order.fulfillmentStatus } } }); }
+        catch (error) { console.error("Order lookup audit update failed", error); }
         const fulfillment = String(order.fulfillmentStatus || "Not yet fulfilled").replaceAll("_", " ").toLowerCase();
         const payment = String(order.financialStatus || "Payment status unavailable").replaceAll("_", " ").toLowerCase();
         const placed = order.createdAt ? new Intl.DateTimeFormat("en", { dateStyle: "medium" }).format(new Date(order.createdAt)) : "Date unavailable";
         const total = order.total && order.currency ? new Intl.NumberFormat("en", { style: "currency", currency: order.currency }).format(Number(order.total)) : "Total unavailable";
         const answer = `Order ${order.name}\nPlaced ${placed} · ${fulfillment[0].toUpperCase()}${fulfillment.slice(1)}\nPayment: ${payment} · Total: ${total}${order.tracking.length ? "\nTracking details are available below." : ""}`;
-        await saveConversation(normalizedShop, sessionId, `Track order ${order.name}`, answer, { name: identity.name, email: lookupEmail }, userCreatedAt);
-        return Response.json({ answer, order }, { headers });
+        await saveConversation(normalizedShop, sessionId, `Track order ${order.name}`, answer, { name: identity.name, email: lookupEmail }, userCreatedAt)
+          .catch((saveError) => console.error("Order conversation save failed after successful lookup", saveError));
+        return proxyJson({ answer, order }, headers);
       } catch (error) {
         console.error("Order lookup failed", error);
-        return Response.json({ error: "Order tracking is temporarily unavailable. Please try again or contact the store team." }, { status: 502, headers });
+        return proxyJson({ error: "Order tracking is temporarily unavailable. Please try again or contact the store team." }, headers, 502);
       }
     }
     if (supportRequest === true) {
-      if (!settings.humanHandoff) return Response.json({ error: "Customer support requests are currently unavailable. Please use the store’s contact page." }, { status: 403, headers });
+      if (!settings.humanHandoff) return proxyJson({ error: "Customer support requests are currently unavailable. Please use the store’s contact page." }, headers, 403);
       identity = { name: identity.name.trim().slice(0, 120), email: identity.email.trim().toLowerCase() };
-      if (!identity.name) return Response.json({ error: "Please enter your name so the store team knows who to reply to." }, { status: 400, headers });
-      if (!isValidEmail(identity.email)) return Response.json({ error: "Please enter a valid email address, such as name@example.com, so the team can follow up." }, { status: 400, headers });
+      if (!identity.name) return proxyJson({ error: "Please enter your name so the store team knows who to reply to." }, headers, 400);
+      if (!isValidEmail(identity.email)) return proxyJson({ error: "Please enter a valid email address, such as name@example.com, so the team can follow up." }, headers, 400);
       const selectedRequestId = String(requestTypeId || "");
       const requestOptions = normalizeTicketOptions(settings.ticketOptions);
       const selectedType = selectedRequestId === "other" ? { id: "other", label: "Other", question: "", answer: "" } : requestOptions.find((option) => option.id === selectedRequestId && option.active);
-      if (!selectedType) return Response.json({ error: "Choose a support request type before submitting." }, { status: 400, headers });
+      if (!selectedType) return proxyJson({ error: "Choose a support request type before submitting." }, headers, 400);
       const details = typeof requestDetails === "string" ? requestDetails.trim().slice(0, 2000) : "";
       const contextMessages = Array.isArray(supportContext) ? supportContext.slice(-12).flatMap((item) => {
         if (!item || !["user", "assistant"].includes(item.role) || typeof item.content !== "string") return [];
@@ -245,10 +268,10 @@ export const action = async ({ request }) => {
         } catch (error) {
           if (error?.code === "P2002" && attempt < 2) continue;
           console.error("Support ticket create failed", { code: error?.code, message: error?.message });
-          return Response.json({ error: ticketSaveErrorMessage(error), code: "TICKET_SAVE_FAILED" }, { status: 503, headers });
+          return proxyJson({ error: ticketSaveErrorMessage(error), code: "TICKET_SAVE_FAILED" }, headers, 503);
         }
       }
-      if (!ticketCreated) return Response.json({ error: "We couldn’t create a ticket number just now. Please try again in a moment.", code: "TICKET_REFERENCE_FAILED" }, { status: 503, headers });
+      if (!ticketCreated) return proxyJson({ error: "We couldn’t create a ticket number just now. Please try again in a moment.", code: "TICKET_REFERENCE_FAILED" }, headers, 503);
       const legacyDefault = "Ticket {ticket} created successfully. We’ll contact you soon.";
       const configuredTemplate = typeof supportSuccessMessage === "string" ? supportSuccessMessage.trim().slice(0, 500) : "";
       const successTemplate = configuredTemplate && configuredTemplate !== legacyDefault
@@ -257,7 +280,7 @@ export const action = async ({ request }) => {
       const configuredAnswer = successTemplate.replaceAll("{ticket}", reference).replaceAll("{email}", identity.email);
       const answer = configuredAnswer;
       await saveConversation(normalizedShop, sessionId, userMessage, answer, identity, userCreatedAt).catch((error) => console.error("Ticket conversation save failed after ticket creation", { code: error?.code, message: error?.message }));
-      return Response.json({ answer, ticket: { reference } }, { headers });
+      return proxyJson({ answer, ticket: { reference } }, headers);
     }
     const normalizedGreeting = userMessage.toLocaleLowerCase().trim().replace(/[.!?,\s]+$/g, "");
     if (/^(hi|hello|hey|hiya|howdy|good morning|good afternoon|good evening|হাই|হ্যালো|নমস্কার|আসসালামু আলাইকুম)$/i.test(normalizedGreeting)) {
@@ -360,6 +383,6 @@ export const action = async ({ request }) => {
       : supportSubmission
         ? "We couldn’t submit your support request because the ticket service is temporarily unavailable. Your request wasn’t submitted. Please try again in a moment."
         : "Sorry, the assistant could not answer right now. Please try again shortly.";
-    return Response.json({ error: errorMessage, ...(supportSubmission ? { code: "TICKET_SERVICE_UNAVAILABLE" } : {}) }, { status: proxyRejected ? error.status : supportSubmission ? 503 : 500, headers });
+    return proxyJson({ error: errorMessage, ...(supportSubmission ? { code: "TICKET_SERVICE_UNAVAILABLE" } : {}), ...(proxyRejected ? { status: error.status } : {}) }, headers);
   }
 };

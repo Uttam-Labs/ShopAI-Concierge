@@ -415,9 +415,15 @@
     try { data = JSON.parse(body); }
     catch {
       console.error(`ShopAI ${purpose} endpoint returned non-JSON`, { status: response.status, contentType: response.headers.get("content-type"), preview: body.slice(0, 240) });
-      throw new Error("Shopify returned a web page instead of chat data. Check that the app proxy is enabled on the active Shopify app version.");
+      if (purpose === "order lookup" && response.status >= 500) {
+        throw new Error("We couldn’t retrieve this order right now because the store service had a server error. Please try again shortly.");
+      }
+      throw new Error("We couldn’t connect to the store service just now. Please refresh the page and try again.");
     }
-    if (!response.ok) throw new Error(data?.error || `Chat request failed (${response.status}). Please try again.`);
+    // App proxy business errors use HTTP 200 so Shopify forwards the JSON body
+    // instead of replacing it with a storefront HTML error page.
+    if (data?.error) throw new Error(data.error);
+    if (!response.ok) throw new Error(`Chat request failed (${response.status}). Please try again.`);
     return data;
   }
   function postProxyData(endpoint, payload) {
