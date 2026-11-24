@@ -92,6 +92,7 @@ model AssistantSettings {
   shop               String   @id
   recommendations    Boolean  @default(true)
   orderLookup        Boolean  @default(true)
+  orderEmailRequired Boolean  @default(true)
   humanHandoff       Boolean  @default(true)
   faqs               Boolean  @default(true)
   defaultGreeting    String   @default("Hi there! 👋 Tell me what you’re shopping for, ask about our policies, or track an order.")

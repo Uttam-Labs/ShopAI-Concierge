@@ -528,3 +528,25 @@ button:disabled, s-button[disabled] { cursor: not-allowed; }
 .sac-support-guidance strong { color: #3b342e; font-size: 12px; line-height: 1.45; }
 .sac-support-guidance p { margin: 0; color: #74685d; font-size: 11px; line-height: 1.5; }
 @media (max-width: 700px) { .faq-admin-tabs { overflow-x: auto; } .faq-admin-tabs button { white-space: nowrap; } .request-type-fields { grid-template-columns: 1fr; } .request-type-fields .admin-field:last-child { grid-column: auto; } .request-type-footer { align-items: flex-start; flex-direction: column; } .request-type-footer .admin-cta { width: 100%; } }
+.faq-list { gap: 14px; padding: 12px 14px 16px; }
+.faq-list-item { align-items: flex-start; gap: 26px; padding: 20px 22px; border-radius: 14px; }
+.faq-list-copy { padding: 2px 0; }
+.faq-list-title-row { flex-wrap: wrap; gap: 8px 10px; }
+.faq-list-actions { max-width: 410px; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.faq-status-button { min-height: 36px; padding: 0 11px; }
+.faq-visibility-note { display: flex; align-items: flex-start; gap: 13px; margin: -18px 0 32px; padding: 17px 19px; border: 1px solid #eee3d9; border-radius: 13px; background: #fffaf6; }
+.faq-visibility-note .faq-section-icon { width: 35px; height: 35px; flex-basis: 35px; }
+.faq-visibility-note strong { display: block; margin: 1px 0 4px; color: #302d29; font-size: 12px; }
+.faq-visibility-note p { margin: 0; color: #716a63; font-size: 11px; line-height: 1.55; }
+.request-type-modal { width: min(620px, 100%); }
+.request-type-create-form { display: grid; gap: 15px; }
+.request-type-create-form .admin-field { gap: 7px; margin: 0; }
+.request-type-create-form .admin-field > small { color: #877f77; font-size: 10px; font-weight: 450; line-height: 1.45; }
+.request-type-modal-active { display: flex; align-items: flex-start; gap: 10px; padding: 13px 14px; border: 1px solid #eee5dc; border-radius: 11px; background: #fcfaf8; cursor: pointer; }
+.request-type-modal-active input { flex: 0 0 auto; width: 16px; height: 16px; margin: 2px 0 0; accent-color: #e96822; }
+.request-type-modal-active span { display: grid; gap: 4px; }
+.request-type-modal-active strong { color: #36312c; font-size: 11px; }
+.request-type-modal-active small { color: #817970; font-size: 10px; line-height: 1.4; }
+.request-type-modal .admin-modal-actions { margin-top: 2px; }
+.faq-page-list-heading .admin-secondary:disabled { opacity: .45; cursor: not-allowed; }
+@media (max-width: 640px) { .faq-list { gap: 11px; padding: 10px; } .faq-list-item { gap: 15px; padding: 16px; } .faq-list-actions { max-width: none; justify-content: flex-start; } .faq-visibility-note { margin-top: -18px; padding: 14px; } }

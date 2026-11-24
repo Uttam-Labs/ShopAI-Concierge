@@ -36,7 +36,7 @@
     Array.from(welcome.childNodes).forEach((node) => {
       if (!(node.nodeType === Node.ELEMENT_NODE && node.classList.contains("sac-help-button"))) node.remove();
     });
-    panel.insertAdjacentHTML("beforeend", `<div class="sac-order-backdrop" hidden><section class="sac-order-card" role="dialog" aria-modal="true" aria-labelledby="sac-order-title"><button type="button" class="sac-order-close" aria-label="Close order tracking">×</button><span class="sac-order-icon" aria-hidden="true">↗</span><p class="sac-order-kicker">ORDER UPDATES</p><h3 id="sac-order-title">Track your order</h3><p class="sac-order-copy">Enter the order number and checkout email to securely look up its latest status.</p><form class="sac-order-form"><label>Order number<input name="orderNumber" autocomplete="off" maxlength="31" placeholder="e.g. 1001" required></label><label>Email used at checkout<input name="customerEmail" type="email" autocomplete="email" maxlength="254" placeholder="you@example.com" required></label><div class="sac-order-notice" aria-live="polite"></div><footer><button type="button" class="sac-order-cancel">Cancel</button><button type="submit" class="sac-order-submit">Find my order</button></footer></form><section class="sac-order-result" hidden><div class="sac-order-result-title"></div><p class="sac-order-result-copy"></p><button type="button" class="sac-order-view">View order details</button><div class="sac-order-details" hidden></div></section></section></div>`);
+    panel.insertAdjacentHTML("beforeend", `<div class="sac-order-backdrop" hidden><section class="sac-order-card" role="dialog" aria-modal="true" aria-labelledby="sac-order-title"><button type="button" class="sac-order-close" aria-label="Close order tracking">×</button><span class="sac-order-icon" aria-hidden="true">↗</span><p class="sac-order-kicker">ORDER UPDATES</p><h3 id="sac-order-title">Track your order</h3><p class="sac-order-copy">Enter your order number to see its latest status and total.</p><form class="sac-order-form"><label>Order number<input name="orderNumber" autocomplete="off" maxlength="31" placeholder="e.g. #1001 or 1001" required></label><label class="sac-order-email-label">Email used at checkout<input name="customerEmail" type="email" autocomplete="email" maxlength="254" placeholder="you@example.com"></label><div class="sac-order-notice" aria-live="polite"></div><footer><button type="button" class="sac-order-cancel">Cancel</button><button type="submit" class="sac-order-submit">Find my order</button></footer></form><section class="sac-order-result" hidden><div class="sac-order-result-title"></div><p class="sac-order-result-copy"></p><button type="button" class="sac-order-view">View order details</button><div class="sac-order-details" hidden></div></section></section></div>`);
 
     const launcher = document.createElement("button");
     launcher.type = "button";
@@ -66,6 +66,20 @@
     const orderBackdrop = panel.querySelector(".sac-order-backdrop");
     const orderForm = panel.querySelector(".sac-order-form");
     const orderNotice = panel.querySelector(".sac-order-notice");
+    const orderEmail = orderForm.elements.customerEmail;
+    const orderEmailLabel = orderEmail.closest("label");
+    const orderCopy = panel.querySelector(".sac-order-copy");
+    let orderEmailRequired = true;
+    orderEmail.required = true;
+    const setOrderEmailRequirement = (required) => {
+      orderEmailRequired = required;
+      orderEmail.required = required;
+      orderEmailLabel.firstChild.textContent = required ? "Email used at checkout" : "Email used at checkout (optional)";
+      orderEmail.placeholder = required ? "you@example.com" : "Add it to verify the order";
+      orderCopy.textContent = required
+        ? "Enter your order number and the email used at checkout to see its latest status and total."
+        : "Enter your order number to see its latest status and total. Adding the checkout email helps verify the order.";
+    };
     const orderResult = panel.querySelector(".sac-order-result");
     const orderResultTitle = panel.querySelector(".sac-order-result-title");
     const orderResultCopy = panel.querySelector(".sac-order-result-copy");
@@ -146,6 +160,7 @@
           }
           if (config.humanHandoff === false) panel.querySelector(".sac-help-button").hidden = true;
           orderButton.hidden = !enableOrderLookup || config.orderLookup === false;
+          setOrderEmailRequirement(config.orderEmailRequired !== false);
           if (enableFaqs && Array.isArray(config.faqs) && config.faqs.length) renderFaqs(config.faqs, faqSection, faqList, sendMessage);
           const configuredOptions = Array.isArray(config.ticketOptions) ? config.ticketOptions : [];
           const activeOptions = configuredOptions.filter((item) => item && item.active !== false && item.id && item.label).slice(0, 20);
@@ -214,7 +229,7 @@
       const orderNumberValue = String(new FormData(orderForm).get("orderNumber") || "").trim().replace(/^#/, "");
       const emailValue = String(new FormData(orderForm).get("customerEmail") || "").trim().toLowerCase();
       if (!/^[A-Za-z0-9-]{1,30}$/.test(orderNumberValue)) { orderNotice.textContent = "Enter a valid order number, such as 1001."; return; }
-      if (!/^[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?(?:\.[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?)+$/i.test(emailValue) || emailValue.includes("..")) { orderNotice.textContent = "Enter the valid email address used at checkout."; orderForm.elements.customerEmail.focus(); return; }
+      if ((orderEmailRequired && !emailValue) || (emailValue && (!/^[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?(?:\.[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?)+$/i.test(emailValue) || emailValue.includes("..")))) { orderNotice.textContent = orderEmailRequired ? "Enter the valid email address used at checkout." : "That email address doesn’t look valid. Check it and try again."; orderEmail.focus(); return; }
       submit.disabled = true;
       submit.textContent = "Checking order…";
       orderNotice.textContent = "";

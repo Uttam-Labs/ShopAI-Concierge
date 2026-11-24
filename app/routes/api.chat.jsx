@@ -36,6 +36,15 @@ function ticketSaveErrorMessage(error) {
 async function getShopifyAdminToken(shop) {
   const cached = shopifyTokenCache.get(shop);
   if (cached && cached.expiresAt > Date.now() + 60_000) return cached.token;
+  // Prefer the app's installed offline Admin API session token. This token carries
+  // the store's granted read_orders scope and avoids relying on a client-credentials
+  // grant that may not be available for every app distribution.
+  const installedSession = await prisma.session.findFirst({ where: { shop, isOnline: false }, select: { accessToken: true, expires: true } });
+  if (installedSession?.accessToken && (!installedSession.expires || installedSession.expires.getTime() > Date.now() + 60_000)) {
+    const expiresAt = installedSession.expires?.getTime() || Date.now() + 2 * 60_000;
+    shopifyTokenCache.set(shop, { token: installedSession.accessToken, expiresAt });
+    return installedSession.accessToken;
+  }
   if (!process.env.SHOPIFY_API_KEY || !process.env.SHOPIFY_API_SECRET) return "";
   const body = new URLSearchParams({ grant_type: "client_credentials", client_id: process.env.SHOPIFY_API_KEY, client_secret: process.env.SHOPIFY_API_SECRET });
   const response = await fetch(`https://${shop}/admin/oauth/access_token`, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body });
@@ -46,17 +55,23 @@ async function getShopifyAdminToken(shop) {
   return data.access_token;
 }
 
-async function lookupShopifyOrder(shop, orderNumber, email) {
+async function lookupShopifyOrder(shop, orderNumber, email, requireEmail = true) {
   const token = await getShopifyAdminToken(shop);
   if (!token) throw new Error("Order lookup could not authenticate with Shopify. Check the app installation, API secret and read_orders access.");
-  const query = `query OrderLookup($query: String!) { orders(first: 1, query: $query) { nodes { name email createdAt displayFinancialStatus displayFulfillmentStatus statusPageUrl currentTotalPriceSet { shopMoney { amount currencyCode } } lineItems(first: 8) { nodes { title quantity } } fulfillments(first: 5) { trackingInfo { company number url } } } } }`;
-  const orderSearch = `name:${orderNumber.replace(/^#/, "")} email:${email}`;
+  const query = `query OrderLookup($query: String!) { orders(first: 20, query: $query, sortKey: CREATED_AT, reverse: true) { nodes { name email createdAt displayFinancialStatus displayFulfillmentStatus statusPageUrl currentTotalPriceSet { shopMoney { amount currencyCode } } lineItems(first: 8) { nodes { title quantity } } fulfillments(first: 5) { trackingInfo { company number url } } } } }`;
+  // Search by order name first so an optional email never prevents finding the order.
+  // Shopify may return nearby name matches, so verify the normalized name exactly below.
+  const orderSearch = `status:any name:${orderNumber.replace(/^#/, "")}`;
   const response = await fetch(`https://${shop}/admin/api/2026-07/graphql.json`, { method: "POST", headers: { "content-type": "application/json", "X-Shopify-Access-Token": token }, body: JSON.stringify({ query, variables: { query: orderSearch } }) });
   if (!response.ok) throw new Error(`Shopify order search returned HTTP ${response.status}.`);
   const payload = await response.json();
   if (payload.errors?.length) throw new Error(payload.errors.map((item) => item.message).join("; "));
-  const order = payload.data?.orders?.nodes?.[0];
-  if (!order || order.email?.toLowerCase() !== email) return null;
+  const normalizedOrderNumber = orderNumber.replace(/^#/, "").toLowerCase();
+  const order = (payload.data?.orders?.nodes || []).find((candidate) => String(candidate.name || "").replace(/^#/, "").toLowerCase() === normalizedOrderNumber);
+  if (!order) return null;
+  const orderEmails = [order.email].map((value) => String(value || "").trim().toLowerCase()).filter(Boolean);
+  if (email && !orderEmails.includes(email)) return null;
+  if (requireEmail && !email) return null;
   return {
     name: order.name,
     createdAt: order.createdAt,
@@ -119,13 +134,13 @@ export const loader = async ({ request }) => {
     if (!shop || !/^[a-z0-9][a-z0-9.-]*\.myshopify\.com$/i.test(shop)) return Response.json({ error: "Shopify could not identify this store. Verify the app proxy configuration." }, { status: 400, headers });
     const allowed = (process.env.STOREFRONT_ALLOWED_ORIGINS || "").split(",").map((value) => value.trim()).filter(Boolean);
     if (allowed.length && origin && !allowed.includes(origin)) return Response.json({ error: "This storefront is not allowed." }, { status: 403, headers });
-    const settings = await prisma.assistantSettings.findUnique({ where: { shop }, select: { defaultGreeting: true, orderLookup: true, humanHandoff: true, ticketOptions: true } });
+    const settings = await prisma.assistantSettings.findUnique({ where: { shop }, select: { defaultGreeting: true, orderLookup: true, orderEmailRequired: true, humanHandoff: true, ticketOptions: true } });
     // FAQ suggestions are controlled by the storefront app-embed toggle. The separate
     // assistant setting controls answer matching, and must not hide the visible questions.
     const activeFaqs = await prisma.faq.findMany({ where: { shop, active: true }, select: { id: true, question: true, featured: true }, orderBy: { createdAt: "desc" }, take: 100 });
     const suggestedFaqs = activeFaqs.filter((faq) => faq.featured);
     const faqs = (suggestedFaqs.length ? suggestedFaqs : activeFaqs).slice(0, 6).map(({ id, question }) => ({ id, question }));
-    return Response.json({ greeting: settings?.defaultGreeting || "Hi there! 👋 Tell me what you’re shopping for, ask about our policies, or track an order.", humanHandoff: settings?.humanHandoff !== false, orderLookup: settings?.orderLookup !== false, faqs, ticketOptions: normalizeTicketOptions(settings?.ticketOptions) }, { headers });
+    return Response.json({ greeting: settings?.defaultGreeting || "Hi there! 👋 Tell me what you’re shopping for, ask about our policies, or track an order.", humanHandoff: settings?.humanHandoff !== false, orderLookup: settings?.orderLookup !== false, orderEmailRequired: settings?.orderEmailRequired !== false, faqs, ticketOptions: normalizeTicketOptions(settings?.ticketOptions) }, { headers });
   } catch (error) {
     console.error("App proxy config request failed", error);
     return Response.json({ error: "Shopify did not verify the app proxy request. Check that the active Shopify app version has the /apps/shopai-concierge proxy enabled." }, { status: error instanceof Response ? error.status : 500, headers });
@@ -158,24 +173,27 @@ export const action = async ({ request }) => {
     userMessage = message.trim();
     userCreatedAt = new Date().toISOString();
     identity = { name: typeof customerName === "string" ? customerName : "", email: typeof customerEmail === "string" ? customerEmail : "" };
-    const settings = { recommendations: true, orderLookup: true, humanHandoff: true, faqs: true, responseGuidelines: "", ticketPrefix: "SAC", ticketOptions: [], ...(await prisma.assistantSettings.findUnique({ where: { shop: normalizedShop } }) || {}) };
+    const settings = { recommendations: true, orderLookup: true, orderEmailRequired: true, humanHandoff: true, faqs: true, responseGuidelines: "", ticketPrefix: "SAC", ticketOptions: [], ...(await prisma.assistantSettings.findUnique({ where: { shop: normalizedShop } }) || {}) };
     const activeFaqs = settings.faqs ? await prisma.faq.findMany({ where: { shop: normalizedShop, active: true }, select: { question: true, answer: true, sourceTitle: true, sourceContent: true }, take: 100 }) : [];
     if (orderLookupRequest === true) {
       if (!settings.orderLookup) return Response.json({ error: "Order tracking is currently turned off." }, { status: 403, headers });
       const lookupEmail = String(customerEmail || "").trim().toLowerCase();
       const lookupNumber = String(orderNumber || "").trim().replace(/^#/, "");
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(lookupEmail) || lookupEmail.length > 254) return Response.json({ error: "Enter the email address used at checkout." }, { status: 400, headers });
+      if ((settings.orderEmailRequired || lookupEmail) && !isValidEmail(lookupEmail)) return Response.json({ error: "Enter a valid email address used for this order." }, { status: 400, headers });
       if (!/^[A-Za-z0-9-]{1,30}$/.test(lookupNumber)) return Response.json({ error: "Enter a valid order number, such as 1001." }, { status: 400, headers });
       const attemptKey = orderAttemptKey(lookupNumber, lookupEmail);
-      const recent = await prisma.orderLookupAttempt.findFirst({ where: { shop: normalizedShop, orderHint: attemptKey, createdAt: { gt: new Date(Date.now() - 30 * 1000) } } });
+      const recent = await prisma.orderLookupAttempt.findFirst({ where: { shop: normalizedShop, orderHint: attemptKey, result: { path: ["ok"], equals: true }, createdAt: { gt: new Date(Date.now() - 30 * 1000) } } });
       if (recent) return Response.json({ error: "Please wait a moment before trying this order number again." }, { status: 429, headers });
       await prisma.orderLookupAttempt.create({ data: { shop: normalizedShop, orderHint: attemptKey, result: { ok: false } } });
       try {
-        const order = await lookupShopifyOrder(normalizedShop, lookupNumber, lookupEmail);
-        if (!order) return Response.json({ error: "We couldn’t find an order matching that number and checkout email. Please check both and try again." }, { status: 404, headers });
+        const order = await lookupShopifyOrder(normalizedShop, lookupNumber, lookupEmail, settings.orderEmailRequired);
+        if (!order) return Response.json({ error: settings.orderEmailRequired ? "We couldn’t find an order matching that number and email. Check the order number and the email used at checkout, then try again." : "We couldn’t find that order number. Check it and try again." }, { status: 404, headers });
         await prisma.orderLookupAttempt.updateMany({ where: { shop: normalizedShop, orderHint: attemptKey, result: { path: ["ok"], equals: false } }, data: { result: { ok: true, status: order.fulfillmentStatus } } });
-        const status = String(order.fulfillmentStatus || "Status unavailable").replaceAll("_", " ").toLowerCase();
-        const answer = `Order ${order.name} is ${status}.${order.tracking.length ? ` Tracking is available from the order details.` : " No tracking details are available yet."}`;
+        const fulfillment = String(order.fulfillmentStatus || "Not yet fulfilled").replaceAll("_", " ").toLowerCase();
+        const payment = String(order.financialStatus || "Payment status unavailable").replaceAll("_", " ").toLowerCase();
+        const placed = order.createdAt ? new Intl.DateTimeFormat("en", { dateStyle: "medium" }).format(new Date(order.createdAt)) : "Date unavailable";
+        const total = order.total && order.currency ? new Intl.NumberFormat("en", { style: "currency", currency: order.currency }).format(Number(order.total)) : "Total unavailable";
+        const answer = `Order ${order.name}\nPlaced ${placed} · ${fulfillment[0].toUpperCase()}${fulfillment.slice(1)}\nPayment: ${payment} · Total: ${total}${order.tracking.length ? "\nTracking details are available below." : ""}`;
         await saveConversation(normalizedShop, sessionId, `Track order ${order.name}`, answer, { name: identity.name, email: lookupEmail }, userCreatedAt);
         return Response.json({ answer, order }, { headers });
       } catch (error) {
@@ -245,12 +263,15 @@ export const action = async ({ request }) => {
     }
     const orderMatch = userMessage.match(/#?(\d{3,})/);
     const email = String(customerEmail || userMessage.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] || "").trim().toLowerCase();
-    if (settings.orderLookup && orderMatch && email && sessionId && process.env.SHOPIFY_API_KEY && process.env.SHOPIFY_API_SECRET) {
+    if (settings.orderLookup && orderMatch && (email || !settings.orderEmailRequired) && sessionId) {
       try {
-        const order = await lookupShopifyOrder(normalizedShop, orderMatch[1], email);
+        const order = await lookupShopifyOrder(normalizedShop, orderMatch[1], email, settings.orderEmailRequired);
         if (order) {
-          const status = String(order.fulfillmentStatus || "Status unavailable").replaceAll("_", " ").toLowerCase();
-          const answer = `Order ${order.name} is ${status}.${order.tracking.length ? ` Tracking is available in your order details.` : " No tracking details are available yet."}`;
+          const fulfillment = String(order.fulfillmentStatus || "Not yet fulfilled").replaceAll("_", " ").toLowerCase();
+          const payment = String(order.financialStatus || "Payment status unavailable").replaceAll("_", " ").toLowerCase();
+          const placed = order.createdAt ? new Intl.DateTimeFormat("en", { dateStyle: "medium" }).format(new Date(order.createdAt)) : "Date unavailable";
+          const total = order.total && order.currency ? new Intl.NumberFormat("en", { style: "currency", currency: order.currency }).format(Number(order.total)) : "Total unavailable";
+          const answer = `Order ${order.name}\nPlaced ${placed} · ${fulfillment[0].toUpperCase()}${fulfillment.slice(1)}\nPayment: ${payment} · Total: ${total}`;
           await saveConversation(normalizedShop, sessionId, userMessage, answer, identity, userCreatedAt);
           return Response.json({ answer, order }, { headers });
         }
@@ -259,7 +280,7 @@ export const action = async ({ request }) => {
       await saveConversation(normalizedShop, sessionId, userMessage, answer, identity, userCreatedAt);
       return Response.json({ answer }, { headers });
     }
-    if (settings.orderLookup && orderMatch && !email) {
+    if (settings.orderLookup && orderMatch && !email && settings.orderEmailRequired) {
       const answer = "Please include the email address used at checkout with your order number so I can verify the order.";
       await saveConversation(normalizedShop, sessionId, userMessage, answer, identity, userCreatedAt);
       return Response.json({ answer }, { headers });

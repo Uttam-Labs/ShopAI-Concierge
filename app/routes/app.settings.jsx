@@ -11,6 +11,7 @@ import { hasSupabaseServerConfig } from "../supabase.server";
 const defaults = {
   recommendations: true,
   orderLookup: true,
+  orderEmailRequired: true,
   humanHandoff: true,
   faqs: true,
   defaultGreeting: "Hi there! 👋 Tell me what you’re shopping for, ask about our policies, or track an order.",
@@ -31,6 +32,7 @@ export const action = async ({ request }) => {
   const values = {
     recommendations: form.get("recommendations") === "on",
     orderLookup: form.get("orderLookup") === "on",
+    orderEmailRequired: form.get("orderEmailRequired") === "on",
     humanHandoff: form.get("humanHandoff") === "on",
     faqs: form.get("faqs") === "on",
     defaultGreeting: String(form.get("defaultGreeting") || defaults.defaultGreeting).trim().slice(0, 280),
@@ -77,7 +79,7 @@ export default function Settings({ loaderData }) {
         </section>
         <section className="settings-card">
           <header className="settings-card-heading"><span className="settings-card-icon"><AdminIcon name="settings" size={19}/></span><div><h2>Shopper features</h2><p>Turn capabilities on or off for the storefront chat.</p></div></header>
-          <div className="settings-feature-list">{features.map(([key, title, description, icon]) => <label className="settings-feature-row" key={key}><span className="settings-feature-icon"><AdminIcon name={icon}/></span><span className="settings-feature-copy"><strong>{title}</strong><small>{description}</small></span><s-switch name={key} checked={settings[key]} aria-label={title}/></label>)}</div>
+          <div className="settings-feature-list">{features.map(([key, title, description, icon]) => <label className="settings-feature-row" key={key}><span className="settings-feature-icon"><AdminIcon name={icon}/></span><span className="settings-feature-copy"><strong>{title}</strong><small>{description}</small></span><s-switch name={key} checked={settings[key]} aria-label={title}/></label>)}<label className="settings-feature-row"><span className="settings-feature-icon"><AdminIcon name="check"/></span><span className="settings-feature-copy"><strong>Require checkout email</strong><small>When on, shoppers must enter the email on the order. When off, the order number alone is used.</small></span><s-switch name="orderEmailRequired" checked={settings.orderEmailRequired !== false} aria-label="Require checkout email"/></label></div>
         </section>
       </div>
       <aside className="settings-aside">
