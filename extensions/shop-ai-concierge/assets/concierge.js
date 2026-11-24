@@ -1,4 +1,9 @@
 (() => {
+  const defaultSupportTypes = [
+    { id: "order-delivery", label: "Order or delivery", question: "What can we help you with about your order?", answer: "If you have an order number, please keep it ready for the support team.", active: true },
+    { id: "product-support", label: "Product support", question: "What product do you need help with?", answer: "Our team will review your product question and follow up by email.", active: true },
+    { id: "returns-refunds", label: "Returns or refunds", question: "How can we help with your return or refund?", answer: "Our team will check the store’s return policy and follow up by email.", active: true },
+  ];
   document.querySelectorAll(".sac-root:not([data-mounted])").forEach((root) => {
     root.dataset.mounted = "true";
     const accent = root.dataset.accent || "#f97316";
@@ -51,7 +56,26 @@
     const supportGuidance = panel.querySelector(".sac-support-guidance");
     const supportQuestion = panel.querySelector(".sac-support-question");
     const supportAnswer = panel.querySelector(".sac-support-answer");
-    let supportTypes = [];
+    let supportTypes = defaultSupportTypes;
+    const populateSupportTypes = (types) => {
+      const currentValue = supportIssueType.value;
+      supportTypes = types;
+      const placeholder = document.createElement("option");
+      placeholder.value = "";
+      placeholder.disabled = true;
+      placeholder.textContent = root.dataset.supportTypePlaceholder || "Choose a support topic";
+      const other = document.createElement("option");
+      other.value = "other";
+      other.textContent = root.dataset.supportOtherOption || "Other";
+      supportIssueType.replaceChildren(placeholder, ...supportTypes.map((item) => {
+        const option = document.createElement("option");
+        option.value = String(item.id);
+        option.textContent = String(item.label);
+        return option;
+      }), other);
+      supportIssueType.value = currentValue === "other" || supportTypes.some((item) => item.id === currentValue) ? currentValue : "";
+    };
+    populateSupportTypes(defaultSupportTypes);
     const enableFaqs = root.dataset.enableFaq !== "false";
     const enableRecommendations = root.dataset.enableRecommendations !== "false";
     const formWrap = panel.querySelector(".sac-form-wrap");
@@ -95,14 +119,9 @@
           }
           if (config.humanHandoff === false) panel.querySelector(".sac-help-button").hidden = true;
           if (enableFaqs && Array.isArray(config.faqs) && config.faqs.length) renderFaqs(config.faqs, faqSection, faqList, sendMessage);
-          supportTypes = Array.isArray(config.ticketOptions) ? config.ticketOptions.filter((item) => item && item.active !== false && item.id && item.label).slice(0, 20) : [];
-          const select = supportForm.elements.requestTypeId;
-          supportTypes.forEach((item) => {
-            const option = document.createElement("option");
-            option.value = String(item.id);
-            option.textContent = String(item.label);
-            select.insertBefore(option, select.querySelector('option[value="other"]'));
-          });
+          const configuredOptions = Array.isArray(config.ticketOptions) ? config.ticketOptions : [];
+          const activeOptions = configuredOptions.filter((item) => item && item.active !== false && item.id && item.label).slice(0, 20);
+          populateSupportTypes(configuredOptions.length ? activeOptions : defaultSupportTypes);
         })
         .catch((error) => console.error("ShopAI settings request failed", error));
     }

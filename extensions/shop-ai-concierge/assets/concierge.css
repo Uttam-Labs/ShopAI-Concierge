@@ -202,3 +202,17 @@
 .sac-panel .sac-support-form textarea:focus { border-color: var(--sac-accent, #f97316); box-shadow: 0 0 0 3px color-mix(in srgb, var(--sac-accent, #f97316) 15%, transparent); }
 .sac-panel .sac-support-form textarea::placeholder { color: #a29a92; opacity: 1; }
 .sac-panel .sac-support-form [hidden] { display: none !important; }
+
+/* Keep the whole support form usable when it is taller than the chat panel. */
+.sac-panel .sac-support-backdrop { overflow-y: auto; overscroll-behavior: contain; padding: 12px; }
+.sac-panel .sac-support-card { width: min(100%, 420px); max-height: calc(100% - 24px); overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--sac-accent, #f97316) #f4eee9; }
+.sac-panel .sac-support-card::-webkit-scrollbar { width: 5px; }
+.sac-panel .sac-support-card::-webkit-scrollbar-track { border-radius: 8px; background: #f4eee9; }
+.sac-panel .sac-support-card::-webkit-scrollbar-thumb { border-radius: 8px; background: var(--sac-accent, #f97316); }
+.sac-panel .sac-support-form input:-webkit-autofill { -webkit-text-fill-color: #27231f; box-shadow: 0 0 0 1000px #fff8f2 inset; }
+@media (max-height: 760px) {
+  .sac-panel .sac-support-backdrop { padding-top: 10px; padding-bottom: 10px; }
+  .sac-panel .sac-support-card { max-height: calc(100% - 4px); padding: 18px; }
+  .sac-panel .sac-support-form { gap: 10px; }
+  .sac-panel .sac-support-copy { margin-bottom: 12px; }
+}
