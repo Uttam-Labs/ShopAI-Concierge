@@ -444,3 +444,30 @@ button:disabled, s-button[disabled] { cursor: not-allowed; }
 .faq-status-button:disabled { opacity: .45; cursor: not-allowed; }
 .conversation-message time { display: block; margin-top: 5px; color: #8a827a; font-size: 10px; font-weight: 450; font-variant-numeric: tabular-nums; }
 .conversation-list-email { display: block; overflow: hidden; color: #a64a17; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Structured customer support request types on the FAQ configuration screen. */
+.faq-admin-tabs { display: flex; gap: 7px; margin: 0 0 16px; padding: 5px; border: 1px solid #e8e2da; border-radius: 12px; background: #f2efeb; }
+.faq-admin-tabs button { display: inline-flex; align-items: center; gap: 8px; padding: 10px 13px; border: 1px solid transparent; border-radius: 9px; color: #6c655e; background: transparent; font: inherit; font-size: 11px; font-weight: 650; cursor: pointer; }
+.faq-admin-tabs button.active { border-color: #e9e2dc; color: #9d4516; background: #fff; box-shadow: 0 2px 5px #30291e0a; }
+.faq-admin-tabs button > span:last-child { min-width: 18px; padding: 2px 6px; border-radius: 999px; color: #a64a1c; background: #fff0e5; font-size: 9px; text-align: center; }
+.request-type-intro { display: flex; align-items: flex-start; gap: 9px; margin: 15px 18px 0; padding: 12px 14px; border: 1px solid #f0dfd1; border-radius: 11px; color: #725944; background: #fff8f2; font-size: 11px; line-height: 1.5; }
+.request-type-intro .admin-icon { color: #b45120; }
+.request-type-editor { padding: 15px 18px 18px; }
+.request-type-list { display: grid; gap: 12px; }
+.request-type-card { overflow: hidden; border: 1px solid #e9e2dc; border-radius: 13px; background: #fff; }
+.request-type-card > header { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid #eee9e4; background: #fdfbf9; }
+.request-type-number { display: grid; width: 29px; height: 29px; place-items: center; border-radius: 9px; color: #a64a1c; background: #fff0e5; font-size: 10px; font-weight: 800; }
+.request-type-card > header > div { display: grid; flex: 1; gap: 3px; }
+.request-type-card > header > div strong { color: #302d29; font-size: 12px; }
+.request-type-card > header > div small { color: #837b74; font-size: 10px; }
+.request-type-active { display: inline-flex; align-items: center; gap: 6px; color: #625c55; font-size: 10px; }
+.request-type-active input { accent-color: #e96822; }
+.request-type-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 14px; }
+.request-type-fields .admin-field:last-child { grid-column: 1 / -1; }
+.request-type-fields .admin-field { margin: 0; }
+.request-type-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; padding-top: 14px; border-top: 1px solid #eee9e4; }
+.request-type-footer > span { color: #77716b; font-size: 10px; }
+.sac-support-guidance { display: grid; gap: 5px; padding: 11px 12px; border: 1px solid #f0dfd1; border-radius: 10px; background: #fff8f2; }
+.sac-support-guidance strong { color: #3b342e; font-size: 12px; line-height: 1.45; }
+.sac-support-guidance p { margin: 0; color: #74685d; font-size: 11px; line-height: 1.5; }
+@media (max-width: 700px) { .faq-admin-tabs { overflow-x: auto; } .faq-admin-tabs button { white-space: nowrap; } .request-type-fields { grid-template-columns: 1fr; } .request-type-fields .admin-field:last-child { grid-column: auto; } .request-type-footer { align-items: flex-start; flex-direction: column; } .request-type-footer .admin-cta { width: 100%; } }

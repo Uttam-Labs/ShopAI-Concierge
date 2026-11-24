@@ -22,6 +22,11 @@
   data-support-contact-notice="{{ block.settings.support_contact_notice | escape }}"
   data-support-saved-email-notice="{{ block.settings.support_saved_email_notice | escape }}"
   data-support-success-message="{{ block.settings.support_success_message | escape }}"
+  data-support-issue-type-label="{{ block.settings.support_issue_type_label | escape }}"
+  data-support-type-placeholder="{{ block.settings.support_type_placeholder | escape }}"
+  data-support-other-option="{{ block.settings.support_other_option | escape }}"
+  data-support-details-label="{{ block.settings.support_details_label | escape }}"
+  data-support-details-placeholder="{{ block.settings.support_details_placeholder | escape }}"
 ></div>
 <link rel="stylesheet" href="{{ 'concierge.css' | asset_url }}">
 <script src="{{ 'concierge.js' | asset_url }}" defer></script>
@@ -41,20 +46,25 @@
     { "type": "checkbox", "id": "enable_faq", "label": "Enable FAQs", "default": true },
     { "type": "checkbox", "id": "enable_recommendations", "label": "Enable product recommendations", "default": true },
     { "type": "select", "id": "launcher_icon", "label": "Launcher icon", "default": "chat", "options": [{ "value": "chat", "label": "Chat bubble" }, { "value": "help", "label": "Help" }, { "value": "spark", "label": "Spark" }] },
-    { "type": "header", "content": "Human help request" },
-    { "type": "text", "id": "human_help_label", "label": "Human help button", "default": "Human help" },
-    { "type": "text", "id": "support_title", "label": "Request title", "default": "Would you like a person to help?" },
-    { "type": "textarea", "id": "support_description", "label": "Request description", "default": "Share your contact details and our team will follow up with you." },
+    { "type": "header", "content": "Customer support request" },
+    { "type": "text", "id": "human_help_label", "label": "Support button", "default": "Contact support" },
+    { "type": "text", "id": "support_title", "label": "Request title", "default": "Submit a support request" },
+    { "type": "textarea", "id": "support_description", "label": "Request description", "default": "Tell us what you need help with. Our team will follow up by email." },
     { "type": "text", "id": "support_name_label", "label": "Name field label", "default": "Your name" },
     { "type": "text", "id": "support_name_placeholder", "label": "Name placeholder", "default": "Name" },
     { "type": "text", "id": "support_email_label", "label": "Email field label", "default": "Email for follow-up" },
     { "type": "text", "id": "support_email_placeholder", "label": "Email placeholder", "default": "you@example.com" },
-    { "type": "text", "id": "support_submit_label", "label": "Submit button", "default": "Create support ticket" },
+    { "type": "text", "id": "support_submit_label", "label": "Submit button", "default": "Create support request" },
     { "type": "text", "id": "support_submitting_label", "label": "Submitting button", "default": "Creating ticket…" },
     { "type": "text", "id": "support_cancel_label", "label": "Cancel button", "default": "Cancel" },
     { "type": "text", "id": "support_contact_notice", "label": "Contact details hint", "default": "Please add a name and email so the team can reply to your request." },
     { "type": "text", "id": "support_saved_email_notice", "label": "Saved email hint", "default": "Saved for this chat: {email}. Confirm it or enter a different email." },
-    { "type": "text", "id": "support_success_message", "label": "Ticket confirmation", "default": "Your request is with our support team. Ticket {ticket} has been created." }
+    { "type": "text", "id": "support_success_message", "label": "Ticket confirmation", "default": "Ticket {ticket} created successfully. We’ll contact you soon." },
+    { "type": "text", "id": "support_issue_type_label", "label": "Request type field label", "default": "Select a request type" },
+    { "type": "text", "id": "support_type_placeholder", "label": "Request type placeholder", "default": "Choose a support topic" },
+    { "type": "text", "id": "support_other_option", "label": "Other request option", "default": "Other" },
+    { "type": "text", "id": "support_details_label", "label": "Other issue details label", "default": "Tell us about the issue" },
+    { "type": "text", "id": "support_details_placeholder", "label": "Other issue details placeholder", "default": "Describe what you need help with…" }
   ]
 }
 {% endschema %}

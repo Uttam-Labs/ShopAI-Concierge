@@ -1,7 +1,9 @@
 import OpenAI from "openai";
+import { randomBytes } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import prisma from "../db.server";
 import { authenticate } from "../shopify.server";
+import { normalizeTicketOptions, normalizeTicketPrefix } from "../support.server";
 
 const cors = (origin) => ({
   "Access-Control-Allow-Origin": origin || "*",
@@ -64,9 +66,9 @@ export const loader = async ({ request }) => {
     if (!shop || !/^[a-z0-9][a-z0-9.-]*\.myshopify\.com$/i.test(shop)) return Response.json({ error: "Shopify could not identify this store. Verify the app proxy configuration." }, { status: 400, headers });
     const allowed = (process.env.STOREFRONT_ALLOWED_ORIGINS || "").split(",").map((value) => value.trim()).filter(Boolean);
     if (allowed.length && origin && !allowed.includes(origin)) return Response.json({ error: "This storefront is not allowed." }, { status: 403, headers });
-    const settings = await prisma.assistantSettings.findUnique({ where: { shop }, select: { defaultGreeting: true, faqs: true, humanHandoff: true } });
+    const settings = await prisma.assistantSettings.findUnique({ where: { shop }, select: { defaultGreeting: true, faqs: true, humanHandoff: true, ticketOptions: true } });
     const faqs = settings?.faqs === false ? [] : await prisma.faq.findMany({ where: { shop, active: true, featured: true }, select: { id: true, question: true }, orderBy: { createdAt: "desc" }, take: 6 });
-    return Response.json({ greeting: settings?.defaultGreeting || "Hi there! 👋 Tell me what you’re shopping for, ask about our policies, or track an order.", humanHandoff: settings?.humanHandoff !== false, faqs }, { headers });
+    return Response.json({ greeting: settings?.defaultGreeting || "Hi there! 👋 Tell me what you’re shopping for, ask about our policies, or track an order.", humanHandoff: settings?.humanHandoff !== false, faqs, ticketOptions: normalizeTicketOptions(settings?.ticketOptions) }, { headers });
   } catch (error) {
     console.error("App proxy config request failed", error);
     return Response.json({ error: "Shopify did not verify the app proxy request. Check that the active Shopify app version has the /apps/shopai-concierge proxy enabled." }, { status: error instanceof Response ? error.status : 500, headers });
@@ -88,7 +90,7 @@ export const action = async ({ request }) => {
     verifiedShop = proxyContext.session?.shop?.toLowerCase();
     if (!verifiedShop) return Response.json({ error: "Shopify could not identify this store. Verify the active app proxy configuration." }, { status: 401, headers });
     if (allowed.length && origin && !allowed.includes(origin)) return Response.json({ error: "This storefront is not allowed." }, { status: 403, headers });
-    const { message, shop: bodyShop, sessionId: requestSessionId, customerName, customerEmail, faqId, supportRequest, supportSuccessMessage } = await request.json();
+    const { message, shop: bodyShop, sessionId: requestSessionId, customerName, customerEmail, faqId, supportRequest, supportSuccessMessage, requestTypeId, requestDetails, supportContext } = await request.json();
     const shop = verifiedShop;
     if (typeof message !== "string" || !message.trim() || message.length > 1000) return Response.json({ error: "Please enter a message up to 1,000 characters." }, { status: 400, headers });
     if (!/^[a-z0-9][a-z0-9.-]*\.myshopify\.com$/i.test(shop) || (typeof bodyShop === "string" && bodyShop.toLowerCase() !== shop)) return Response.json({ error: "Invalid shop information." }, { status: 400, headers });
@@ -97,15 +99,33 @@ export const action = async ({ request }) => {
     userMessage = message.trim();
     userCreatedAt = new Date().toISOString();
     identity = { name: typeof customerName === "string" ? customerName : "", email: typeof customerEmail === "string" ? customerEmail : "" };
-    const settings = { recommendations: true, orderLookup: true, humanHandoff: true, faqs: true, responseGuidelines: "" , ...(await prisma.assistantSettings.findUnique({ where: { shop: normalizedShop } }) || {}) };
+    const settings = { recommendations: true, orderLookup: true, humanHandoff: true, faqs: true, responseGuidelines: "", ticketPrefix: "SAC", ticketOptions: [], ...(await prisma.assistantSettings.findUnique({ where: { shop: normalizedShop } }) || {}) };
     const activeFaqs = settings.faqs ? await prisma.faq.findMany({ where: { shop: normalizedShop, active: true }, select: { question: true, answer: true, sourceTitle: true, sourceContent: true }, take: 100 }) : [];
     if (supportRequest === true) {
-      if (!settings.humanHandoff) return Response.json({ error: "Human support is currently unavailable. Please use the store’s contact page." }, { status: 403, headers });
+      if (!settings.humanHandoff) return Response.json({ error: "Customer support requests are currently unavailable. Please use the store’s contact page." }, { status: 403, headers });
       if (!identity.name.trim() || identity.name.length > 120) return Response.json({ error: "Enter your name so the support team knows who they’re helping." }, { status: 400, headers });
       if (identity.email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identity.email)) return Response.json({ error: "Enter a valid email so the support team can follow up." }, { status: 400, headers });
-      const reference = `SAC-${Date.now().toString(36).toUpperCase()}`;
-      await prisma.ticket.create({ data: { reference, shop: normalizedShop, customer: identity.name || "Anonymous shopper", email: identity.email.toLowerCase(), subject: "Human support request", message: userMessage, status: "open" } });
-      const successTemplate = typeof supportSuccessMessage === "string" && supportSuccessMessage.trim() ? supportSuccessMessage.trim().slice(0, 500) : "Your request is with the support team. Ticket {ticket} has been created, and they can follow up at {email}.";
+      const selectedRequestId = String(requestTypeId || "");
+      const requestOptions = normalizeTicketOptions(settings.ticketOptions);
+      const selectedType = selectedRequestId === "other" ? { id: "other", label: "Other", question: "", answer: "" } : requestOptions.find((option) => option.id === selectedRequestId && option.active);
+      if (!selectedType) return Response.json({ error: "Choose a support request type before submitting." }, { status: 400, headers });
+      const details = typeof requestDetails === "string" ? requestDetails.trim().slice(0, 2000) : "";
+      if (selectedType.id === "other" && !details) return Response.json({ error: "Describe the issue so our support team can help." }, { status: 400, headers });
+      const contextMessages = Array.isArray(supportContext) ? supportContext.slice(-12).flatMap((item) => {
+        if (!item || !["user", "assistant"].includes(item.role) || typeof item.content !== "string") return [];
+        const content = item.content.trim().slice(0, 1000);
+        return content ? [{ role: item.role, content }] : [];
+      }) : [];
+      const recentCustomerMessage = [...contextMessages].reverse().find((item) => item.role === "user")?.content;
+      const subject = (selectedType.id === "other" ? details : `${selectedType.label}${recentCustomerMessage ? ` · ${recentCustomerMessage}` : ""}`).replace(/\s+/g, " ").slice(0, 150);
+      const transcript = contextMessages.map((item) => `${item.role === "user" ? "Customer" : "Concierge"}: ${item.content}`).join("\n");
+      const ticketMessage = selectedType.id === "other"
+        ? `Request type: Other\nCustomer details: ${details}${transcript ? `\n\nRecent chat context:\n${transcript}` : ""}`
+        : `Request type: ${selectedType.label}${selectedType.question ? `\nSupport question: ${selectedType.question}` : ""}${selectedType.answer ? `\nCustomer guidance shown: ${selectedType.answer}` : ""}${transcript ? `\n\nRecent chat context:\n${transcript}` : ""}`;
+      const dateCode = new Date().toISOString().slice(0, 10).replaceAll("-", "");
+      const reference = `${normalizeTicketPrefix(settings.ticketPrefix)}-${dateCode}-${randomBytes(4).toString("hex").toUpperCase()}`;
+      await prisma.ticket.create({ data: { reference, shop: normalizedShop, customer: identity.name, email: identity.email.toLowerCase(), subject, message: ticketMessage, status: "open" } });
+      const successTemplate = typeof supportSuccessMessage === "string" && supportSuccessMessage.trim() ? supportSuccessMessage.trim().slice(0, 500) : "Request {ticket} created. We’ll contact you soon.";
       const answer = successTemplate.replaceAll("{ticket}", reference).replaceAll("{email}", identity.email);
       await saveConversation(normalizedShop, sessionId, userMessage, answer, identity, userCreatedAt);
       return Response.json({ answer, ticket: { reference } }, { headers });
@@ -162,7 +182,8 @@ export const action = async ({ request }) => {
       return Response.json({ answer }, { headers });
     }
     if (settings.humanHandoff && /refund not received|dispute|chargeback|angry|frustrated|unacceptable|complaint|speak to (a )?(human|person|agent)|talk to (a )?(human|person|agent)|broken|damaged/i.test(userMessage)) {
-      const reference = `SAC-${Date.now().toString(36).toUpperCase()}`;
+      const dateCode = new Date().toISOString().slice(0, 10).replaceAll("-", "");
+      const reference = `${normalizeTicketPrefix(settings.ticketPrefix)}-${dateCode}-${randomBytes(4).toString("hex").toUpperCase()}`;
       await prisma.ticket.create({ data: { reference, shop: normalizedShop, customer: identity.name || "Anonymous shopper", email: identity.email || email || null, subject: userMessage.slice(0, 100), message: userMessage, status: "open" } });
       const answer = `I’ve sent this to the store support team. Your ticket number is ${reference}.`;
       await saveConversation(normalizedShop, sessionId, userMessage, answer, identity, userCreatedAt);

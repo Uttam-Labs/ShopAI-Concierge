@@ -23,7 +23,9 @@
     panel.setAttribute("aria-modal", "false");
     panel.setAttribute("aria-label", "ShopAI customer support chat");
     setThemeVariables(panel, { accent, background, textColor, fontSize, width });
-    panel.innerHTML = `<div class="sac-head"><div class="sac-brand"><span class="sac-brand-mark">✦</span><div class="sac-brand-copy"><strong>${escapeHtml(root.dataset.title || "How can we help?")}</strong><span class="sac-live">Here to help</span></div></div><button class="sac-close" type="button" aria-label="Close chat">×</button></div><div class="sac-welcome"><span>Product advice</span><i></i><span>Order updates</span><i></i><span>Store support</span><button type="button" class="sac-help-button" aria-label="Request help from a person"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11.5a7.5 7.5 0 0 1-8 7.5 8 8 0 0 1-3.5-.8L4 20l1.2-3.7A7.4 7.4 0 0 1 4 12.5 7.5 7.5 0 0 1 12 5a7.5 7.5 0 0 1 8 6.5Z"/><path d="M12 9v4m0 3h.01"/></svg><span>${escapeHtml(root.dataset.humanHelpLabel || "Human help")}</span></button></div><div class="sac-messages" aria-live="polite" aria-relevant="additions text"><div class="sac-message-row sac-assistant-row sac-initial-greeting"><span class="sac-avatar" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4.5" y="8" width="15" height="11" rx="4"/><path d="M12 4v4M9 13h.01M15 13h.01M9 16h6M3 12v3M21 12v3"/></svg></span><div class="sac-message-content"><div class="sac-msg sac-greeting">Hi there! 👋 Tell me what you’re shopping for, ask about our policies, or track an order.</div><time class="sac-message-time" data-time="${Date.now()}">just now</time></div></div><div class="sac-faqs" hidden><div class="sac-faq-heading"><span>POPULAR QUESTIONS</span><small>Choose a question</small></div><div class="sac-faq-list"></div></div></div><div class="sac-form-wrap"><form class="sac-form"><textarea class="sac-input" rows="1" maxlength="1000" autocomplete="off" placeholder="Ask us anything…" aria-label="Your message"></textarea><button class="sac-send" type="submit" aria-label="Send message"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 2 11 13"/><path d="m22 2-7 20-4-9-9-4Z"/></svg></button></form><div class="sac-footer">Powered by <span>ShopAI Concierge</span></div></div><div class="sac-support-backdrop" hidden><section class="sac-support-card" role="dialog" aria-modal="true" aria-labelledby="sac-support-title"><button type="button" class="sac-support-close" aria-label="Close support request">×</button><span class="sac-support-icon">✦</span><p class="sac-support-kicker">STORE SUPPORT</p><h3 id="sac-support-title">${escapeHtml(root.dataset.supportTitle || "Would you like a person to help?")}</h3><p class="sac-support-copy">${escapeHtml(root.dataset.supportDescription || "Share your contact details and our team will follow up with you.")}</p><form class="sac-support-form"><label>${escapeHtml(root.dataset.supportNameLabel || "Your name")}<input name="customerName" autocomplete="name" maxlength="120" placeholder="${escapeHtml(root.dataset.supportNamePlaceholder || "Name")}" required></label><label>${escapeHtml(root.dataset.supportEmailLabel || "Email for follow-up")}<input name="customerEmail" type="email" autocomplete="email" maxlength="254" placeholder="${escapeHtml(root.dataset.supportEmailPlaceholder || "you@example.com")}" required></label><div class="sac-support-notice" aria-live="polite"></div><footer><button type="button" class="sac-support-cancel">${escapeHtml(root.dataset.supportCancelLabel || "Cancel")}</button><button type="submit" class="sac-support-submit">${escapeHtml(root.dataset.supportSubmitLabel || "Create support ticket")}</button></footer></form></section></div>`;
+    const supportButtonLabel = root.dataset.humanHelpLabel === "Human help" ? "Contact support" : (root.dataset.humanHelpLabel || "Contact support");
+    const supportTitle = root.dataset.supportTitle === "Would you like a person to help?" ? "Submit a support request" : (root.dataset.supportTitle || "Submit a support request");
+    panel.innerHTML = `<div class="sac-head"><div class="sac-brand"><span class="sac-brand-mark">✦</span><div class="sac-brand-copy"><strong>${escapeHtml(root.dataset.title || "How can we help?")}</strong><span class="sac-live">Here to help</span></div></div><button class="sac-close" type="button" aria-label="Close chat">×</button></div><div class="sac-welcome"><span>Product advice</span><i></i><span>Order updates</span><i></i><span>Store support</span><button type="button" class="sac-help-button" aria-label="Contact store support"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11.5a7.5 7.5 0 0 1-8 7.5 8 8 0 0 1-3.5-.8L4 20l1.2-3.7A7.4 7.4 0 0 1 4 12.5 7.5 7.5 0 0 1 12 5a7.5 7.5 0 0 1 8 6.5Z"/><path d="M12 9v4m0 3h.01"/></svg><span>${escapeHtml(supportButtonLabel)}</span></button></div><div class="sac-messages" aria-live="polite" aria-relevant="additions text"><div class="sac-message-row sac-assistant-row sac-initial-greeting"><span class="sac-avatar" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4.5" y="8" width="15" height="11" rx="4"/><path d="M12 4v4M9 13h.01M15 13h.01M9 16h6M3 12v3M21 12v3"/></svg></span><div class="sac-message-content"><div class="sac-msg sac-greeting">Hi there! 👋 Tell me what you’re shopping for, ask about our policies, or track an order.</div><time class="sac-message-time" data-time="${Date.now()}">just now</time></div></div><div class="sac-faqs" hidden><div class="sac-faq-heading"><span>POPULAR QUESTIONS</span><small>Choose a question</small></div><div class="sac-faq-list"></div></div></div><div class="sac-form-wrap"><form class="sac-form"><textarea class="sac-input" rows="1" maxlength="1000" autocomplete="off" placeholder="Ask us anything…" aria-label="Your message"></textarea><button class="sac-send" type="submit" aria-label="Send message"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 2 11 13"/><path d="m22 2-7 20-4-9-9-4Z"/></svg></button></form><div class="sac-footer">Powered by <span>ShopAI Concierge</span></div></div><div class="sac-support-backdrop" hidden><section class="sac-support-card" role="dialog" aria-modal="true" aria-labelledby="sac-support-title"><button type="button" class="sac-support-close" aria-label="Close support request">×</button><span class="sac-support-icon">✦</span><p class="sac-support-kicker">CUSTOMER SUPPORT</p><h3 id="sac-support-title">${escapeHtml(supportTitle)}</h3><p class="sac-support-copy">${escapeHtml(root.dataset.supportDescription || "Tell us what you need help with. Our team will follow up by email.")}</p><form class="sac-support-form"><label>${escapeHtml(root.dataset.supportNameLabel || "Your name")}<input name="customerName" autocomplete="name" maxlength="120" placeholder="${escapeHtml(root.dataset.supportNamePlaceholder || "Name")}" required></label><label>${escapeHtml(root.dataset.supportEmailLabel || "Email for follow-up")}<input name="customerEmail" type="email" autocomplete="email" maxlength="254" placeholder="${escapeHtml(root.dataset.supportEmailPlaceholder || "you@example.com")}" required></label><label>${escapeHtml(root.dataset.supportIssueTypeLabel || "Select a request type")}<select name="requestTypeId" class="sac-support-select" required><option value="" selected disabled>${escapeHtml(root.dataset.supportTypePlaceholder || "Choose a support topic")}</option><option value="other">${escapeHtml(root.dataset.supportOtherOption || "Other")}</option></select></label><div class="sac-support-guidance" hidden><strong class="sac-support-question"></strong><p class="sac-support-answer"></p></div><label class="sac-support-other-field" hidden>${escapeHtml(root.dataset.supportDetailsLabel || "Tell us about the issue")}<textarea name="requestDetails" rows="3" maxlength="2000" placeholder="${escapeHtml(root.dataset.supportDetailsPlaceholder || "Describe what you need help with…")}"></textarea></label><div class="sac-support-notice" aria-live="polite"></div><footer><button type="button" class="sac-support-cancel">${escapeHtml(root.dataset.supportCancelLabel || "Cancel")}</button><button type="submit" class="sac-support-submit">${escapeHtml(root.dataset.supportSubmitLabel || "Create support request")}</button></footer></form></section></div>`;
 
     const launcher = document.createElement("button");
     launcher.type = "button";
@@ -43,6 +45,13 @@
     const initialGreeting = panel.querySelector(".sac-initial-greeting");
     const supportBackdrop = panel.querySelector(".sac-support-backdrop");
     const supportForm = panel.querySelector(".sac-support-form");
+    const supportIssueType = supportForm.elements.requestTypeId;
+    const supportOtherField = panel.querySelector(".sac-support-other-field");
+    const supportIssueDetails = supportForm.elements.requestDetails;
+    const supportGuidance = panel.querySelector(".sac-support-guidance");
+    const supportQuestion = panel.querySelector(".sac-support-question");
+    const supportAnswer = panel.querySelector(".sac-support-answer");
+    let supportTypes = [];
     const enableFaqs = root.dataset.enableFaq !== "false";
     const enableRecommendations = root.dataset.enableRecommendations !== "false";
     const formWrap = panel.querySelector(".sac-form-wrap");
@@ -86,6 +95,14 @@
           }
           if (config.humanHandoff === false) panel.querySelector(".sac-help-button").hidden = true;
           if (enableFaqs && Array.isArray(config.faqs) && config.faqs.length) renderFaqs(config.faqs, faqSection, faqList, sendMessage);
+          supportTypes = Array.isArray(config.ticketOptions) ? config.ticketOptions.filter((item) => item && item.active !== false && item.id && item.label).slice(0, 20) : [];
+          const select = supportForm.elements.requestTypeId;
+          supportTypes.forEach((item) => {
+            const option = document.createElement("option");
+            option.value = String(item.id);
+            option.textContent = String(item.label);
+            select.insertBefore(option, select.querySelector('option[value="other"]'));
+          });
         })
         .catch((error) => console.error("ShopAI settings request failed", error));
     }
@@ -149,11 +166,28 @@
       const supportValues = supportForm.elements;
       supportValues.customerName.value = identity?.name === "Anonymous shopper" ? "" : identity?.name || "";
       supportValues.customerEmail.value = identity?.email || "";
+      supportIssueType.value = "";
+      supportOtherField.hidden = true;
+      supportGuidance.hidden = true;
+      supportQuestion.textContent = "";
+      supportAnswer.textContent = "";
+      supportIssueDetails.required = false;
+      supportIssueDetails.value = "";
       panel.querySelector(".sac-support-notice").textContent = identity?.email
         ? (root.dataset.supportSavedEmailNotice || "Saved for this chat: {email}. Confirm it or enter a different email.").replace("{email}", identity.email)
         : (root.dataset.supportContactNotice || "Please add a name and email so the team can reply to your request.");
       supportBackdrop.hidden = false;
       (identity?.email ? supportValues.customerName : supportValues.customerEmail).focus();
+    });
+    supportIssueType.addEventListener("change", () => {
+      const otherIssue = supportIssueType.value === "other";
+      supportOtherField.hidden = !otherIssue;
+      supportIssueDetails.required = otherIssue;
+      const selected = supportTypes.find((item) => item.id === supportIssueType.value);
+      supportGuidance.hidden = !selected;
+      supportQuestion.textContent = selected?.question || "";
+      supportAnswer.textContent = selected?.answer || "";
+      if (otherIssue) supportIssueDetails.focus();
     });
     panel.querySelector(".sac-support-close").addEventListener("click", closeSupport);
     panel.querySelector(".sac-support-cancel").addEventListener("click", closeSupport);
@@ -165,12 +199,16 @@
       const values = new FormData(supportForm);
       const name = String(values.get("customerName") || "").trim();
       const email = String(values.get("customerEmail") || "").trim().toLowerCase();
+      const requestTypeId = String(values.get("requestTypeId") || "");
+      const requestDetails = String(values.get("requestDetails") || "").trim();
+      if (!requestTypeId) { notice.textContent = "Choose a support topic before creating your request."; supportIssueType.focus(); return; }
+      if (requestTypeId === "other" && !requestDetails) { notice.textContent = "Please describe what you need help with."; supportIssueDetails.focus(); return; }
       submit.disabled = true;
       submit.textContent = root.dataset.supportSubmittingLabel || "Creating ticket…";
       notice.textContent = "";
       try {
-        const ticketMessage = "I would like help from a person.";
-        const response = await fetch(apiEndpoint, { method: "POST", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify({ message: ticketMessage, shop, sessionId, customerName: name, customerEmail: email, supportRequest: true, supportSuccessMessage: root.dataset.supportSuccessMessage || "" }) });
+        const ticketMessage = "I would like to submit a support request.";
+        const response = await fetch(apiEndpoint, { method: "POST", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify({ message: ticketMessage, shop, sessionId, customerName: name, customerEmail: email, supportRequest: true, requestTypeId, requestDetails, supportContext: chatHistory.slice(-12).map(({ role, content }) => ({ role, content })), supportSuccessMessage: root.dataset.supportSuccessMessage || "" }) });
         const data = await readApiJson(response, "support ticket");
         if (!response.ok) throw new Error(data.error || "We couldn’t create your ticket. Please try again.");
         identity = { name, email };

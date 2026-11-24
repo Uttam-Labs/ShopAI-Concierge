@@ -193,3 +193,12 @@
   .sac-panel .sac-support-form footer { display: grid; grid-template-columns: 1fr 1fr; }
   .sac-panel .sac-support-form footer button { width: 100%; }
 }
+
+.sac-panel .sac-support-form select,
+.sac-panel .sac-support-form textarea { display: block; width: 100%; min-width: 0; margin: 0; padding: 10px 12px; border: 1px solid #e5ddd6; border-radius: 10px; outline: 0; color: #27231f; background: #fff; box-shadow: 0 1px 2px #24170c0a; font: inherit; font-size: 13px; line-height: 1.45; transition: border-color .16s, box-shadow .16s; }
+.sac-panel .sac-support-form select { min-height: 43px; padding-right: 34px; cursor: pointer; }
+.sac-panel .sac-support-form textarea { min-height: 88px; resize: vertical; }
+.sac-panel .sac-support-form select:focus,
+.sac-panel .sac-support-form textarea:focus { border-color: var(--sac-accent, #f97316); box-shadow: 0 0 0 3px color-mix(in srgb, var(--sac-accent, #f97316) 15%, transparent); }
+.sac-panel .sac-support-form textarea::placeholder { color: #a29a92; opacity: 1; }
+.sac-panel .sac-support-form [hidden] { display: none !important; }

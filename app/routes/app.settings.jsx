@@ -4,6 +4,7 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import AdminPageHeader, { AdminIcon } from "../components/AdminPageHeader";
 import { useActionToast } from "../components/AdminToast";
+import { normalizeTicketPrefix } from "../support.server";
 
 const defaults = {
   recommendations: true,
@@ -12,6 +13,7 @@ const defaults = {
   faqs: true,
   defaultGreeting: "Hi there! 👋 Tell me what you’re shopping for, ask about our policies, or track an order.",
   responseGuidelines: "Be concise, helpful, and on-brand. Use only approved store information. Never invent products, stock, policies, tracking details, or discounts.",
+  ticketPrefix: "SAC",
 };
 
 export const loader = async ({ request }) => {
@@ -31,6 +33,7 @@ export const action = async ({ request }) => {
     faqs: form.get("faqs") === "on",
     defaultGreeting: String(form.get("defaultGreeting") || defaults.defaultGreeting).trim().slice(0, 280),
     responseGuidelines: String(form.get("responseGuidelines") || defaults.responseGuidelines).trim().slice(0, 2000),
+    ticketPrefix: normalizeTicketPrefix(form.get("ticketPrefix")),
   };
   const prisma = (await import("../db.server.js")).default;
   try {
@@ -45,7 +48,7 @@ export const action = async ({ request }) => {
 const features = [
   ["recommendations", "Product recommendations", "Show up to four relevant products when the store catalog matches a shopper’s request.", "book"],
   ["orderLookup", "Order tracking", "Let customers securely check fulfillment status using their order number and checkout email.", "list"],
-  ["humanHandoff", "Human support handoff", "Allow the assistant to direct unresolved or sensitive issues to your support team.", "chat"],
+  ["humanHandoff", "Customer support requests", "Let shoppers submit a structured request to your support team.", "chat"],
   ["faqs", "Approved FAQ answers", "Use active answers from your FAQ library when responding to shoppers.", "check"],
 ];
 
@@ -64,6 +67,10 @@ export default function Settings({ loaderData }) {
           <header className="settings-card-heading"><span className="settings-card-icon"><AdminIcon name="chat" size={19}/></span><div><h2>Chat experience</h2><p>Set the welcome message customers see and how the assistant should sound.</p></div></header>
           <label className="settings-field">Welcome message<textarea className="admin-text-input settings-greeting" name="defaultGreeting" defaultValue={settings.defaultGreeting} maxLength={280} rows={3}/><small>This is shown when a shopper opens the chat for the first time.</small></label>
           <label className="settings-field">Answer guidelines<textarea className="admin-text-input settings-guidelines" name="responseGuidelines" defaultValue={settings.responseGuidelines} maxLength={2000} rows={5}/><small>These guidelines are combined with the assistant’s safety rules and approved store content.</small></label>
+        </section>
+        <section className="settings-card">
+          <header className="settings-card-heading"><span className="settings-card-icon"><AdminIcon name="ticket" size={19}/></span><div><h2>Support ticket IDs</h2><p>Choose the prefix shown on customer confirmations and in your ticket inbox.</p></div></header>
+          <label className="settings-field">Ticket ID prefix<input className="admin-text-input" name="ticketPrefix" defaultValue={settings.ticketPrefix} maxLength={10} pattern="[A-Za-z0-9-]+" placeholder="SAC"/><small>Example: SAC-20261124-AB12CD34. Use up to 10 letters, numbers, or hyphens.</small></label>
         </section>
         <section className="settings-card">
           <header className="settings-card-heading"><span className="settings-card-icon"><AdminIcon name="settings" size={19}/></span><div><h2>Shopper features</h2><p>Turn capabilities on or off for the storefront chat.</p></div></header>
