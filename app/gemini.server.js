@@ -7,15 +7,15 @@ export function hasGeminiKey() {
   return Boolean(process.env.GEMINI_API_KEY);
 }
 
-function getGemini() {
-  if (!hasGeminiKey()) throw new Error("Gemini is not configured. Add GEMINI_API_KEY to the server environment.");
-  return new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+function getGemini(apiKey = process.env.GEMINI_API_KEY) {
+  if (!apiKey) throw new Error("Gemini is not configured. Add a Gemini API key in Assistant settings or GEMINI_API_KEY to the server environment.");
+  return new GoogleGenAI({ apiKey });
 }
 
-export async function embedTexts(texts, taskType) {
+export async function embedTexts(texts, taskType, apiKey = process.env.GEMINI_API_KEY) {
   const values = texts.map((value) => String(value || "").trim()).filter(Boolean);
   if (!values.length) return [];
-  const result = await getGemini().models.embedContent({
+  const result = await getGemini(apiKey).models.embedContent({
     model: EMBEDDING_MODEL,
     contents: values,
     config: { taskType, outputDimensionality: EMBEDDING_DIMENSIONS },
@@ -27,8 +27,10 @@ export async function embedTexts(texts, taskType) {
   return embeddings;
 }
 
-export async function generateGroundedAnswer({ systemInstruction, prompt, temperature = 0.2 }) {
-  const result = await getGemini().models.generateContent({
+export async function generateGroundedAnswer({ systemInstruction, prompt, temperature = 0.2, apiKey = process.env.GEMINI_API_KEY }) {
+  if (!apiKey) throw new Error("Gemini is not configured.");
+  const client = getGemini(apiKey);
+  const result = await client.models.generateContent({
     model: process.env.GEMINI_CHAT_MODEL || "gemini-3.5-flash-lite",
     contents: prompt,
     config: { systemInstruction, temperature, maxOutputTokens: 700 },

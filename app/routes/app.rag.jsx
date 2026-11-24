@@ -4,7 +4,8 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import AdminPageHeader, { AdminIcon } from "../components/AdminPageHeader";
 import { useActionToast } from "../components/AdminToast";
-import { embedTexts, hasGeminiKey } from "../gemini.server";
+import { embedTexts } from "../gemini.server";
+import { resolveEmbeddingKey } from "../ai.server";
 import { createSupabaseServerClient, hasSupabaseServerConfig } from "../supabase.server";
 
 const parseList = (value, fallback = []) => { try { const parsed = JSON.parse(String(value || "")); return Array.isArray(parsed) ? parsed : fallback; } catch { return fallback; } };
@@ -66,7 +67,9 @@ export const action = async ({ request }) => {
     console.error("Knowledge save failed", error);
     return { error: "We couldn’t save these knowledge sources. Please try again." };
   }
-  if (!hasGeminiKey() || !hasSupabaseServerConfig()) return { saved: true, indexed: false, selectedCount: productIds.length + collectionIds.length + pageIds.length + policyIds.length + customSources.length };
+  const prismaSettings = await prisma.assistantSettings.findUnique({ where: { shop: session.shop }, select: { aiProvider: true, aiApiKeyEncrypted: true } });
+  const embeddingKey = resolveEmbeddingKey(prismaSettings);
+  if (!embeddingKey || !hasSupabaseServerConfig()) return { saved: true, indexed: false, selectedCount: productIds.length + collectionIds.length + pageIds.length + policyIds.length + customSources.length, error: "Sources were saved, but indexing needs a Gemini API key and the Supabase server key. Add GEMINI_API_KEY in Vercel or select Gemini in Assistant settings." };
   try {
     const supabase = createSupabaseServerClient();
     const docs = [];
@@ -86,7 +89,7 @@ export const action = async ({ request }) => {
     const rows = [];
     for (let i = 0; i < docs.length; i += 100) {
       const batch = docs.slice(i, i + 100);
-      const embeddings = await embedTexts(batch.map((doc) => `${doc.title}\n${doc.content}`.slice(0, 6000)), "RETRIEVAL_DOCUMENT");
+      const embeddings = await embedTexts(batch.map((doc) => `${doc.title}\n${doc.content}`.slice(0, 6000)), "RETRIEVAL_DOCUMENT", embeddingKey);
       batch.forEach((doc, index) => rows.push({ ...doc, metadata: { ...doc.metadata, embedding_model: process.env.GEMINI_EMBEDDING_MODEL || "gemini-embedding-001" }, shop_domain: session.shop, embedding: embeddings[index] }));
     }
     if (rows.length) {

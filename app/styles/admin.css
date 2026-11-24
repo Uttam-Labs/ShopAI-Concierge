@@ -313,6 +313,12 @@ input[type="checkbox"] { width: 17px; height: 17px; margin-right: 8px; vertical-
 .settings-connection em { color: #557b5b; font-size: 9px; font-style: normal; font-weight: 650; text-align: right; }
 .settings-connection-dot, .dashboard-health-dot { width: 8px; height: 8px; flex: 0 0 8px; border-radius: 50%; background: #52a268; box-shadow: 0 0 0 3px #eaf4ec; }
 .settings-connection-dot.is-off, .dashboard-health-dot.pending { background: #dc8a35; box-shadow: 0 0 0 3px #fff1df; }
+.ai-provider-status { display: flex; align-items: center; gap: 10px; margin-top: 16px; padding: 12px 14px; border: 1px solid #e8e2da; border-radius: 12px; background: #faf9f7; }
+.ai-provider-status.connected { border-color: #d6ead9; background: #f5fbf5; }
+.ai-provider-status.disconnected .settings-connection-dot { background: #aaa29a; box-shadow: 0 0 0 3px #eeeae5; }
+.ai-provider-status > span:last-child { display: grid; gap: 3px; }
+.ai-provider-status strong { color: #302d29; font-size: 11px; }
+.ai-provider-status small { color: #77716b; font-size: 10px; line-height: 1.45; }
 .dashboard-stat-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 16px 0; }
 .dashboard-stat-card { display: flex; min-width: 0; align-items: center; gap: 11px; padding: 15px; border: 1px solid #e8e2da; border-radius: 14px; color: inherit; background: #fff; text-decoration: none; box-shadow: 0 3px 14px #30291e08; transition: transform .18s, border-color .18s, box-shadow .18s; }
 .dashboard-stat-card:hover { transform: translateY(-2px); border-color: #ecc3a9; box-shadow: 0 8px 22px #30291e10; }

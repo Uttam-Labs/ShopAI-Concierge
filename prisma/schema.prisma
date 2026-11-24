@@ -90,6 +90,8 @@ model KnowledgeConfig {
 
 model AssistantSettings {
   shop               String   @id
+  aiProvider         String   @default("gemini")
+  aiApiKeyEncrypted  String?
   recommendations    Boolean  @default(true)
   orderLookup        Boolean  @default(true)
   orderEmailRequired Boolean  @default(true)
