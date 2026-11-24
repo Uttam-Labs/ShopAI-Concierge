@@ -55,7 +55,10 @@
     orderButton.className = "sac-order-button";
     orderButton.hidden = true;
     orderButton.innerHTML = '<span aria-hidden="true">↗</span><span>Track an order</span>';
-    panel.querySelector(".sac-welcome").insertBefore(orderButton, panel.querySelector(".sac-help-button"));
+    const welcomeActions = document.createElement("div");
+    welcomeActions.className = "sac-welcome-actions";
+    welcomeActions.append(orderButton, panel.querySelector(".sac-help-button"));
+    panel.querySelector(".sac-welcome").append(welcomeActions);
     const orderBackdrop = panel.querySelector(".sac-order-backdrop");
     const orderForm = panel.querySelector(".sac-order-form");
     const orderNotice = panel.querySelector(".sac-order-notice");
@@ -100,7 +103,10 @@
     };
     if (chatHistory.length) {
       initialGreeting.remove();
-      chatHistory.forEach((item) => addMessage(messages, item.content, item.role === "user" ? "user" : "assistant", item.createdAt));
+      chatHistory.forEach((item) => {
+        const restored = addMessage(messages, item.content, item.role === "user" ? "user" : "assistant", item.createdAt);
+        if (item.ticketReference && item.role === "assistant") addTicketReference(restored.row, item.ticketReference);
+      });
     } else {
       const greeting = initialGreeting.querySelector(".sac-greeting").textContent;
       chatHistory.push({ role: "assistant", content: greeting, createdAt: Date.now() });
@@ -203,13 +209,16 @@
       const orderNumberValue = String(new FormData(orderForm).get("orderNumber") || "").trim().replace(/^#/, "");
       const emailValue = String(new FormData(orderForm).get("customerEmail") || "").trim().toLowerCase();
       if (!/^[A-Za-z0-9-]{1,30}$/.test(orderNumberValue)) { orderNotice.textContent = "Enter a valid order number, such as 1001."; return; }
+      if (!/^[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?(?:\.[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?)+$/i.test(emailValue) || emailValue.includes("..")) { orderNotice.textContent = "Enter the valid email address used at checkout."; orderForm.elements.customerEmail.focus(); return; }
       submit.disabled = true;
       submit.textContent = "Checking order…";
       orderNotice.textContent = "";
       orderResult.hidden = true;
       const customerText = `Track order #${orderNumberValue}`;
+      closeOrderLookup();
       addMessage(messages, customerText, "user");
       chatHistory.push({ role: "user", content: customerText, createdAt: Date.now() });
+      persistChat();
       const pending = addMessage(messages, "", "assistant pending");
       pending.bubble.innerHTML = '<span class="sac-typing" aria-hidden="true"><i></i><i></i><i></i></span><span class="sac-sr-only">Checking your order</span>';
       try {
@@ -229,9 +238,10 @@
         persistChat();
       } catch (error) {
         pending.row.remove();
-        orderNotice.textContent = error.message || "Order tracking is temporarily unavailable. Please try again.";
-        const reply = addMessage(messages, orderNotice.textContent, "assistant");
-        chatHistory.push({ role: "assistant", content: orderNotice.textContent, createdAt: Date.now() });
+        const errorMessage = error.message || "Order tracking is temporarily unavailable. Please try again.";
+        orderNotice.textContent = errorMessage;
+        const reply = addMessage(messages, errorMessage, "assistant");
+        chatHistory.push({ role: "assistant", content: errorMessage, createdAt: Date.now() });
         reply.bubble.classList.add("error");
         persistChat();
       } finally {
@@ -327,23 +337,36 @@
       submit.disabled = true;
       submit.textContent = root.dataset.supportSubmittingLabel || "Creating ticket…";
       notice.textContent = "";
+      const selectedType = supportTypes.find((item) => item.id === requestTypeId);
+      const ticketMessage = `Support request: ${selectedType?.label || (requestTypeId === "other" ? "Other" : "Customer support")}`;
+      closeSupport();
+      addMessage(messages, ticketMessage, "user");
+      chatHistory.push({ role: "user", content: ticketMessage, createdAt: Date.now() });
+      persistChat();
+      const pending = addMessage(messages, "", "assistant pending");
+      pending.bubble.setAttribute("aria-label", "Creating your support ticket");
+      pending.bubble.innerHTML = '<span class="sac-typing" aria-hidden="true"><i></i><i></i><i></i></span><span class="sac-sr-only">Creating your support ticket</span>';
       try {
-        const ticketMessage = "I would like to submit a support request.";
-        const response = await fetch(apiEndpoint, { method: "POST", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify({ message: ticketMessage, shop, sessionId, customerName: name, customerEmail: email, supportRequest: true, requestTypeId, requestDetails, supportContext: chatHistory.slice(-12).map(({ role, content }) => ({ role, content })), supportSuccessMessage: root.dataset.supportSuccessMessage || "" }) });
+        const supportContext = chatHistory.slice(0, -1).slice(-12).map(({ role, content }) => ({ role, content }));
+        const response = await fetch(apiEndpoint, { method: "POST", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify({ message: ticketMessage, shop, sessionId, customerName: name, customerEmail: email, supportRequest: true, requestTypeId, requestDetails, supportContext, supportSuccessMessage: root.dataset.supportSuccessMessage || "" }) });
         const data = await readApiJson(response, "support ticket");
         if (!response.ok) throw new Error(data.error || "We couldn’t create your ticket. Please try again.");
         identity = { name, email };
         const ticketReference = String(data.ticket?.reference || "").trim();
         if (!ticketReference) throw new Error("We couldn’t confirm that your ticket was saved. Please try again. If this keeps happening, contact the store team directly.");
-        const ticketReply = String(data.answer || "Your support request has been sent. We’ll contact you soon.");
-        const confirmedReply = ticketReply.toLowerCase().includes(ticketReference.toLowerCase()) ? ticketReply : `${ticketReply} Ticket number: ${ticketReference}.`;
-        chatHistory.push({ role: "user", content: ticketMessage, createdAt: Date.now() }, { role: "assistant", content: confirmedReply, createdAt: Date.now() });
+        const confirmedReply = String(data.answer || "Your support request has been received. Our team will follow up with you by email soon.");
+        pending.row.remove();
+        const reply = addMessage(messages, confirmedReply, "assistant");
+        addTicketReference(reply.row, ticketReference);
+        chatHistory.push({ role: "assistant", content: confirmedReply, createdAt: Date.now(), ticketReference });
         persistChat();
-        addMessage(messages, ticketMessage, "user");
-        addMessage(messages, confirmedReply, "assistant");
-        closeSupport();
       } catch (error) {
-        notice.textContent = error.message || "We couldn’t create your ticket. Please try again.";
+        const errorMessage = error.message || "We couldn’t create your ticket. Please try again.";
+        pending.row.remove();
+        const reply = addMessage(messages, errorMessage, "assistant");
+        reply.bubble.classList.add("error");
+        chatHistory.push({ role: "assistant", content: errorMessage, createdAt: Date.now() });
+        persistChat();
       } finally {
         submit.disabled = false;
         submit.textContent = root.dataset.supportSubmitLabel || "Create support ticket";
@@ -414,6 +437,44 @@
     if (hours < 24) return `${hours} hr ago`;
     const days = Math.floor(hours / 24);
     return `${days}d ago`;
+  }
+  function addTicketReference(row, reference) {
+    const content = row.querySelector(".sac-message-content");
+    const time = content?.querySelector(".sac-message-time");
+    if (!content) return;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "sac-ticket-reference";
+    button.setAttribute("aria-label", `Copy ticket number ${reference}`);
+    const label = document.createElement("span");
+    label.className = "sac-ticket-reference-label";
+    label.textContent = "TICKET NUMBER";
+    const number = document.createElement("strong");
+    number.textContent = reference;
+    const copy = document.createElement("span");
+    copy.className = "sac-ticket-copy-label";
+    copy.textContent = "Copy";
+    button.append(label, number, copy);
+    button.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(reference);
+        copy.textContent = "Copied ✓";
+      } catch {
+        const temporary = document.createElement("textarea");
+        temporary.value = reference;
+        temporary.setAttribute("readonly", "");
+        temporary.style.position = "fixed";
+        temporary.style.opacity = "0";
+        document.body.append(temporary);
+        temporary.select();
+        const copied = document.execCommand("copy");
+        temporary.remove();
+        copy.textContent = copied ? "Copied ✓" : "Select to copy";
+      }
+      window.setTimeout(() => { copy.textContent = "Copy"; }, 1800);
+    });
+    if (time) content.insertBefore(button, time);
+    else content.append(button);
   }
   function renderFaqs(faqs, section, list, sendMessage) {
     list.replaceChildren();

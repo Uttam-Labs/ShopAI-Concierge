@@ -119,8 +119,10 @@ export const loader = async ({ request }) => {
     if (!shop || !/^[a-z0-9][a-z0-9.-]*\.myshopify\.com$/i.test(shop)) return Response.json({ error: "Shopify could not identify this store. Verify the app proxy configuration." }, { status: 400, headers });
     const allowed = (process.env.STOREFRONT_ALLOWED_ORIGINS || "").split(",").map((value) => value.trim()).filter(Boolean);
     if (allowed.length && origin && !allowed.includes(origin)) return Response.json({ error: "This storefront is not allowed." }, { status: 403, headers });
-    const settings = await prisma.assistantSettings.findUnique({ where: { shop }, select: { defaultGreeting: true, faqs: true, orderLookup: true, humanHandoff: true, ticketOptions: true } });
-    const activeFaqs = settings?.faqs === false ? [] : await prisma.faq.findMany({ where: { shop, active: true }, select: { id: true, question: true, featured: true }, orderBy: { createdAt: "desc" }, take: 100 });
+    const settings = await prisma.assistantSettings.findUnique({ where: { shop }, select: { defaultGreeting: true, orderLookup: true, humanHandoff: true, ticketOptions: true } });
+    // FAQ suggestions are controlled by the storefront app-embed toggle. The separate
+    // assistant setting controls answer matching, and must not hide the visible questions.
+    const activeFaqs = await prisma.faq.findMany({ where: { shop, active: true }, select: { id: true, question: true, featured: true }, orderBy: { createdAt: "desc" }, take: 100 });
     const suggestedFaqs = activeFaqs.filter((faq) => faq.featured);
     const faqs = (suggestedFaqs.length ? suggestedFaqs : activeFaqs).slice(0, 6).map(({ id, question }) => ({ id, question }));
     return Response.json({ greeting: settings?.defaultGreeting || "Hi there! 👋 Tell me what you’re shopping for, ask about our policies, or track an order.", humanHandoff: settings?.humanHandoff !== false, orderLookup: settings?.orderLookup !== false, faqs, ticketOptions: normalizeTicketOptions(settings?.ticketOptions) }, { headers });
@@ -217,9 +219,13 @@ export const action = async ({ request }) => {
         }
       }
       if (!ticketCreated) return Response.json({ error: "We couldn’t create a ticket number just now. Please try again in a moment.", code: "TICKET_REFERENCE_FAILED" }, { status: 503, headers });
-      const successTemplate = typeof supportSuccessMessage === "string" && supportSuccessMessage.trim() ? supportSuccessMessage.trim().slice(0, 500) : "Request {ticket} created. We’ll contact you soon.";
+      const legacyDefault = "Ticket {ticket} created successfully. We’ll contact you soon.";
+      const configuredTemplate = typeof supportSuccessMessage === "string" ? supportSuccessMessage.trim().slice(0, 500) : "";
+      const successTemplate = configuredTemplate && configuredTemplate !== legacyDefault
+        ? configuredTemplate
+        : "Your support request has been received. Our team will follow up with you by email soon.";
       const configuredAnswer = successTemplate.replaceAll("{ticket}", reference).replaceAll("{email}", identity.email);
-      const answer = configuredAnswer.toLowerCase().includes(reference.toLowerCase()) ? configuredAnswer : `${configuredAnswer.trim()} Ticket number: ${reference}.`;
+      const answer = configuredAnswer;
       await saveConversation(normalizedShop, sessionId, userMessage, answer, identity, userCreatedAt).catch((error) => console.error("Ticket conversation save failed after ticket creation", { code: error?.code, message: error?.message }));
       return Response.json({ answer, ticket: { reference } }, { headers });
     }
