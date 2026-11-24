@@ -6,7 +6,7 @@ import AdminPageHeader, { AdminIcon } from "../components/AdminPageHeader";
 import { useActionToast } from "../components/AdminToast";
 import { embedTexts } from "../gemini.server";
 import { resolveEmbeddingKey } from "../ai.server";
-import { createSupabaseServerClient, hasSupabaseServerConfig } from "../supabase.server";
+import { createSupabaseServerClient, getSupabaseServerConfigIssues, hasSupabaseServerConfig } from "../supabase.server";
 
 const parseList = (value, fallback = []) => { try { const parsed = JSON.parse(String(value || "")); return Array.isArray(parsed) ? parsed : fallback; } catch { return fallback; } };
 
@@ -74,7 +74,12 @@ export const action = async ({ request }) => {
   }
   const prismaSettings = await prisma.assistantSettings.findUnique({ where: { shop: session.shop }, select: { aiProvider: true, aiApiKeyEncrypted: true } });
   const embeddingKey = resolveEmbeddingKey(prismaSettings);
-  if (!embeddingKey || !hasSupabaseServerConfig()) return { saved: true, indexed: false, selectedCount: productIds.length + collectionIds.length + pageIds.length + policyIds.length + customSources.length, error: "Sources were saved, but indexing needs a Gemini API key and the Supabase server key. Add GEMINI_API_KEY in Vercel or select Gemini in Assistant settings." };
+  if (!embeddingKey || !hasSupabaseServerConfig()) {
+    const missing = getSupabaseServerConfigIssues();
+    const needsGemini = !embeddingKey ? (prismaSettings?.aiProvider === "gemini" ? "Connect Google Gemini in Assistant settings" : "add GEMINI_API_KEY to Vercel for free Gemini embeddings") : "";
+    const required = [...(needsGemini ? [needsGemini] : []), ...missing];
+    return { saved: true, indexed: false, selectedCount: productIds.length + collectionIds.length + pageIds.length + policyIds.length + customSources.length, indexingWarning: `Your sources are saved. Indexing will start after this missing setup is added in Vercel: ${required.join(", ")}. Redeploy, then click Save and index again.` };
+  }
   try {
     const supabase = createSupabaseServerClient();
     const docs = [];
@@ -119,7 +124,7 @@ export const action = async ({ request }) => {
       if (error) throw error;
     }
     return { saved: true, indexed: true, indexedCount: rows.length };
-  } catch (error) { console.error("Knowledge indexing failed", error); const policyAccessError = /shop.?policy|read_legal_policies|policy lookup/i.test(String(error?.message || "")); return { saved: true, indexed: false, error: policyAccessError ? "Sources were saved, but Shopify could not read the selected policies. Deploy and approve the app’s read_legal_policies permission, then save and index again." : "Sources saved, but Gemini indexing failed. Check the Gemini key, Supabase server secret, and vector database setup." }; }
+  } catch (error) { console.error("Knowledge indexing failed", error); const policyAccessError = /shop.?policy|read_legal_policies|policy lookup/i.test(String(error?.message || "")); return { saved: true, indexed: false, indexingWarning: policyAccessError ? "Your sources are saved, but Shopify could not read the selected policies. Deploy and approve the app’s read_legal_policies permission, then save and index again." : "Your sources are saved, but indexing did not finish. Check the Gemini embedding key, Supabase server key, and vector database migration in Vercel logs." }; }
 };
 
 const tabs = [

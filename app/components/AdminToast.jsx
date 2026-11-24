@@ -8,6 +8,7 @@ export function useActionToast(fetcher) {
     const data = fetcher.data;
     let notice;
     if (data.error) notice = { type: "error", title: "Action needs attention", message: String(data.error) };
+    else if (data.indexingWarning) notice = { type: "warning", title: "Sources saved · indexing needs setup", message: String(data.indexingWarning) };
     else if (data.connected) notice = { type: "success", title: "AI provider connected", message: `${data.aiProvider === "gemini" ? "Google Gemini" : data.aiProvider === "anthropic" ? "Anthropic Claude" : "OpenAI"} was verified and saved successfully.` };
     else if (data.deleted) notice = { type: "success", title: "Item deleted", message: "The change has been saved." };
     else if (data.updated) notice = { type: "success", title: "Status updated", message: "Your latest changes are now saved." };
