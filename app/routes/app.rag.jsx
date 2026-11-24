@@ -4,6 +4,8 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import AdminPageHeader, { AdminIcon } from "../components/AdminPageHeader";
 import { useActionToast } from "../components/AdminToast";
+import { embedTexts, hasGeminiKey } from "../gemini.server";
+import { createSupabaseServerClient, hasSupabaseServerConfig } from "../supabase.server";
 
 const parseList = (value, fallback = []) => { try { const parsed = JSON.parse(String(value || "")); return Array.isArray(parsed) ? parsed : fallback; } catch { return fallback; } };
 
@@ -57,11 +59,9 @@ export const action = async ({ request }) => {
     console.error("Knowledge save failed", error);
     return { error: "We couldn’t save these knowledge sources. Please try again." };
   }
-  if (!process.env.OPENAI_API_KEY || !process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) return { saved: true, indexed: false, selectedCount: productIds.length + collectionIds.length + pageIds.length + policyIds.length + customSources.length };
+  if (!hasGeminiKey() || !hasSupabaseServerConfig()) return { saved: true, indexed: false, selectedCount: productIds.length + collectionIds.length + pageIds.length + policyIds.length + customSources.length };
   try {
-    const [{ default: OpenAI }, { createClient }] = await Promise.all([import("openai"), import("@supabase/supabase-js")]);
-    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-    const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
+    const supabase = createSupabaseServerClient();
     const docs = [];
     const idsToFetch = [...productIds, ...collectionIds, ...pageIds, ...policyIds];
     for (let offset = 0; offset < idsToFetch.length; offset += 50) {
@@ -70,7 +70,7 @@ export const action = async ({ request }) => {
       const nodes = (await result.json()).data?.nodes ?? [];
       for (const node of nodes) {
         if (!node) continue;
-        if (node.variants) docs.push({ source_type: "product", source_id: node.id, title: node.title, content: [node.title, node.descriptionHtml?.replace(/<[^>]+>/g, " "), node.vendor, node.productType, node.tags?.join(", "), ...(node.variants.edges ?? []).map(({ node: variant }) => `${variant.title} $${variant.price} ${variant.availableForSale ? "in stock" : "out of stock"}`)].filter(Boolean).join("\n"), metadata: { image: node.featuredImage?.url, variants: node.variants.edges?.map(({ node: variant }) => variant) } });
+        if (node.variants) docs.push({ source_type: "product", source_id: node.id, title: node.title, content: [node.title, node.descriptionHtml?.replace(/<[^>]+>/g, " "), node.vendor, node.productType, node.tags?.join(", "), ...(node.variants.edges ?? []).map(({ node: variant }) => `${variant.title} $${variant.price} ${variant.availableForSale ? "in stock" : "out of stock"}`)].filter(Boolean).join("\n"), metadata: { handle: node.handle, image: node.featuredImage?.url, variants: node.variants.edges?.map(({ node: variant }) => variant) } });
         else if (node.products) docs.push({ source_type: "collection", source_id: node.id, title: node.title, content: [node.title, node.description, ...(node.products.edges ?? []).map(({ node: product }) => product.title)].filter(Boolean).join("\n"), metadata: { handle: node.handle, image: node.image?.url } });
         else docs.push({ source_type: policyIds.includes(node.id) ? "policy" : "page", source_id: node.id, title: node.title, content: `${node.title}\n${node.body?.replace(/<[^>]+>/g, " ") || ""}`, metadata: { handle: node.handle } });
       }
@@ -79,8 +79,8 @@ export const action = async ({ request }) => {
     const rows = [];
     for (let i = 0; i < docs.length; i += 100) {
       const batch = docs.slice(i, i + 100);
-      const embeddings = await openai.embeddings.create({ model: process.env.OPENAI_EMBEDDING_MODEL || "text-embedding-3-small", input: batch.map((doc) => doc.content) });
-      batch.forEach((doc, index) => rows.push({ ...doc, shop_domain: session.shop, embedding: embeddings.data[index].embedding }));
+      const embeddings = await embedTexts(batch.map((doc) => `${doc.title}\n${doc.content}`.slice(0, 6000)), "RETRIEVAL_DOCUMENT");
+      batch.forEach((doc, index) => rows.push({ ...doc, metadata: { ...doc.metadata, embedding_model: process.env.GEMINI_EMBEDDING_MODEL || "gemini-embedding-001" }, shop_domain: session.shop, embedding: embeddings[index] }));
     }
     if (rows.length) {
       const { error } = await supabase.from("shopai_knowledge").upsert(rows, { onConflict: "shop_domain,source_type,source_id" });
@@ -95,7 +95,7 @@ export const action = async ({ request }) => {
       if (error) throw error;
     }
     return { saved: true, indexed: true, indexedCount: rows.length };
-  } catch (error) { console.error("Knowledge indexing failed", error); return { saved: true, indexed: false, error: "Sources saved, but indexing failed. Check credentials and the Supabase migration." }; }
+  } catch (error) { console.error("Knowledge indexing failed", error); return { saved: true, indexed: false, error: "Sources saved, but Gemini indexing failed. Check GEMINI_API_KEY, the Supabase server secret, and the Gemini vector migration." }; }
 };
 
 const tabs = [

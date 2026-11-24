@@ -32,6 +32,7 @@
     const supportTitle = root.dataset.supportTitle === "Would you like a person to help?" ? "Submit a support request" : (root.dataset.supportTitle || "Submit a support request");
     const supportDetailsLabel = root.dataset.supportDetailsLabel === "Tell us about the issue" ? "Tell us more (optional)" : (root.dataset.supportDetailsLabel || "Tell us more (optional)");
     panel.innerHTML = `<div class="sac-head"><div class="sac-brand"><span class="sac-brand-mark">✦</span><div class="sac-brand-copy"><strong>${escapeHtml(root.dataset.title || "How can we help?")}</strong><span class="sac-live">Here to help</span></div></div><button class="sac-close" type="button" aria-label="Close chat">×</button></div><div class="sac-welcome"><span>Product advice</span><i></i><span>Order updates</span><i></i><span>Store support</span><button type="button" class="sac-help-button" aria-label="Contact store support"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11.5a7.5 7.5 0 0 1-8 7.5 8 8 0 0 1-3.5-.8L4 20l1.2-3.7A7.4 7.4 0 0 1 4 12.5 7.5 7.5 0 0 1 12 5a7.5 7.5 0 0 1 8 6.5Z"/><path d="M12 9v4m0 3h.01"/></svg><span>${escapeHtml(supportButtonLabel)}</span></button></div><div class="sac-messages" aria-live="polite" aria-relevant="additions text"><div class="sac-message-row sac-assistant-row sac-initial-greeting"><span class="sac-avatar" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4.5" y="8" width="15" height="11" rx="4"/><path d="M12 4v4M9 13h.01M15 13h.01M9 16h6M3 12v3M21 12v3"/></svg></span><div class="sac-message-content"><div class="sac-msg sac-greeting">Hi there! 👋 Tell me what you’re shopping for, ask about our policies, or track an order.</div><time class="sac-message-time" data-time="${Date.now()}">just now</time></div></div><div class="sac-faqs" hidden><div class="sac-faq-heading"><span>POPULAR QUESTIONS</span><small>Choose a question</small></div><div class="sac-faq-list"></div></div></div><div class="sac-form-wrap"><form class="sac-form"><textarea class="sac-input" rows="1" maxlength="1000" autocomplete="off" placeholder="Ask us anything…" aria-label="Your message"></textarea><button class="sac-send" type="submit" aria-label="Send message"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 2 11 13"/><path d="m22 2-7 20-4-9-9-4Z"/></svg></button></form><div class="sac-footer">Powered by <span>ShopAI Concierge</span></div></div><div class="sac-support-backdrop" hidden><section class="sac-support-card" role="dialog" aria-modal="true" aria-labelledby="sac-support-title"><button type="button" class="sac-support-close" aria-label="Close support request">×</button><span class="sac-support-icon">✦</span><p class="sac-support-kicker">CUSTOMER SUPPORT</p><h3 id="sac-support-title">${escapeHtml(supportTitle)}</h3><p class="sac-support-copy">${escapeHtml(root.dataset.supportDescription || "Tell us what you need help with. Our team will follow up by email.")}</p><form class="sac-support-form"><label>${escapeHtml(root.dataset.supportNameLabel || "Your name")}<input name="customerName" autocomplete="name" maxlength="120" placeholder="${escapeHtml(root.dataset.supportNamePlaceholder || "Name")}" required></label><label>${escapeHtml(root.dataset.supportEmailLabel || "Email for follow-up")}<input name="customerEmail" type="email" autocomplete="email" maxlength="254" placeholder="${escapeHtml(root.dataset.supportEmailPlaceholder || "you@example.com")}" required></label><label>${escapeHtml(root.dataset.supportIssueTypeLabel || "Select a request type")}<select name="requestTypeId" class="sac-support-select" required><option value="" selected disabled>${escapeHtml(root.dataset.supportTypePlaceholder || "Choose a support topic")}</option><option value="other">${escapeHtml(root.dataset.supportOtherOption || "Other")}</option></select></label><div class="sac-support-guidance" hidden><strong class="sac-support-question"></strong><p class="sac-support-answer"></p></div><label class="sac-support-other-field">${escapeHtml(supportDetailsLabel)}<textarea name="requestDetails" rows="3" maxlength="2000" placeholder="${escapeHtml(root.dataset.supportDetailsPlaceholder || "Describe what you need help with…")}"></textarea></label><div class="sac-support-notice" aria-live="polite"></div><footer><button type="button" class="sac-support-cancel">${escapeHtml(root.dataset.supportCancelLabel || "Cancel")}</button><button type="submit" class="sac-support-submit">${escapeHtml(root.dataset.supportSubmitLabel || "Create support request")}</button></footer></form></section></div>`;
+    panel.insertAdjacentHTML("beforeend", `<div class="sac-order-backdrop" hidden><section class="sac-order-card" role="dialog" aria-modal="true" aria-labelledby="sac-order-title"><button type="button" class="sac-order-close" aria-label="Close order tracking">×</button><span class="sac-order-icon" aria-hidden="true">↗</span><p class="sac-order-kicker">ORDER UPDATES</p><h3 id="sac-order-title">Track your order</h3><p class="sac-order-copy">Enter the order number and checkout email to securely look up its latest status.</p><form class="sac-order-form"><label>Order number<input name="orderNumber" autocomplete="off" maxlength="31" placeholder="e.g. 1001" required></label><label>Email used at checkout<input name="customerEmail" type="email" autocomplete="email" maxlength="254" placeholder="you@example.com" required></label><div class="sac-order-notice" aria-live="polite"></div><footer><button type="button" class="sac-order-cancel">Cancel</button><button type="submit" class="sac-order-submit">Find my order</button></footer></form><section class="sac-order-result" hidden><div class="sac-order-result-title"></div><p class="sac-order-result-copy"></p><button type="button" class="sac-order-view">View order details</button><div class="sac-order-details" hidden></div></section></section></div>`);
 
     const launcher = document.createElement("button");
     launcher.type = "button";
@@ -48,6 +49,21 @@
     const input = panel.querySelector(".sac-input");
     const faqSection = panel.querySelector(".sac-faqs");
     const faqList = panel.querySelector(".sac-faq-list");
+    const enableOrderLookup = root.dataset.enableOrderLookup !== "false";
+    const orderButton = document.createElement("button");
+    orderButton.type = "button";
+    orderButton.className = "sac-order-button";
+    orderButton.hidden = true;
+    orderButton.innerHTML = '<span aria-hidden="true">↗</span><span>Track an order</span>';
+    panel.querySelector(".sac-welcome").insertBefore(orderButton, panel.querySelector(".sac-help-button"));
+    const orderBackdrop = panel.querySelector(".sac-order-backdrop");
+    const orderForm = panel.querySelector(".sac-order-form");
+    const orderNotice = panel.querySelector(".sac-order-notice");
+    const orderResult = panel.querySelector(".sac-order-result");
+    const orderResultTitle = panel.querySelector(".sac-order-result-title");
+    const orderResultCopy = panel.querySelector(".sac-order-result-copy");
+    const orderDetails = panel.querySelector(".sac-order-details");
+    let lastOrder = null;
     const initialGreeting = panel.querySelector(".sac-initial-greeting");
     const supportBackdrop = panel.querySelector(".sac-support-backdrop");
     const supportForm = panel.querySelector(".sac-support-form");
@@ -118,6 +134,7 @@
             }
           }
           if (config.humanHandoff === false) panel.querySelector(".sac-help-button").hidden = true;
+          orderButton.hidden = !enableOrderLookup || config.orderLookup === false;
           if (enableFaqs && Array.isArray(config.faqs) && config.faqs.length) renderFaqs(config.faqs, faqSection, faqList, sendMessage);
           const configuredOptions = Array.isArray(config.ticketOptions) ? config.ticketOptions : [];
           const activeOptions = configuredOptions.filter((item) => item && item.active !== false && item.id && item.label).slice(0, 20);
@@ -135,6 +152,93 @@
       panel.classList.remove("is-open");
       launcher.setAttribute("aria-expanded", "false");
       launcher.focus();
+    });
+    const closeOrderLookup = () => { orderBackdrop.hidden = true; };
+    const setOrderResult = (order, answer) => {
+      lastOrder = order;
+      orderResult.hidden = false;
+      orderResultTitle.textContent = `${order.name} · ${String(order.fulfillmentStatus || "Status unavailable").replaceAll("_", " ")}`;
+      orderResultCopy.textContent = answer;
+      orderDetails.replaceChildren();
+      const lines = [
+        order.createdAt ? `Placed ${new Date(order.createdAt).toLocaleDateString()}` : "",
+        order.financialStatus ? `Payment: ${String(order.financialStatus).replaceAll("_", " ")}` : "",
+        order.total ? `Total: ${new Intl.NumberFormat(document.documentElement.lang || "en", { style: "currency", currency: order.currency || window.Shopify?.currency?.active || "USD" }).format(Number(order.total))}` : "",
+      ].filter(Boolean);
+      lines.forEach((line) => { const detail = document.createElement("p"); detail.textContent = line; orderDetails.append(detail); });
+      if (order.items?.length) {
+        const title = document.createElement("strong"); title.textContent = "Items"; orderDetails.append(title);
+        const list = document.createElement("ul");
+        order.items.forEach((item) => { const entry = document.createElement("li"); entry.textContent = `${item.title} × ${item.quantity}`; list.append(entry); });
+        orderDetails.append(list);
+      }
+      (order.tracking || []).forEach((tracking) => {
+        const row = document.createElement("p");
+        const label = `${tracking.company || "Carrier"}: ${tracking.number}`;
+        if (tracking.url && /^https:\/\//i.test(tracking.url)) { const link = document.createElement("a"); link.href = tracking.url; link.target = "_blank"; link.rel = "noopener noreferrer"; link.textContent = label; row.append(link); }
+        else row.textContent = label;
+        orderDetails.append(row);
+      });
+      if (order.statusPageUrl && /^https:\/\//i.test(order.statusPageUrl)) { const link = document.createElement("a"); link.className = "sac-order-status-link"; link.href = order.statusPageUrl; link.target = "_blank"; link.rel = "noopener noreferrer"; link.textContent = "Open Shopify order status"; orderDetails.append(link); }
+      orderDetails.hidden = true;
+      panel.querySelector(".sac-order-view").textContent = "View order details";
+    };
+    orderButton.addEventListener("click", () => {
+      orderNotice.textContent = "";
+      orderResult.hidden = true;
+      orderForm.elements.customerEmail.value = identity?.email || "";
+      orderBackdrop.hidden = false;
+      orderForm.elements.orderNumber.focus();
+    });
+    panel.querySelector(".sac-order-close").addEventListener("click", closeOrderLookup);
+    panel.querySelector(".sac-order-cancel").addEventListener("click", closeOrderLookup);
+    orderBackdrop.addEventListener("click", (event) => { if (event.target === orderBackdrop) closeOrderLookup(); });
+    panel.querySelector(".sac-order-view").addEventListener("click", () => {
+      orderDetails.hidden = !orderDetails.hidden;
+      panel.querySelector(".sac-order-view").textContent = orderDetails.hidden ? "View order details" : "Hide order details";
+    });
+    orderForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const submit = panel.querySelector(".sac-order-submit");
+      const orderNumberValue = String(new FormData(orderForm).get("orderNumber") || "").trim().replace(/^#/, "");
+      const emailValue = String(new FormData(orderForm).get("customerEmail") || "").trim().toLowerCase();
+      if (!/^[A-Za-z0-9-]{1,30}$/.test(orderNumberValue)) { orderNotice.textContent = "Enter a valid order number, such as 1001."; return; }
+      submit.disabled = true;
+      submit.textContent = "Checking order…";
+      orderNotice.textContent = "";
+      orderResult.hidden = true;
+      const customerText = `Track order #${orderNumberValue}`;
+      addMessage(messages, customerText, "user");
+      chatHistory.push({ role: "user", content: customerText, createdAt: Date.now() });
+      const pending = addMessage(messages, "", "assistant pending");
+      pending.bubble.innerHTML = '<span class="sac-typing" aria-hidden="true"><i></i><i></i><i></i></span><span class="sac-sr-only">Checking your order</span>';
+      try {
+        const response = await fetch(apiEndpoint, { method: "POST", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify({ message: customerText, shop, sessionId, customerName: identity?.name || "", customerEmail: emailValue, orderNumber: orderNumberValue, orderLookupRequest: true }) });
+        const data = await readApiJson(response, "order lookup");
+        if (!response.ok) throw new Error(data.error || "We couldn’t find that order. Check the details and try again.");
+        pending.row.remove();
+        const reply = addMessage(messages, data.answer || "Your order status is ready.", "assistant");
+        const view = document.createElement("button");
+        view.type = "button";
+        view.className = "sac-order-chat-view";
+        view.textContent = "View order details";
+        view.addEventListener("click", () => { setOrderResult(data.order, data.answer); orderBackdrop.hidden = false; orderDetails.hidden = false; panel.querySelector(".sac-order-view").textContent = "Hide order details"; });
+        reply.row.querySelector(".sac-message-content").insertBefore(view, reply.row.querySelector(".sac-message-time"));
+        chatHistory.push({ role: "assistant", content: data.answer || "Your order status is ready.", createdAt: Date.now() });
+        setOrderResult(data.order, data.answer);
+        persistChat();
+      } catch (error) {
+        pending.row.remove();
+        orderNotice.textContent = error.message || "Order tracking is temporarily unavailable. Please try again.";
+        const reply = addMessage(messages, orderNotice.textContent, "assistant");
+        chatHistory.push({ role: "assistant", content: orderNotice.textContent, createdAt: Date.now() });
+        reply.bubble.classList.add("error");
+        persistChat();
+      } finally {
+        submit.disabled = false;
+        submit.textContent = "Find my order";
+        messages.scrollTop = messages.scrollHeight;
+      }
     });
     form.addEventListener("submit", (event) => {
       event.preventDefault();
@@ -331,20 +435,49 @@
   function escapeHtml(text) {
     return String(text).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
   }
-  function renderProducts(container, products) {
+  async function renderProducts(container, products) {
     const wrap = document.createElement("div");
     wrap.className = "sac-products";
-    products.forEach((product) => {
+    const rootUrl = window.Shopify?.routes?.root || "/";
+    const currentProducts = await Promise.all(products.map(async (product) => {
+      if (!product.handle) return product;
+      try {
+        const response = await fetch(`${rootUrl}products/${encodeURIComponent(product.handle)}.js`, { headers: { accept: "application/json" }, cache: "no-store" });
+        if (!response.ok) return null;
+        const current = await response.json();
+        return {
+          ...product,
+          title: current.title || product.title,
+          image: current.featured_image || current.images?.[0] || product.image,
+          url: current.url || `${rootUrl}products/${encodeURIComponent(product.handle)}`,
+          priceCents: Number(current.price_min ?? current.price ?? 0),
+          variants: (current.variants || []).map((variant) => ({ id: variant.id, title: variant.title, priceCents: Number(variant.price || 0), availableForSale: variant.available !== false })),
+        };
+      } catch { return null; }
+    }));
+    const currency = window.Shopify?.currency?.active || "USD";
+    const formatCents = (value) => {
+      try { return new Intl.NumberFormat(document.documentElement.lang || "en", { style: "currency", currency }).format(Number(value) / 100); }
+      catch { return `${currency} ${(Number(value) / 100).toFixed(2)}`; }
+    };
+    currentProducts.filter(Boolean).forEach((product) => {
       const card = document.createElement("article");
       card.className = product.image ? "sac-card has-image" : "sac-card";
-      if (product.image) { const image = document.createElement("img"); image.src = product.image; image.alt = product.title || ""; image.loading = "lazy"; card.append(image); }
+      if (product.image) {
+        const image = document.createElement("img"); image.src = product.image; image.alt = product.title || ""; image.loading = "lazy";
+        if (product.url) { const link = document.createElement("a"); link.href = product.url; link.target = "_blank"; link.rel = "noopener noreferrer"; link.setAttribute("aria-label", `View ${product.title}`); link.append(image); card.append(link); }
+        else card.append(image);
+      }
       const info = document.createElement("div");
       info.className = "sac-card-info";
-      const title = document.createElement("strong"); title.textContent = product.title || "Product";
-      const price = document.createElement("div"); price.className = "sac-card-price"; price.textContent = product.price ? `$${product.price}` : "";
+      const title = product.url ? document.createElement("a") : document.createElement("strong");
+      title.textContent = product.title || "Product";
+      if (product.url) { title.href = product.url; title.target = "_blank"; title.rel = "noopener noreferrer"; title.className = "sac-card-title"; }
+      const price = document.createElement("div"); price.className = "sac-card-price"; price.textContent = Number.isFinite(product.priceCents) ? formatCents(product.priceCents) : (product.price ? `${currency} ${product.price}` : "");
       info.append(title, price);
       const variant = document.createElement("select"); variant.setAttribute("aria-label", `Choose ${product.title || "product"} variant`);
-      (product.variants || []).filter((value) => value.availableForSale !== false).forEach((value) => { const option = document.createElement("option"); option.value = String(value.id).split("/").pop(); option.textContent = `${value.title}${value.price ? ` · $${value.price}` : ""}`; variant.append(option); });
+      (product.variants || []).filter((value) => value.availableForSale !== false).forEach((value) => { const option = document.createElement("option"); option.value = String(value.id).split("/").pop(); option.textContent = `${value.title}${Number.isFinite(value.priceCents) ? ` · ${formatCents(value.priceCents)}` : ""}`; variant.append(option); });
+      variant.addEventListener("change", () => { const selected = product.variants.find((value) => String(value.id).split("/").pop() === variant.value); if (selected && Number.isFinite(selected.priceCents)) price.textContent = formatCents(selected.priceCents); });
       const add = document.createElement("button"); add.type = "button"; add.textContent = "Add to cart"; add.disabled = !variant.value;
       add.addEventListener("click", async () => { add.disabled = true; try { const result = await fetch(`${window.Shopify?.routes?.root || "/"}cart/add.js`, { method: "POST", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify({ items: [{ id: Number(variant.value), quantity: 1 }] }) }); if (!result.ok) throw new Error(); document.dispatchEvent(new CustomEvent("cart:refresh", { bubbles: true })); document.dispatchEvent(new CustomEvent("cart:updated", { bubbles: true })); add.textContent = "Added to cart ✓"; } catch { add.textContent = "Try again"; add.disabled = false; } });
       info.append(variant, add); card.append(info); wrap.append(card);

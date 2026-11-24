@@ -5,6 +5,8 @@ import { authenticate } from "../shopify.server";
 import AdminPageHeader, { AdminIcon } from "../components/AdminPageHeader";
 import { useActionToast } from "../components/AdminToast";
 import { normalizeTicketPrefix } from "../support.server";
+import { hasGeminiKey } from "../gemini.server";
+import { hasSupabaseServerConfig } from "../supabase.server";
 
 const defaults = {
   recommendations: true,
@@ -20,7 +22,7 @@ export const loader = async ({ request }) => {
   const { session } = await authenticate.admin(request);
   const prisma = (await import("../db.server.js")).default;
   const row = await prisma.assistantSettings.findUnique({ where: { shop: session.shop } });
-  return { settings: { ...defaults, ...(row || {}) }, connections: { openai: Boolean(process.env.OPENAI_API_KEY), supabase: Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY && process.env.DATABASE_URL) } };
+  return { settings: { ...defaults, ...(row || {}) }, connections: { gemini: hasGeminiKey(), supabase: hasSupabaseServerConfig() } };
 };
 
 export const action = async ({ request }) => {
@@ -79,7 +81,7 @@ export default function Settings({ loaderData }) {
       </div>
       <aside className="settings-aside">
         <section className="settings-card settings-status-card"><span className="settings-eyebrow">STOREFRONT PREVIEW</span><div className="settings-preview"><div className="settings-preview-top"><span className="settings-preview-mark">✦</span><div><strong>ShopAI Concierge</strong><small>Here to help</small></div><i/></div><p>{settings.defaultGreeting}</p><div className="settings-preview-input">Ask us anything… <span>↑</span></div></div><p className="settings-aside-note">Colors, launcher icon, and widget width are managed in the theme app block.</p><s-button href="/app/rag" variant="secondary"><AdminIcon name="book"/> Review store knowledge</s-button></section>
-        <section className="settings-card"><span className="settings-eyebrow">CONNECTED SERVICES</span><div className="settings-connection"><i className="settings-connection-dot"/><span><strong>Shopify</strong><small>Store catalog and admin session</small></span><em>Connected</em></div><div className="settings-connection"><i className={`settings-connection-dot ${loaderData.connections.openai ? "" : "is-off"}`}/><span><strong>OpenAI</strong><small>AI answers and embeddings</small></span><em>{loaderData.connections.openai ? "Configured" : "Setup needed"}</em></div><div className="settings-connection"><i className={`settings-connection-dot ${loaderData.connections.supabase ? "" : "is-off"}`}/><span><strong>Supabase</strong><small>Knowledge search database</small></span><em>{loaderData.connections.supabase ? "Configured" : "Setup needed"}</em></div></section>
+        <section className="settings-card"><span className="settings-eyebrow">CONNECTED SERVICES</span><div className="settings-connection"><i className="settings-connection-dot"/><span><strong>Shopify</strong><small>Store catalog and admin session</small></span><em>Connected</em></div><div className="settings-connection"><i className={`settings-connection-dot ${loaderData.connections.gemini ? "" : "is-off"}`}/><span><strong>Gemini</strong><small>Store answers and semantic search</small></span><em>{loaderData.connections.gemini ? "Configured" : "Add GEMINI_API_KEY"}</em></div><div className="settings-connection"><i className={`settings-connection-dot ${loaderData.connections.supabase ? "" : "is-off"}`}/><span><strong>Supabase</strong><small>Knowledge search database</small></span><em>{loaderData.connections.supabase ? "Configured" : "Add a server secret key"}</em></div></section>
       </aside>
     </fetcher.Form>
   </s-page>;
