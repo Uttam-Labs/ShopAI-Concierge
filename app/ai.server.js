@@ -3,6 +3,9 @@ import { GoogleGenAI } from "@google/genai";
 
 export const AI_PROVIDERS = ["openai", "gemini", "anthropic"];
 const DEFAULT_MODELS = { openai: "gpt-4o-mini", gemini: "gemini-3.8-flash", anthropic: "claude-haiku-4-5-20251001" };
+// These Gemini models are all available on Google's free tier. Never fall back
+// to a paid-only model when the free endpoint is busy.
+const FREE_GEMINI_MODELS = ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash"];
 
 function encryptionKey() {
   const secret = process.env.APP_ENCRYPTION_KEY || process.env.SHOPIFY_API_SECRET || process.env.SESSION_SECRET;
@@ -58,7 +61,7 @@ export async function generateProviderAnswer({ provider, apiKey, systemInstructi
   if (provider === "gemini") {
     const client = new GoogleGenAI({ apiKey });
     const configuredModel = process.env.GEMINI_CHAT_MODEL;
-    const models = configuredModel && configuredModel !== DEFAULT_MODELS.gemini ? [configuredModel, DEFAULT_MODELS.gemini] : [DEFAULT_MODELS.gemini];
+    const models = [...new Set([configuredModel, ...FREE_GEMINI_MODELS].filter((model) => FREE_GEMINI_MODELS.includes(model)))];
     let lastError;
     for (const model of models) {
       try {
@@ -67,12 +70,17 @@ export async function generateProviderAnswer({ provider, apiKey, systemInstructi
           contents: prompt,
           config: { systemInstruction, temperature, maxOutputTokens, thinkingConfig: { thinkingLevel: "LOW" } },
         });
-        return result.text?.trim() || "";
+        const answer = result.text?.trim() || "";
+        if (answer) return answer;
+        lastError = new Error(`Gemini free-tier model ${model} returned an empty reply.`);
       } catch (error) {
         lastError = error;
         const message = String(error?.message || "");
-        if (model === DEFAULT_MODELS.gemini || !/(404|not found|not available|no longer available|model.*not)/i.test(message)) throw error;
-        console.warn(`Gemini model ${model} is unavailable; retrying with ${DEFAULT_MODELS.gemini}.`);
+        const temporaryCapacityIssue = /(503|429|overload|high demand|temporarily unavailable|resource exhausted)/i.test(message);
+        const unavailableModel = /(404|not found|not available|no longer available|model.*not)/i.test(message);
+        if (!temporaryCapacityIssue && !unavailableModel) throw error;
+        if (temporaryCapacityIssue && model !== models.at(-1)) await new Promise((resolve) => setTimeout(resolve, 500));
+        console.warn(`Gemini free-tier model ${model} could not answer; trying the next free-tier model when available.`);
       }
     }
     throw lastError;
@@ -94,6 +102,22 @@ export async function generateProviderAnswer({ provider, apiKey, systemInstructi
 }
 
 export async function verifyProviderKey(provider, apiKey) {
+  if (provider === "gemini") {
+    // Test authentication/model access without generating a response. Generation
+    // can fail during a temporary free-tier capacity spike even when the key is valid.
+    const client = new GoogleGenAI({ apiKey });
+    let lastError;
+    for (const model of FREE_GEMINI_MODELS) {
+      try {
+        const modelInfo = await client.models.get({ model });
+        if (modelInfo?.supportedActions?.includes("generateContent")) return true;
+      } catch (error) {
+        lastError = error;
+        if (/(401|403|unauthorized|invalid.*key|authentication|api key)/i.test(String(error?.message || ""))) throw error;
+      }
+    }
+    throw lastError || new Error("The API key could not access a Gemini free-tier chat model.");
+  }
   const text = await generateProviderAnswer({
     provider,
     apiKey,
@@ -115,6 +139,7 @@ export function providerKeyError(error, provider) {
   if (/401|403|unauthorized|invalid.*key|authentication|api key/i.test(message)) return `That ${provider} API key was rejected. Check the key and try again.`;
   if (/429|quota|billing|rate.?limit/i.test(message)) return `${provider} accepted the key but its quota or billing limit was reached. Check the provider account.`;
   if (/timeout|timed out|abort/i.test(message)) return `Could not reach ${provider} right now. Try saving again in a moment.`;
-  if (provider === "gemini" && /(404|not found|not available|no longer available|model.*not)/i.test(message)) return "Your Gemini key was reached, but its chat model is unavailable. The app now tries Gemini 3.8 Flash automatically; check that this model is enabled for your Google AI Studio project.";
+  if (provider === "gemini" && /(503|overload|high demand|temporarily unavailable)/i.test(message)) return "Your Gemini API key is valid, but Google’s free-tier models are busy right now. Please try Connect again shortly.";
+  if (provider === "gemini" && /(404|not found|not available|no longer available|model.*not)/i.test(message)) return "This Gemini key cannot access the available free chat models. Check the key’s Google AI Studio project and try connecting again.";
   return `Could not connect to ${provider}: ${message.slice(0, 220) || "check the API key and model access"}`;
 }

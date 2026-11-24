@@ -50,6 +50,13 @@ export const action = async ({ request }) => {
       console.error("AI provider connection test failed", { provider: aiProvider, message: error?.message });
       return { error: providerKeyError(error, aiProvider) };
     }
+  } else if (form.get("intent") === "connect" && previous?.aiProvider === aiProvider && previous?.aiApiKeyEncrypted) {
+    try {
+      await verifyProviderKey(aiProvider, resolveProviderKey(previous));
+    } catch (error) {
+      console.error("AI provider connection test failed", { provider: aiProvider, message: error?.message });
+      return { error: providerKeyError(error, aiProvider) };
+    }
   } else if (providerChanged) {
     return { error: `Enter a ${aiProvider} API key to switch providers. The key is tested before it is saved.` };
   } else if (!aiApiKeyEncrypted && aiProvider !== "gemini") {
@@ -59,6 +66,20 @@ export const action = async ({ request }) => {
   }
   if (!submittedApiKey && previous?.aiApiKeyEncrypted && previous.aiProvider !== aiProvider) {
     return { error: `Enter a new ${aiProvider} API key to connect this provider.` };
+  }
+  if (form.get("intent") === "connect") {
+    const prisma = (await import("../db.server.js")).default;
+    try {
+      await prisma.assistantSettings.upsert({
+        where: { shop: session.shop },
+        create: { shop: session.shop, aiProvider, aiApiKeyEncrypted },
+        update: { aiProvider, aiApiKeyEncrypted },
+      });
+      return { connected: true, aiProvider };
+    } catch (error) {
+      console.error("AI provider connection save failed", error);
+      return { error: "The provider connected, but we couldn’t save it. Please try again." };
+    }
   }
   const values = {
     aiProvider,
@@ -97,8 +118,9 @@ export default function Settings({ loaderData }) {
   const settings = loaderData.settings;
   const [provider, setProvider] = useState(settings.aiProvider);
   const saving = fetcher.state !== "idle";
+  const connecting = saving && fetcher.formData?.get("intent") === "connect";
   useEffect(() => {
-    if (fetcher.data?.saved && formRef.current) {
+    if ((fetcher.data?.saved || fetcher.data?.connected) && formRef.current) {
       const keyField = formRef.current.querySelector('[name="aiApiKey"]');
       if (keyField) keyField.value = "";
     }
@@ -122,7 +144,7 @@ export default function Settings({ loaderData }) {
             <label className="settings-field">Provider<select className="admin-text-input" name="aiProvider" value={provider} onChange={(event) => setProvider(event.target.value)}><option value="openai">OpenAI</option><option value="gemini">Google Gemini</option><option value="anthropic">Anthropic Claude</option></select></label>
             <label className="settings-field">{providerName} API key<input className="admin-text-input" type="password" name="aiApiKey" autoComplete="new-password" placeholder={loaderData.connections.ai && provider === settings.aiProvider ? "Saved securely · paste a new key to replace" : "Paste your API key"}/><small>Encrypted in your app database. Never exposed to the storefront.</small></label>
           </div>
-          <div className={`ai-provider-status ${currentProviderConnected ? "connected" : "disconnected"}`}><span className="settings-connection-dot"/><span><strong>{currentProviderConnected ? `${providerName} connected` : "Provider not connected"}</strong><small>{currentProviderConnected ? "Your assistant is using this provider for shopper answers." : "Paste an API key, then save. We’ll verify it before connecting."}</small></span></div>
+          <div className="ai-connect-row"><div className={`ai-provider-status ${currentProviderConnected || fetcher.data?.connected ? "connected" : "disconnected"}`}><span className="settings-connection-dot"/><span><strong>{currentProviderConnected || fetcher.data?.connected ? `${providerName} connected` : "Provider not connected"}</strong><small>{currentProviderConnected || fetcher.data?.connected ? "Your assistant is using this provider for shopper answers." : "Enter your API key, then connect to verify and save it."}</small></span></div><button className="ai-connect-button" type="submit" name="intent" value="connect" disabled={saving}>{connecting ? <span className="ai-connect-spinner"/> : <span className="ai-connect-check">✓</span>}{connecting ? "Connecting…" : currentProviderConnected || fetcher.data?.connected ? "Reconnect" : "Connect"}</button></div>
           {provider !== "gemini" && <div className="settings-info-note"><AdminIcon name="info" size={15}/><p>Knowledge search uses Gemini embeddings. Add <code>GEMINI_API_KEY</code> to Vercel for indexing and semantic search; {providerName} will continue to write the answers.</p></div>}
           <div className="settings-info-note"><AdminIcon name="book" size={15}/><p>Answers use selected products, pages, policies, and FAQs. When a product is a good match, shoppers see up to four suggestions with current prices and Add to cart.</p></div>
         </section>
