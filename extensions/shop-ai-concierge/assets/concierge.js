@@ -18,7 +18,7 @@
     const sessionId = storedChat?.sessionId || crypto.randomUUID();
     let identity = storedChat?.identity || { name: "", email: "" };
     let chatHistory = Array.isArray(storedChat?.messages)
-      ? storedChat.messages.filter((item) => !(item?.role === "assistant" && /Unexpected token|not valid JSON|returned a web page instead of chat data/i.test(String(item.content || "")))).slice(-40)
+      ? storedChat.messages.filter((item) => !(item?.role === "assistant" && /Unexpected token|not valid JSON|returned a web page instead of chat data|apiEndpoint is not defined|ReferenceError/i.test(String(item.content || "")))).slice(-40)
       : [];
     const botAvatar = '<span class="sac-avatar" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4.5" y="8" width="15" height="11" rx="4"/><path d="M12 4v4M9 13h.01M15 13h.01M9 16h6M3 12v3M21 12v3"/></svg></span>';
 
@@ -242,7 +242,7 @@
       const pending = addMessage(messages, "", "assistant pending");
       pending.bubble.innerHTML = '<span class="sac-typing" aria-hidden="true"><i></i><i></i><i></i></span><span class="sac-sr-only">Checking your order</span>';
       try {
-        const response = await postProxyData({ message: customerText, shop, sessionId, customerName: identity?.name || "", customerEmail: emailValue, orderNumber: orderNumberValue, orderLookupRequest: true });
+        const response = await postProxyData(apiEndpoint, { message: customerText, shop, sessionId, customerName: identity?.name || "", customerEmail: emailValue, orderNumber: orderNumberValue, orderLookupRequest: true });
         const data = await readApiJson(response, "order lookup");
         if (!response.ok) throw new Error(data.error || "We couldn’t find that order. Check the details and try again.");
         pending.row.remove();
@@ -258,7 +258,9 @@
         persistChat();
       } catch (error) {
         pending.row.remove();
-        const errorMessage = error.message || "Order tracking is temporarily unavailable. Please try again.";
+        const errorMessage = error instanceof ReferenceError || error instanceof TypeError
+          ? "We couldn’t connect to order tracking just now. Please try again in a moment."
+          : (error.message || "Order tracking is temporarily unavailable. Please try again.");
         orderNotice.textContent = errorMessage;
         const reply = addMessage(messages, errorMessage, "assistant");
         chatHistory.push({ role: "assistant", content: errorMessage, createdAt: Date.now() });
@@ -292,7 +294,7 @@
       pending.bubble.setAttribute("aria-label", "ShopAI is replying");
       pending.bubble.innerHTML = '<span class="sac-typing" aria-hidden="true"><i></i><i></i><i></i></span><span class="sac-sr-only">ShopAI is replying</span>';
       try {
-        const response = await postProxyData({ message, shop, sessionId, customerName: identity?.name || "", customerEmail: identity?.email || "", pageUrl: location.href, ...(faqId ? { faqId } : {}) });
+        const response = await postProxyData(apiEndpoint, { message, shop, sessionId, customerName: identity?.name || "", customerEmail: identity?.email || "", pageUrl: location.href, ...(faqId ? { faqId } : {}) });
         const data = await readApiJson(response, "chat reply");
         if (!response.ok) throw new Error(data.error || "I couldn’t complete that request. Please try again.");
         pending.row.remove();
@@ -368,7 +370,7 @@
       pending.bubble.innerHTML = '<span class="sac-typing" aria-hidden="true"><i></i><i></i><i></i></span><span class="sac-sr-only">Creating your support ticket</span>';
       try {
         const supportContext = chatHistory.slice(0, -1).slice(-12).map(({ role, content }) => ({ role, content }));
-        const response = await postProxyData({ message: ticketMessage, shop, sessionId, customerName: name, customerEmail: email, supportRequest: true, requestTypeId, requestDetails, supportContext, supportSuccessMessage: root.dataset.supportSuccessMessage || "" });
+        const response = await postProxyData(apiEndpoint, { message: ticketMessage, shop, sessionId, customerName: name, customerEmail: email, supportRequest: true, requestTypeId, requestDetails, supportContext, supportSuccessMessage: root.dataset.supportSuccessMessage || "" });
         const data = await readApiJson(response, "support ticket");
         if (!response.ok) throw new Error(data.error || "We couldn’t create your ticket. Please try again.");
         identity = { name, email };
@@ -418,13 +420,13 @@
     if (!response.ok) throw new Error(data?.error || `Chat request failed (${response.status}). Please try again.`);
     return data;
   }
-  function postProxyData(payload) {
+  function postProxyData(endpoint, payload) {
     const form = new URLSearchParams();
     for (const [key, value] of Object.entries(payload)) {
       if (value === undefined || value === null) continue;
       form.set(key, typeof value === "string" ? value : JSON.stringify(value));
     }
-    return fetch(apiEndpoint, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded;charset=UTF-8", accept: "application/json" }, body: form });
+    return fetch(endpoint, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded;charset=UTF-8", accept: "application/json" }, body: form });
   }
   function readStoredChat(key) {
     try {
