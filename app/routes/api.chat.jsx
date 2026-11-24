@@ -85,7 +85,7 @@ async function getShopifyAdminToken(shop) {
 async function lookupShopifyOrder(shop, orderNumber, email, requireEmail = true) {
   const token = await getShopifyAdminToken(shop);
   if (!token) throw new Error("Order lookup could not authenticate with Shopify. Check the app installation, API secret and read_orders access.");
-  const query = `query OrderLookup($query: String!) { orders(first: 20, query: $query, sortKey: CREATED_AT, reverse: true) { nodes { name email createdAt displayFinancialStatus displayFulfillmentStatus statusPageUrl currentTotalPriceSet { shopMoney { amount currencyCode } } lineItems(first: 8) { nodes { title quantity } } fulfillments(first: 5) { trackingInfo { company number url } } } } }`;
+  const query = `query OrderLookup($query: String!) { orders(first: 20, query: $query, sortKey: CREATED_AT, reverse: true) { nodes { name email customer { email } createdAt displayFinancialStatus displayFulfillmentStatus statusPageUrl currentTotalPriceSet { shopMoney { amount currencyCode } } lineItems(first: 8) { nodes { title quantity } } fulfillments(first: 5) { trackingInfo { company number url } } } } }`;
   // Search by order name first so an optional email never prevents finding the order.
   // Shopify may return nearby name matches, so verify the normalized name exactly below.
   const orderSearch = `status:any name:${orderNumber.replace(/^#/, "")}`;
@@ -96,7 +96,7 @@ async function lookupShopifyOrder(shop, orderNumber, email, requireEmail = true)
   const normalizedOrderNumber = orderNumber.replace(/^#/, "").toLowerCase();
   const order = (payload.data?.orders?.nodes || []).find((candidate) => String(candidate.name || "").replace(/^#/, "").toLowerCase() === normalizedOrderNumber);
   if (!order) return null;
-  const orderEmails = [order.email].map((value) => String(value || "").trim().toLowerCase()).filter(Boolean);
+  const orderEmails = [order.email, order.customer?.email].map((value) => String(value || "").trim().toLowerCase()).filter(Boolean);
   if (email && !orderEmails.includes(email)) return null;
   if (requireEmail && !email) return null;
   return {
@@ -233,6 +233,9 @@ export const action = async ({ request }) => {
         return proxyJson({ answer, order }, headers);
       } catch (error) {
         console.error("Order lookup failed", error);
+        if (/not approved to access the Order object|not approved.*(email|customer)|protected customer data/i.test(String(error?.message || ""))) {
+          return proxyJson({ error: "Shopify is blocking this lookup because the app doesn’t yet have protected Order and email access. In the Shopify Dev Dashboard, open this app → Settings → Access requests → Protected customer data → select Customer data and Email, apply the reasons, complete Data protection details, and Save. For testing on a development store, you don’t need to submit the app for review. Then retry the order lookup; if Shopify prompts to update app permissions, approve that prompt." }, headers, 403);
+        }
         return proxyJson({ error: "Order tracking is temporarily unavailable. Please try again or contact the store team." }, headers, 502);
       }
     }
