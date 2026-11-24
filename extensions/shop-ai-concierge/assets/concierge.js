@@ -57,7 +57,9 @@
     const orderButton = document.createElement("button");
     orderButton.type = "button";
     orderButton.className = "sac-order-button";
-    orderButton.hidden = true;
+    // Show the tracking entry point immediately from the theme setting. Waiting
+    // for the async app-proxy config caused it to appear only after a reflow/scroll.
+    orderButton.hidden = !enableOrderLookup;
     orderButton.innerHTML = '<span aria-hidden="true">↗</span><span>Track an order</span>';
     const welcomeActions = document.createElement("div");
     welcomeActions.className = "sac-welcome-actions";
@@ -119,11 +121,30 @@
     const persistChat = () => {
       try { sessionStorage.setItem(storageKey, JSON.stringify({ sessionId, identity, messages: chatHistory.slice(-40) })); } catch { /* Session storage can be disabled by the browser. */ }
     };
+    const openOrderTracking = () => {
+      orderNotice.textContent = "";
+      orderResult.hidden = true;
+      orderForm.elements.customerEmail.value = identity?.email || "";
+      orderBackdrop.hidden = false;
+      orderForm.elements.orderNumber.focus();
+    };
+    const addOrderTrackingAction = (row) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "sac-order-chat-view sac-order-chat-link";
+      button.textContent = "Click here to check your order";
+      button.addEventListener("click", openOrderTracking);
+      const content = row.querySelector(".sac-message-content");
+      content.insertBefore(button, content.querySelector(".sac-message-time"));
+    };
+    const restoredOrderRows = [];
     if (chatHistory.length) {
       initialGreeting.remove();
       chatHistory.forEach((item) => {
         const restored = addMessage(messages, item.content, item.role === "user" ? "user" : "assistant", item.createdAt);
         if (item.ticketReference && item.role === "assistant") addTicketReference(restored.row, item.ticketReference);
+        if (item.openOrderTracking && item.role === "assistant") addOrderTrackingAction(restored.row);
+        if (item.order && item.role === "assistant") restoredOrderRows.push({ row: restored.row, order: item.order, answer: item.content });
       });
       messages.append(faqSection);
     } else {
@@ -209,13 +230,22 @@
       orderDetails.hidden = true;
       panel.querySelector(".sac-order-view").textContent = "View order details";
     };
-    orderButton.addEventListener("click", () => {
-      orderNotice.textContent = "";
-      orderResult.hidden = true;
-      orderForm.elements.customerEmail.value = identity?.email || "";
-      orderBackdrop.hidden = false;
-      orderForm.elements.orderNumber.focus();
-    });
+    const addOrderDetailsAction = (row, order, answer) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "sac-order-chat-view";
+      button.textContent = "View order details";
+      button.addEventListener("click", () => {
+        setOrderResult(order, answer);
+        orderBackdrop.hidden = false;
+        orderDetails.hidden = false;
+        panel.querySelector(".sac-order-view").textContent = "Hide order details";
+      });
+      const content = row.querySelector(".sac-message-content");
+      content.insertBefore(button, content.querySelector(".sac-message-time"));
+    };
+    restoredOrderRows.forEach(({ row, order, answer }) => addOrderDetailsAction(row, order, answer));
+    orderButton.addEventListener("click", openOrderTracking);
     panel.querySelector(".sac-order-close").addEventListener("click", closeOrderLookup);
     panel.querySelector(".sac-order-cancel").addEventListener("click", closeOrderLookup);
     orderBackdrop.addEventListener("click", (event) => { if (event.target === orderBackdrop) closeOrderLookup(); });
@@ -247,13 +277,8 @@
         if (!response.ok) throw new Error(data.error || "We couldn’t find that order. Check the details and try again.");
         pending.row.remove();
         const reply = addMessage(messages, data.answer || "Your order status is ready.", "assistant");
-        const view = document.createElement("button");
-        view.type = "button";
-        view.className = "sac-order-chat-view";
-        view.textContent = "View order details";
-        view.addEventListener("click", () => { setOrderResult(data.order, data.answer); orderBackdrop.hidden = false; orderDetails.hidden = false; panel.querySelector(".sac-order-view").textContent = "Hide order details"; });
-        reply.row.querySelector(".sac-message-content").insertBefore(view, reply.row.querySelector(".sac-message-time"));
-        chatHistory.push({ role: "assistant", content: data.answer || "Your order status is ready.", createdAt: Date.now() });
+        addOrderDetailsAction(reply.row, data.order, data.answer);
+        chatHistory.push({ role: "assistant", content: data.answer || "Your order status is ready.", createdAt: Date.now(), order: data.order });
         setOrderResult(data.order, data.answer);
         persistChat();
       } catch (error) {
@@ -299,8 +324,10 @@
         if (!response.ok) throw new Error(data.error || "I couldn’t complete that request. Please try again.");
         pending.row.remove();
         const answer = data.answer || "I’m sorry, I couldn’t find an answer to that just yet.";
-        addMessage(messages, answer, "assistant");
-        chatHistory.push({ role: "assistant", content: answer, createdAt: Date.now() });
+        const reply = addMessage(messages, answer, "assistant");
+        if (data.openOrderTracking) addOrderTrackingAction(reply.row);
+        if (data.order) addOrderDetailsAction(reply.row, data.order, answer);
+        chatHistory.push({ role: "assistant", content: answer, createdAt: Date.now(), ...(data.openOrderTracking ? { openOrderTracking: true } : {}), ...(data.order ? { order: data.order } : {}) });
         persistChat();
         if (enableRecommendations && Array.isArray(data.products) && data.products.length) renderProducts(messages, data.products.slice(0, 4));
       } catch (error) {

@@ -330,8 +330,9 @@ export const action = async ({ request }) => {
     if (settings.orderLookup && orderMatch && !email && settings.orderEmailRequired) {
       const answer = "Please include the email address used at checkout with your order number so I can verify the order.";
       await saveConversation(normalizedShop, sessionId, userMessage, answer, identity, userCreatedAt);
-      return Response.json({ answer }, { headers });
+      return Response.json({ answer, openOrderTracking: true }, { headers });
     }
+    const orderHelpIntent = settings.orderLookup && /(?:\b(?:track|tracking|status|where is|where's|check|find)\b.{0,35}\border\b|\border\b.{0,35}\b(?:track|tracking|status|where|update|details)\b|\border number\b|অর্ডার.{0,24}(?:ট্র্যাক|স্ট্যাটাস|কোথায়|কোথায়|চেক|খুঁজে|আপডেট)|(?:ট্র্যাক|স্ট্যাটাস|কোথায়|কোথায়).{0,24}অর্ডার)/i.test(userMessage);
     if (settings.humanHandoff && /refund not received|dispute|chargeback|angry|frustrated|unacceptable|complaint|speak to (a )?(human|person|agent)|talk to (a )?(human|person|agent)|broken|damaged/i.test(userMessage)) {
       const dateCode = new Date().toISOString().slice(0, 10).replaceAll("-", "");
       const reference = `${normalizeTicketPrefix(settings.ticketPrefix)}-${dateCode}-${randomBytes(4).toString("hex").toUpperCase()}`;
@@ -356,13 +357,25 @@ export const action = async ({ request }) => {
       if (matchingFaq && (matchingFaq.score === 1 || (matchingFaq.overlap >= 2 && matchingFaq.score >= 0.8 && matchingFaq.coverage >= 0.65))) {
         const answer = await answerFaq(userMessage, matchingFaq.faq, settings);
         await saveConversation(normalizedShop, sessionId, userMessage, answer, identity, userCreatedAt);
-        return Response.json({ answer, products: [] }, { headers });
+        return Response.json({ answer, products: [], ...(orderHelpIntent ? { openOrderTracking: true } : {}) }, { headers });
       }
+    }
+    if (orderHelpIntent) {
+      const answer = "I can help check that order. Use the button below to enter your order number and checkout email.";
+      await saveConversation(normalizedShop, sessionId, userMessage, answer, identity, userCreatedAt);
+      return Response.json({ answer, openOrderTracking: true, products: [] }, { headers });
     }
     const providerKey = resolveProviderKey(settings);
     const embeddingKey = resolveEmbeddingKey(settings);
-    if (!providerKey || !embeddingKey || !hasSupabaseServerConfig()) {
-      const answer = "I can answer the store’s published FAQs. Product advice is not enabled yet; please contact the store team for help with this question.";
+    const supabaseReady = hasSupabaseServerConfig();
+    if (!providerKey || !embeddingKey || !supabaseReady) {
+      console.warn("Storefront knowledge search is not configured for this shop", {
+        shop: normalizedShop,
+        providerKeyConfigured: Boolean(providerKey),
+        embeddingKeyConfigured: Boolean(embeddingKey),
+        supabaseConfigured: supabaseReady,
+      });
+      const answer = "I can help with the store’s FAQs, but product search is temporarily unavailable. Please contact the store team for product recommendations.";
       await saveConversation(normalizedShop, sessionId, userMessage, answer, identity, userCreatedAt);
       return Response.json({ answer, products: [] }, { headers });
     }

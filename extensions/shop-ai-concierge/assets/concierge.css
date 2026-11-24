@@ -236,6 +236,8 @@
 .sac-order-details a, .sac-order-status-link { color: #a64a17; font-weight: 700; text-decoration: underline; }
 .sac-order-status-link { display: inline-block; margin-top: 7px; }
 .sac-order-chat-view { min-height: 29px; margin-top: 7px; padding: 0 10px; color: #a64a17; font-size: 10px; }
+.sac-message-content .sac-order-chat-link { display: inline-flex; align-items: center; margin-top: 8px; padding: 7px 11px; border: 1px solid #f2d5c2; border-radius: 999px; color: #a8430e; background: #fff8f2; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; transition: color .16s ease, background .16s ease, border-color .16s ease; }
+.sac-message-content .sac-order-chat-link:hover { color: #fff; border-color: var(--sac-accent, #f97316); background: var(--sac-accent, #f97316); }
 .sac-order-card, .sac-order-card * { box-sizing: border-box; }
 @media (max-width: 520px) { .sac-order-card { padding: 18px; } .sac-order-form footer { display: grid; grid-template-columns: 1fr 1fr; } .sac-order-form footer button { width: 100%; } }
 @media (max-width: 520px) {

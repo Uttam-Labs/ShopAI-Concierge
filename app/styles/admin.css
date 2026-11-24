@@ -200,6 +200,11 @@ input[type="checkbox"] { width: 17px; height: 17px; margin-right: 8px; vertical-
 .rag-library-pagination { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 14px; border-top: 1px solid #eeeae5; color: #77716b; background: #fff; font-size: 10px; }
 .rag-bulk-action .admin-cta:disabled { opacity: .48; cursor: not-allowed; transform: none; box-shadow: none; }
 .rag-empty-inline { min-height: 230px; }
+.rag-policy-warning { display: flex; align-items: flex-start; gap: 12px; margin: 24px; padding: 17px 18px; border: 1px solid #f2d7c2; border-radius: 14px; background: #fff8f2; color: #6c4a34; }
+.rag-policy-warning > span { display: grid; width: 32px; height: 32px; flex: 0 0 32px; place-items: center; border-radius: 10px; background: #ffede0; color: #c64e0a; }
+.rag-policy-warning svg { width: 16px; height: 16px; }
+.rag-policy-warning strong { color: #392b22; font-size: 13px; }
+.rag-policy-warning p { margin: 5px 0 0; font-size: 12px; line-height: 1.55; }
 .rag-custom-prompt { display: flex; min-height: 280px; flex-direction: column; align-items: center; justify-content: center; gap: 9px; border: 1px dashed #e3d9cf; border-radius: 13px; background: #fcfbfa; text-align: center; }
 .rag-custom-prompt .admin-cta { margin-top: 5px; }
 
