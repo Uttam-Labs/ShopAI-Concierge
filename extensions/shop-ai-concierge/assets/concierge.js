@@ -8,13 +8,20 @@
     const width = `${Number(root.dataset.width) || 380}px`;
     const shop = window.Shopify?.shop || location.hostname;
     const apiEndpoint = `${window.Shopify?.routes?.root || "/"}apps/shopai-concierge`;
-    const sessionId = crypto.randomUUID();
+    const storageKey = `sac-chat:${shop}`;
+    let storedChat = readStoredChat(storageKey);
+    const sessionId = storedChat?.sessionId || crypto.randomUUID();
+    let identity = storedChat?.identity || null;
+    let chatHistory = Array.isArray(storedChat?.messages) ? storedChat.messages.slice(-40) : [];
+    const botAvatar = '<span class="sac-avatar" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4.5" y="8" width="15" height="11" rx="4"/><path d="M12 4v4M9 13h.01M15 13h.01M9 16h6M3 12v3M21 12v3"/></svg></span>';
 
     const panel = document.createElement("section");
     panel.className = "sac-panel";
+    panel.setAttribute("role", "dialog");
+    panel.setAttribute("aria-modal", "false");
     panel.setAttribute("aria-label", "ShopAI customer support chat");
     setThemeVariables(panel, { accent, background, textColor, fontSize, width });
-    panel.innerHTML = `<div class="sac-head"><div class="sac-brand"><span class="sac-brand-mark">✦</span><div class="sac-brand-copy"><strong>${escapeHtml(root.dataset.title || "How can we help?")}</strong><span class="sac-live">Here to help</span></div></div><button class="sac-close" type="button" aria-label="Close chat">×</button></div><div class="sac-welcome">Product advice <i></i> Order updates <i></i> Store support</div><div class="sac-messages" aria-live="polite"><div class="sac-msg sac-greeting">Hi there! 👋 Tell me what you’re shopping for, ask about our policies, or track an order.</div><div class="sac-faqs" hidden><div class="sac-faq-heading"><span>POPULAR QUESTIONS</span><small>Tap to ask</small></div><div class="sac-faq-list"></div></div></div><div class="sac-form-wrap"><form class="sac-form"><input class="sac-input" maxlength="1000" autocomplete="off" placeholder="Ask us anything…" aria-label="Your message"><button class="sac-send" type="submit" aria-label="Send message"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 2 11 13"/><path d="m22 2-7 20-4-9-9-4Z"/></svg></button></form><div class="sac-footer">Powered by <span>ShopAI Concierge</span></div></div>`;
+    panel.innerHTML = `<div class="sac-head"><div class="sac-brand"><span class="sac-brand-mark">✦</span><div class="sac-brand-copy"><strong>${escapeHtml(root.dataset.title || "How can we help?")}</strong><span class="sac-live">Here to help</span></div></div><button class="sac-close" type="button" aria-label="Close chat">×</button></div><div class="sac-welcome"><span>Product advice</span><i></i><span>Order updates</span><i></i><span>Store support</span><button type="button" class="sac-help-button" aria-label="Request help from a person"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11.5a7.5 7.5 0 0 1-8 7.5 8 8 0 0 1-3.5-.8L4 20l1.2-3.7A7.4 7.4 0 0 1 4 12.5 7.5 7.5 0 0 1 12 5a7.5 7.5 0 0 1 8 6.5Z"/><path d="M12 9v4m0 3h.01"/></svg><span>Human help</span></button></div><div class="sac-messages" aria-live="polite" aria-relevant="additions text"><div class="sac-identity-gate" hidden><div class="sac-identity-card"><span class="sac-identity-mark">✦</span><h3>Let’s get you the right help</h3><p>Share your details so the store team can follow up, or continue anonymously.</p><form class="sac-identity-form"><label>Your name <span>(optional)</span><input name="customerName" autocomplete="name" maxlength="120" placeholder="Name"></label><label>Email address <span>(optional)</span><input name="customerEmail" type="email" autocomplete="email" maxlength="254" placeholder="you@example.com"></label><button type="submit" class="sac-identity-start">Start chatting</button><button type="button" class="sac-identity-anon">Continue anonymously</button></form><small>Your details stay with this chat and are used only for support follow-up.</small></div></div><div class="sac-message-row sac-assistant-row sac-initial-greeting"><span class="sac-avatar" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4.5" y="8" width="15" height="11" rx="4"/><path d="M12 4v4M9 13h.01M15 13h.01M9 16h6M3 12v3M21 12v3"/></svg></span><div class="sac-message-content"><div class="sac-msg sac-greeting">Hi there! 👋 Tell me what you’re shopping for, ask about our policies, or track an order.</div><time class="sac-message-time" data-time="${Date.now()}">just now</time></div></div><div class="sac-faqs" hidden><div class="sac-faq-heading"><span>POPULAR QUESTIONS</span><small>Choose a question</small></div><div class="sac-faq-list"></div></div></div><div class="sac-form-wrap"><form class="sac-form"><textarea class="sac-input" rows="1" maxlength="1000" autocomplete="off" placeholder="Ask us anything…" aria-label="Your message"></textarea><button class="sac-send" type="submit" aria-label="Send message"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 2 11 13"/><path d="m22 2-7 20-4-9-9-4Z"/></svg></button></form><div class="sac-footer">Powered by <span>ShopAI Concierge</span></div></div><div class="sac-support-backdrop" hidden><section class="sac-support-card" role="dialog" aria-modal="true" aria-labelledby="sac-support-title"><button type="button" class="sac-support-close" aria-label="Close support request">×</button><span class="sac-support-icon">✦</span><p class="sac-support-kicker">STORE SUPPORT</p><h3 id="sac-support-title">Would you like a person to help?</h3><p class="sac-support-copy">We’ll create a ticket and the store team can follow up with you.</p><form class="sac-support-form"><label>Your name <span>(optional)</span><input name="customerName" autocomplete="name" maxlength="120" placeholder="Name"></label><label>Email for follow-up<input name="customerEmail" type="email" autocomplete="email" maxlength="254" placeholder="you@example.com" required></label><div class="sac-support-notice" aria-live="polite"></div><footer><button type="button" class="sac-support-cancel">Cancel</button><button type="submit" class="sac-support-submit">Create support ticket</button></footer></form></section></div>`;
 
     const launcher = document.createElement("button");
     launcher.type = "button";
@@ -31,15 +38,68 @@
     const input = panel.querySelector(".sac-input");
     const faqSection = panel.querySelector(".sac-faqs");
     const faqList = panel.querySelector(".sac-faq-list");
+    const identityGate = panel.querySelector(".sac-identity-gate");
+    const identityForm = panel.querySelector(".sac-identity-form");
+    const initialGreeting = panel.querySelector(".sac-initial-greeting");
+    const supportBackdrop = panel.querySelector(".sac-support-backdrop");
+    const supportForm = panel.querySelector(".sac-support-form");
     const enableFaqs = root.dataset.enableFaq !== "false";
     const enableRecommendations = root.dataset.enableRecommendations !== "false";
+    const formWrap = panel.querySelector(".sac-form-wrap");
+    const persistChat = () => {
+      try { sessionStorage.setItem(storageKey, JSON.stringify({ sessionId, identity, messages: chatHistory.slice(-40) })); } catch { /* Session storage can be disabled by the browser. */ }
+    };
+    const startChat = () => {
+      identityGate.hidden = true;
+      formWrap.hidden = false;
+      if (chatHistory.length) {
+        initialGreeting.remove();
+        chatHistory.forEach((item) => addMessage(messages, item.content, item.role === "user" ? "user" : "assistant", item.createdAt));
+      } else {
+        initialGreeting.hidden = false;
+        const greeting = initialGreeting.querySelector(".sac-greeting").textContent;
+        chatHistory.push({ role: "assistant", content: greeting, createdAt: Date.now() });
+        persistChat();
+      }
+      input.focus();
+    };
+    if (identity) startChat();
+    else { initialGreeting.hidden = true; formWrap.hidden = true; identityGate.hidden = false; }
 
-    if (enableFaqs) {
+    identityForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const values = new FormData(identityForm);
+      identity = { name: String(values.get("customerName") || "").trim() || "Anonymous shopper", email: String(values.get("customerEmail") || "").trim().toLowerCase() };
+      persistChat();
+      startChat();
+    });
+    identityForm.querySelector(".sac-identity-anon").addEventListener("click", () => {
+      identity = { name: "Anonymous shopper", email: "" };
+      persistChat();
+      startChat();
+    });
+    const resizeComposer = () => {
+      input.style.height = "auto";
+      input.style.height = `${Math.min(input.scrollHeight, 128)}px`;
+      input.classList.toggle("is-scrollable", input.scrollHeight > 128);
+    };
+    input.addEventListener("input", resizeComposer);
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
+        event.preventDefault();
+        form.requestSubmit();
+      }
+    });
+    setInterval(() => panel.querySelectorAll(".sac-message-time[data-time]").forEach((time) => { time.textContent = relativeTime(Number(time.dataset.time)); }), 15000);
+
+    {
       fetch(`${apiEndpoint}?shop=${encodeURIComponent(shop)}`)
         .then((response) => response.ok ? response.json() : null)
         .then((config) => {
           if (!config) return;
-          if (config.greeting) panel.querySelector(".sac-greeting").textContent = config.greeting;
+          const greeting = panel.querySelector(".sac-greeting");
+          if (config.greeting && greeting) greeting.textContent = config.greeting;
+          if (config.humanHandoff === false) panel.querySelector(".sac-help-button").hidden = true;
           if (enableFaqs && Array.isArray(config.faqs) && config.faqs.length) renderFaqs(config.faqs, faqSection, faqList, sendMessage);
         })
         .catch(() => {});
@@ -48,7 +108,7 @@
     launcher.addEventListener("click", () => {
       const open = panel.classList.toggle("is-open");
       launcher.setAttribute("aria-expanded", String(open));
-      if (open) input.focus();
+      if (open) identity ? input.focus() : identityForm.elements.customerName.focus();
     });
     panel.querySelector(".sac-close").addEventListener("click", () => {
       panel.classList.remove("is-open");
@@ -60,31 +120,98 @@
       sendMessage(input.value);
     });
 
-    async function sendMessage(rawMessage) {
+    async function sendMessage(rawMessage, options = {}) {
       const message = String(rawMessage || "").trim();
+      const faqId = typeof options.faqId === "string" ? options.faqId : "";
       if (!message || form.dataset.sending === "true") return;
+      const emailFromMessage = message.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0];
+      if (emailFromMessage && !identity?.email) identity = { ...(identity || {}), name: identity?.name || "Anonymous shopper", email: emailFromMessage.toLowerCase() };
       addMessage(messages, message, "user");
       input.value = "";
+      resizeComposer();
       form.dataset.sending = "true";
       panel.querySelector(".sac-send").disabled = true;
-      const pending = addMessage(messages, "Let me check that for you…", "assistant pending");
+      chatHistory.push({ role: "user", content: message, createdAt: Date.now() });
+      persistChat();
+      const pending = addMessage(messages, "", "assistant pending");
+      pending.bubble.setAttribute("aria-label", "ShopAI is replying");
+      pending.bubble.innerHTML = '<span class="sac-typing" aria-hidden="true"><i></i><i></i><i></i></span><span class="sac-sr-only">ShopAI is replying</span>';
       try {
-        const response = await fetch(`${apiEndpoint}?shop=${encodeURIComponent(shop)}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message, shop, sessionId, pageUrl: location.href }) });
+        const response = await fetch(`${apiEndpoint}?shop=${encodeURIComponent(shop)}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message, shop, sessionId, customerName: identity?.name || "Anonymous shopper", customerEmail: identity?.email || "", pageUrl: location.href, ...(faqId ? { faqId } : {}) }) });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || "I couldn’t complete that request. Please try again.");
-        pending.remove();
-        addMessage(messages, data.answer || "I’m sorry, I couldn’t find an answer to that just yet.", "assistant");
+        pending.row.remove();
+        const answer = data.answer || "I’m sorry, I couldn’t find an answer to that just yet.";
+        addMessage(messages, answer, "assistant");
+        chatHistory.push({ role: "assistant", content: answer, createdAt: Date.now() });
+        persistChat();
         if (enableRecommendations && Array.isArray(data.products) && data.products.length) renderProducts(messages, data.products.slice(0, 4));
       } catch (error) {
-        pending.classList.remove("pending");
-        pending.classList.add("error");
-        pending.textContent = error.message || "Something went wrong. Please try again.";
+        pending.bubble.classList.remove("pending");
+        pending.bubble.classList.add("error");
+        pending.bubble.textContent = error.message || "Something went wrong. Please try again.";
+        chatHistory.push({ role: "assistant", content: pending.bubble.textContent, createdAt: Date.now() });
+        persistChat();
       } finally {
         form.dataset.sending = "false";
         panel.querySelector(".sac-send").disabled = false;
         messages.scrollTop = messages.scrollHeight;
       }
     }
+
+    const closeSupport = () => { supportBackdrop.hidden = true; };
+    panel.querySelector(".sac-help-button").addEventListener("click", () => {
+      const supportValues = supportForm.elements;
+      supportValues.customerName.value = identity?.name === "Anonymous shopper" ? "" : identity?.name || "";
+      supportValues.customerEmail.value = identity?.email || "";
+      panel.querySelector(".sac-support-notice").textContent = identity?.email ? `We have ${identity.email} saved for this chat. Confirm it or enter a different email.` : "Add an email address so the store team can reply to your request.";
+      supportBackdrop.hidden = false;
+      supportValues.customerEmail.focus();
+    });
+    panel.querySelector(".sac-support-close").addEventListener("click", closeSupport);
+    panel.querySelector(".sac-support-cancel").addEventListener("click", closeSupport);
+    supportBackdrop.addEventListener("click", (event) => { if (event.target === supportBackdrop) closeSupport(); });
+    supportForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const submit = supportForm.querySelector(".sac-support-submit");
+      const notice = panel.querySelector(".sac-support-notice");
+      const values = new FormData(supportForm);
+      const name = String(values.get("customerName") || "").trim() || "Anonymous shopper";
+      const email = String(values.get("customerEmail") || "").trim().toLowerCase();
+      submit.disabled = true;
+      submit.textContent = "Creating ticket…";
+      notice.textContent = "";
+      try {
+        const ticketMessage = "I would like help from a person.";
+        const response = await fetch(`${apiEndpoint}?shop=${encodeURIComponent(shop)}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message: ticketMessage, shop, sessionId, customerName: name, customerEmail: email, supportRequest: true }) });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "We couldn’t create your ticket. Please try again.");
+        identity = { name, email };
+        if (!chatHistory.length) {
+          const greeting = initialGreeting.querySelector(".sac-greeting").textContent;
+          initialGreeting.hidden = false;
+          identityGate.hidden = true;
+          formWrap.hidden = false;
+          chatHistory.push({ role: "assistant", content: greeting, createdAt: Date.now() });
+        }
+        chatHistory.push({ role: "user", content: ticketMessage, createdAt: Date.now() }, { role: "assistant", content: data.answer, createdAt: Date.now() });
+        persistChat();
+        addMessage(messages, ticketMessage, "user");
+        addMessage(messages, data.answer, "assistant");
+        closeSupport();
+      } catch (error) {
+        notice.textContent = error.message || "We couldn’t create your ticket. Please try again.";
+      } finally {
+        submit.disabled = false;
+        submit.textContent = "Create support ticket";
+      }
+    });
+    window.addEventListener("beforeunload", (event) => {
+      if (chatHistory.some((item) => item.role === "user") || input.value.trim()) {
+        event.preventDefault();
+        event.returnValue = "";
+      }
+    });
   });
 
   function setThemeVariables(element, values) {
@@ -94,13 +221,45 @@
     element.style.setProperty("--sac-width", values.width);
     element.style.setProperty("--sac-font", values.fontSize);
   }
-  function addMessage(container, text, who) {
-    const div = document.createElement("div");
-    div.className = `sac-msg ${who}`;
-    div.textContent = text;
-    container.append(div);
+  function readStoredChat(key) {
+    try {
+      const value = JSON.parse(sessionStorage.getItem(key) || "null");
+      return value && typeof value === "object" ? value : null;
+    } catch { return null; }
+  }
+  function addMessage(container, text, who, createdAt = Date.now()) {
+    const row = document.createElement("div");
+    row.className = `sac-message-row ${who === "user" ? "sac-user-row" : "sac-assistant-row"}`;
+    if (who !== "user") row.innerHTML = '<span class="sac-avatar" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4.5" y="8" width="15" height="11" rx="4"/><path d="M12 4v4M9 13h.01M15 13h.01M9 16h6M3 12v3M21 12v3"/></svg></span>';
+    const content = document.createElement("div");
+    content.className = "sac-message-content";
+    const bubble = document.createElement("div");
+    bubble.className = `sac-msg ${who}`;
+    bubble.textContent = text;
+    content.append(bubble);
+    const time = document.createElement("time");
+    time.className = "sac-message-time";
+    const timeValue = typeof createdAt === "number" ? createdAt : new Date(createdAt).getTime();
+    time.dateTime = new Date(timeValue).toISOString();
+    time.dataset.time = String(timeValue);
+    time.textContent = relativeTime(timeValue);
+    content.append(time);
+    row.append(content);
+    container.append(row);
     container.scrollTop = container.scrollHeight;
-    return div;
+    return { row, bubble };
+  }
+  function relativeTime(timestamp) {
+    if (!Number.isFinite(timestamp)) return "";
+    const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+    if (seconds < 5) return "just now";
+    if (seconds < 60) return `${seconds}s ago`;
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes} min ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours} hr ago`;
+    const days = Math.floor(hours / 24);
+    return `${days}d ago`;
   }
   function renderFaqs(faqs, section, list, sendMessage) {
     list.replaceChildren();
@@ -109,8 +268,19 @@
       const button = document.createElement("button");
       button.type = "button";
       button.className = "sac-faq-chip";
-      button.textContent = faq.question;
-      button.addEventListener("click", () => sendMessage(faq.question));
+      button.setAttribute("aria-label", `Ask: ${faq.question}`);
+      const marker = document.createElement("span");
+      marker.className = "sac-faq-icon";
+      marker.textContent = "Q";
+      const question = document.createElement("span");
+      question.className = "sac-faq-question";
+      question.textContent = faq.question;
+      const arrow = document.createElement("span");
+      arrow.className = "sac-faq-arrow";
+      arrow.setAttribute("aria-hidden", "true");
+      arrow.textContent = "›";
+      button.append(marker, question, arrow);
+      button.addEventListener("click", () => sendMessage(faq.question, { faqId: faq.id }));
       list.append(button);
     });
     section.hidden = list.childElementCount === 0;

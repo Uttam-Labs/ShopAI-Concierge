@@ -40,6 +40,9 @@ model Faq {
   question  String
   answer    String
   active    Boolean  @default(true)
+  featured  Boolean  @default(false)
+  sourceTitle   String?
+  sourceContent String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -65,6 +68,8 @@ model Conversation {
   id        String   @id @default(cuid())
   shop      String
   session   String
+  customerName  String?
+  customerEmail String?
   messages  Json
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
