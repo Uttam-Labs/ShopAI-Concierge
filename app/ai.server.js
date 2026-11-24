@@ -65,7 +65,7 @@ export async function generateProviderAnswer({ provider, apiKey, systemInstructi
         const result = await client.models.generateContent({
           model,
           contents: prompt,
-          config: { systemInstruction, temperature, maxOutputTokens },
+          config: { systemInstruction, temperature, maxOutputTokens, thinkingConfig: { thinkingLevel: "LOW" } },
         });
         return result.text?.trim() || "";
       } catch (error) {
@@ -100,7 +100,7 @@ export async function verifyProviderKey(provider, apiKey) {
     systemInstruction: "Reply with exactly: connected",
     prompt: "Reply with exactly: connected",
     temperature: 0,
-    maxOutputTokens: 16,
+    maxOutputTokens: 128,
   });
   if (!text) throw new Error("The provider returned an empty reply. Check the key and model access.");
   return true;

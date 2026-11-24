@@ -33,7 +33,7 @@ export async function generateGroundedAnswer({ systemInstruction, prompt, temper
   const result = await client.models.generateContent({
     model: process.env.GEMINI_CHAT_MODEL || "gemini-3.8-flash",
     contents: prompt,
-    config: { systemInstruction, temperature, maxOutputTokens: 700 },
+    config: { systemInstruction, temperature, maxOutputTokens: 700, thinkingConfig: { thinkingLevel: "LOW" } },
   });
   return result.text?.trim() || "";
 }
