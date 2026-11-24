@@ -9,6 +9,7 @@ const cors = (origin) => ({
   "Access-Control-Allow-Origin": origin || "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type",
+  "Cache-Control": "no-store, private",
   "Vary": "Origin",
 });
 
@@ -67,7 +68,9 @@ export const loader = async ({ request }) => {
     const allowed = (process.env.STOREFRONT_ALLOWED_ORIGINS || "").split(",").map((value) => value.trim()).filter(Boolean);
     if (allowed.length && origin && !allowed.includes(origin)) return Response.json({ error: "This storefront is not allowed." }, { status: 403, headers });
     const settings = await prisma.assistantSettings.findUnique({ where: { shop }, select: { defaultGreeting: true, faqs: true, humanHandoff: true, ticketOptions: true } });
-    const faqs = settings?.faqs === false ? [] : await prisma.faq.findMany({ where: { shop, active: true, featured: true }, select: { id: true, question: true }, orderBy: { createdAt: "desc" }, take: 6 });
+    const activeFaqs = settings?.faqs === false ? [] : await prisma.faq.findMany({ where: { shop, active: true }, select: { id: true, question: true, featured: true }, orderBy: { createdAt: "desc" }, take: 100 });
+    const suggestedFaqs = activeFaqs.filter((faq) => faq.featured);
+    const faqs = (suggestedFaqs.length ? suggestedFaqs : activeFaqs).slice(0, 6).map(({ id, question }) => ({ id, question }));
     return Response.json({ greeting: settings?.defaultGreeting || "Hi there! 👋 Tell me what you’re shopping for, ask about our policies, or track an order.", humanHandoff: settings?.humanHandoff !== false, faqs, ticketOptions: normalizeTicketOptions(settings?.ticketOptions) }, { headers });
   } catch (error) {
     console.error("App proxy config request failed", error);
@@ -110,17 +113,16 @@ export const action = async ({ request }) => {
       const selectedType = selectedRequestId === "other" ? { id: "other", label: "Other", question: "", answer: "" } : requestOptions.find((option) => option.id === selectedRequestId && option.active);
       if (!selectedType) return Response.json({ error: "Choose a support request type before submitting." }, { status: 400, headers });
       const details = typeof requestDetails === "string" ? requestDetails.trim().slice(0, 2000) : "";
-      if (selectedType.id === "other" && !details) return Response.json({ error: "Describe the issue so our support team can help." }, { status: 400, headers });
       const contextMessages = Array.isArray(supportContext) ? supportContext.slice(-12).flatMap((item) => {
         if (!item || !["user", "assistant"].includes(item.role) || typeof item.content !== "string") return [];
         const content = item.content.trim().slice(0, 1000);
         return content ? [{ role: item.role, content }] : [];
       }) : [];
       const recentCustomerMessage = [...contextMessages].reverse().find((item) => item.role === "user")?.content;
-      const subject = (selectedType.id === "other" ? details : `${selectedType.label}${recentCustomerMessage ? ` · ${recentCustomerMessage}` : ""}`).replace(/\s+/g, " ").slice(0, 150);
+      const subject = (selectedType.id === "other" ? (details || "Other support request") : `${selectedType.label}${recentCustomerMessage ? ` · ${recentCustomerMessage}` : ""}`).replace(/\s+/g, " ").slice(0, 150);
       const transcript = contextMessages.map((item) => `${item.role === "user" ? "Customer" : "Concierge"}: ${item.content}`).join("\n");
       const ticketMessage = selectedType.id === "other"
-        ? `Request type: Other\nCustomer details: ${details}${transcript ? `\n\nRecent chat context:\n${transcript}` : ""}`
+        ? `Request type: Other\nCustomer details: ${details || "No additional details provided."}${transcript ? `\n\nRecent chat context:\n${transcript}` : ""}`
         : `Request type: ${selectedType.label}${selectedType.question ? `\nSupport question: ${selectedType.question}` : ""}${selectedType.answer ? `\nCustomer guidance shown: ${selectedType.answer}` : ""}${transcript ? `\n\nRecent chat context:\n${transcript}` : ""}`;
       const dateCode = new Date().toISOString().slice(0, 10).replaceAll("-", "");
       const reference = `${normalizeTicketPrefix(settings.ticketPrefix)}-${dateCode}-${randomBytes(4).toString("hex").toUpperCase()}`;
