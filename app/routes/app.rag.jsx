@@ -87,7 +87,22 @@ export const action = async ({ request }) => {
     const idsToFetch = [...productIds, ...collectionIds, ...pageIds];
     for (let offset = 0; offset < idsToFetch.length; offset += 50) {
       const ids = idsToFetch.slice(offset, offset + 50);
-      const result = await admin.graphql(`#graphql query SelectedKnowledge { nodes(ids: ${JSON.stringify(ids)}) { ... on Product { id title descriptionHtml vendor productType tags featuredImage { url } variants(first: 100) { edges { node { id title price availableForSale } } } } ... on Collection { id title handle description image { url } products(first: 100) { edges { node { title } } } } ... on Page { id title body handle } } }`);
+      const result = await admin.graphql(`#graphql
+        query SelectedKnowledge($ids: [ID!]!) {
+          nodes(ids: $ids) {
+            ... on Product {
+              id title descriptionHtml vendor productType tags
+              featuredImage { url }
+              variants(first: 100) { edges { node { id title price availableForSale } } }
+            }
+            ... on Collection {
+              id title handle description image { url }
+              products(first: 100) { edges { node { title } } }
+            }
+            ... on Page { id title body handle }
+          }
+        }
+      `, { variables: { ids } });
       const payload = await result.json();
       if (payload.errors?.length) throw new Error(payload.errors.map((error) => error.message).join("; "));
       const nodes = payload.data?.nodes ?? [];
@@ -100,7 +115,11 @@ export const action = async ({ request }) => {
     }
     for (const item of customSources) docs.push({ source_type: "custom", source_id: item.id, title: item.title, content: item.content, metadata: { category: item.category || "Custom content" } });
     const selectedPolicyIds = new Set(policyIds);
-    const policyResponse = policyIds.length ? await admin.graphql(`#graphql query SelectedStorePolicies { shop { shopPolicies { id title type url body } } }`) : null;
+    const policyResponse = policyIds.length ? await admin.graphql(`#graphql
+      query SelectedStorePolicies {
+        shop { shopPolicies { id title type url body } }
+      }
+    `) : null;
     const policyResult = policyResponse ? await policyResponse.json() : null;
     if (policyResult?.errors?.length) throw new Error(`Shopify policy lookup failed: ${policyResult.errors.map((error) => error.message).join("; ")}`);
     const selectedPolicies = (policyResult?.data?.shop?.shopPolicies ?? []).filter((policy) => selectedPolicyIds.has(policy.id));
