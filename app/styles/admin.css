@@ -838,7 +838,7 @@ button:disabled, s-button[disabled] { cursor: not-allowed; }
 .flow-canvas-branch-node { display: block; min-height: 0; overflow: hidden; padding: 0; border-color: #eadfd5; }
 .flow-canvas-branches { align-items: stretch; gap: 28px 18px; padding-bottom: 12px; }
 .flow-canvas-branch-card-header { display: flex; min-height: 29px; align-items: center; padding: 7px 12px; color: #fff; background: #ed6b22; font-size: 8px; font-weight: 850; letter-spacing: .09em; }
-.flow-branch-card-content { display: grid; gap: 10px; padding: 12px; }
+.flow-branch-card-content { display: grid; gap: 10px; padding: 16px 14px; }
 .flow-branch-user-text { color: #302d29; font-size: 11px; font-weight: 750; line-height: 1.45; }
 .flow-branch-info { display: grid; gap: 4px; color: #5f574f; font-size: 9px; line-height: 1.5; }
 .flow-branch-info b { display: inline-flex; width: fit-content; padding: 3px 5px; border-radius: 4px; color: #fff; background: #ed6b22; font-size: 7px; letter-spacing: .07em; }
@@ -851,14 +851,13 @@ button:disabled, s-button[disabled] { cursor: not-allowed; }
 @media (max-width: 720px) { .flow-canvas-zoom-content { min-width: 640px; } .flow-canvas-wrap { overflow: auto; } .has-multiple-branches .flow-canvas-branches, .has-two-branch-layout .flow-canvas-branches { grid-template-columns: repeat(2, minmax(210px, 1fr)); } }
 .flow-canvas-branches { margin-top: 24px; gap: 36px 24px; }
 .flow-canvas-branch-node { border-radius: 12px; }
-.flow-branch-card-header { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; min-height: 36px; padding: 7px 12px; }
+.flow-branch-card-header { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; min-height: 36px; padding: 7px 12px; color: #fff; background: #ed6b22; }
 .flow-branch-card-header svg { width: 14px; height: 14px; flex: 0 0 14px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.6; }
-.flow-branch-card-header.is-option { color: #fff; background: #27804b; }
-.flow-branch-card-header.is-user-input { color: #fff; background: #262626; }
+.flow-branch-card-header.is-option, .flow-branch-card-header.is-user-input { color: #fff; background: #ed6b22; }
 .flow-user-select-badge { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; padding: 4px 7px; border: 1px solid #ffffff55; border-radius: 999px; color: #fff; background: #ffffff17; font-size: 7px; font-weight: 800; letter-spacing: .05em; }
 .flow-user-select-badge svg { width: 11px; height: 11px; }
 .flow-branch-info b { display: inline-flex; align-items: center; gap: 4px; }
 .flow-branch-info b svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.7; }
 .flow-branch-action b { color: #fff; background: #ed6b22; }
-.flow-canvas-connectors > path { stroke: #97a5b5; stroke-width: 1.55; stroke-linecap: round; stroke-linejoin: round; }
+.flow-canvas-connectors > path { stroke: #aeb8c4; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 @media (max-width: 720px) { .flow-canvas-branches { margin-top: 24px; gap: 30px 18px; } }
