@@ -104,7 +104,7 @@
     persistentSupportButton.setAttribute("aria-label", "Contact store support");
     persistentSupportButton.textContent = supportButtonLabel || "Contact store support";
     persistentSupportButton.addEventListener("click", () => openSupportRequest());
-    panel.insertBefore(persistentSupportButton, panel.querySelector(".sac-form-wrap"));
+    panel.insertBefore(persistentSupportButton, messages);
     const orderBackdrop = panel.querySelector(".sac-order-backdrop");
     const orderForm = panel.querySelector(".sac-order-form");
     const orderNotice = panel.querySelector(".sac-order-notice");
