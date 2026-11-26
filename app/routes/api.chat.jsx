@@ -10,6 +10,7 @@ import { createSupabaseServerClient, hasSupabaseServerConfig } from "../supabase
 import { getConversationFlowStep, normalizeConversationFlows, resolveConversationFlow } from "../flows.server";
 import { findMatchingGuardrail, normalizeGuardrails } from "../guardrails.server";
 import { filterKnowledgeForIntent, findMatchingFaq, isPolicyIntent, isReturnRequestIntent, isSupportEscalationIntent, isSupportRequestIntent, resolveOrderQuestionIntent, resolveRetrievalQuestion } from "../chat-intents.server";
+import { extractProductFilters, normalizeProductLookup, productMatchesFilters, productRelevance, productSearchPhrase } from "../product-search.server";
 
 const cors = (origin) => ({
   "Access-Control-Allow-Origin": origin || "*",
@@ -172,44 +173,6 @@ async function searchShopifyProducts(shop, queryText, limit = 5) {
   return products.filter((product) => product.status === "ACTIVE").map(mapAdminProduct);
 }
 
-function normalizeProductLookup(value) {
-  return String(value || "").toLocaleLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/\b(?:cheep|cheepest)\b/g, "cheap").replace(/\bproduc\b/g, "product").replace(/\bshooes?\b/g, "shoes").replace(/\btsh?rt\b/g, "t shirt").replace(/\btee shirts?\b/g, "t shirt").replace(/\bsomthing\b/g, "something").replace(/\bhav\b/g, "have").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
-}
-
-function productSearchPhrase(value) {
-  return String(value || "")
-    .replace(/\bcheep\b/gi, "cheap").replace(/\bshooes?\b/gi, "shoes").replace(/\btsh?rt\b/gi, "t shirt").replace(/\bproduc\b/gi, "product")
-    // Remove a price constraint before deleting words like "below" or "under".
-    // Otherwise "show me products below 4000" becomes the literal catalog term "4000".
-    .replace(/\bbetween\s*[$£€₹]?\s*\d[\d,.]*\s*(?:and|to|-)\s*[$£€₹]?\s*\d[\d,.]*/gi, " ")
-    .replace(/\b(?:less than|under|below|up to|at most|maximum|max|over|above|more than|greater than|at least|minimum|min)\s*[$£€₹]?\s*\d[\d,.]*/gi, " ")
-    .replace(/[$£€₹]\s*\d[\d,.]*/g, " ")
-    .replace(/^\s*(?:what(?:'s|’s| is)|tell me about|describe|details? (?:for|about))\s+/i, "")
-    .replace(/^\s*(?:the|a|an)\s+/i, "")
-    .replace(/^\s*(?:please\s+)?(?:can you|could you)\s+/i, "").replace(/^(?:do you have|have you got|is there|can i get|where can i (?:find|buy)|where is)\s+/i, "")
-    .replace(/^(?:i(?:'m|’m| am)?\s+)?(?:want(?:\s+to\s+(?:buy|purchase|find))?|would like(?:\s+to\s+(?:buy|purchase|find))?|would love(?:\s+to\s+(?:buy|purchase|find))?|plan(?:ning)?(?:\s+to\s+(?:buy|purchase|find))?|need|looking for|searching for|show me|find me|find|search for|search|look for|buy|purchase|recommend)\s+/i, "")
-    .replace(/\b(?:can you|could you|please|product|products|item|items|sku|any|show|me|in|red|black|white|blue|green|pink|yellow|orange|purple|grey|gray|brown|silver|gold|beige|navy|color|colour|colored|coloured|model|brand|company|under|below|less than|over|above|more than|greater than|at least|at most|between|price|cost|budget|cheap|cheapest|affordable|discounted|sale|premium|for|with|size|small|medium|large|available|in stock|showing|new|latest|arrival|arrivals|best|selling|popular|trending|similar|recommendations|compare)\b/gi, " ")
-    .replace(/\s+/g, " ").trim();
-}
-
-function extractProductFilters(question) {
-  const text = String(question || "").toLocaleLowerCase();
-  const priceMatch = text.match(/\b(under|below|less than|up to|at most|maximum|max|over|above|more than|greater than|at least|minimum|min)\s*([$£€₹])?\s*(\d[\d,.]*)/i);
-  const price = priceMatch ? Number(priceMatch[3].replace(/,/g, "")) : null;
-  const comparison = priceMatch?.[1]?.toLocaleLowerCase() || "";
-  const maxPrice = price !== null && /^(?:under|below|less than|up to|at most|maximum|max)$/.test(comparison) ? price : null;
-  const minPrice = price !== null && /^(?:over|above|more than|greater than|at least|minimum|min)$/.test(comparison) ? price : null;
-  const range = text.match(/\bbetween\s*([$£€₹])?\s*(\d[\d,.]*)\s*(?:and|to|-)\s*([$£€₹])?\s*(\d[\d,.]*)/i);
-  const rangeMin = range ? Number(range[2].replace(/,/g, "")) : null;
-  const rangeMax = range ? Number(range[4].replace(/,/g, "")) : null;
-  const colors = ["red", "black", "white", "blue", "green", "pink", "yellow", "orange", "purple", "grey", "gray", "brown", "silver", "gold", "beige", "navy"].filter((color) => new RegExp(`\\b${color}\\b`, "i").test(text));
-  const sizeMatch = text.match(/\b(?:size\s*)?(xs|s|m|l|xl|xxl|xxxl|small|medium|large|extra large|\d{1,2})\b/i);
-  const brandMatch = text.match(/\b(?:brand|company|from|by)\s+([a-z0-9][a-z0-9&' -]{1,35}?)(?=\s+(?:in|with|under|below|less|over|above|more|price|cost|for|size|color|colour)\b|[,?.]|$)/i);
-  const brand = brandMatch?.[1]?.trim() || (/\btitan\b/i.test(text) ? "Titan" : "");
-  const availability = /\b(?:in stock|available|available now)\b/i.test(text) ? "available" : /\b(?:out of stock|unavailable)\b/i.test(text) ? "unavailable" : "";
-  return { colors, size: sizeMatch?.[1]?.toLocaleLowerCase() || "", brand, minPrice: range ? Math.min(rangeMin, rangeMax) : minPrice, maxPrice: range ? Math.max(rangeMin, rangeMax) : maxPrice, availability };
-}
-
 function hasProductSearchLanguage(message) {
   const text = normalizeProductLookup(message);
   const words = text.split(" ").filter(Boolean);
@@ -229,27 +192,6 @@ function exactProductMatch(product, phrase, sku) {
   return Boolean(titleMatches || handleMatches || skuMatches);
 }
 
-function productRelevance(product, phrase) {
-  const terms = [...new Set(normalizeProductLookup(phrase).split(/\s+/).filter((term) => term.length > 1))];
-  if (!terms.length) return 0;
-  const fields = [product.title, product.handle, product.description, product.vendor, product.productType, ...(product.tags || []), ...(product.collections || []).flatMap((collection) => [collection.title, collection.handle]), ...(product.metafields || []).map((field) => `${field.namespace} ${field.key} ${field.value}`), ...(product.variants || []).flatMap((variant) => [variant.title, variant.sku, variant.price, ...(variant.selectedOptions || []).map((option) => option.value)])];
-  const haystack = normalizeProductLookup(fields.join(" "));
-  return terms.filter((term) => haystack.includes(term)).length / terms.length;
-}
-
-function productMatchesFilters(product, filters) {
-  const fields = normalizeProductLookup([product.title, product.vendor, product.productType, ...(product.tags || []), ...(product.collections || []).flatMap((item) => [item.title, item.handle]), ...(product.metafields || []).map((field) => `${field.namespace} ${field.key} ${field.value}`), ...(product.variants || []).flatMap((variant) => [variant.title, ...(variant.selectedOptions || []).map((option) => option.value)])].join(" "));
-  if (filters.colors.length && !filters.colors.some((color) => fields.split(" ").includes(color))) return false;
-  if (filters.brand && !fields.includes(normalizeProductLookup(filters.brand)) && !normalizeProductLookup(product.vendor).includes(normalizeProductLookup(filters.brand))) return false;
-  const prices = (product.variants || []).filter((variant) => variant.availableForSale !== false && variant.price !== undefined).map((variant) => Number(variant.price)).filter(Number.isFinite);
-  if (filters.minPrice !== null && (!prices.length || !prices.some((price) => price >= filters.minPrice))) return false;
-  if (filters.maxPrice !== null && (!prices.length || !prices.some((price) => price < filters.maxPrice))) return false;
-  if (filters.size && !fields.includes(normalizeProductLookup(filters.size))) return false;
-  if (filters.availability === "available" && product.variants?.length && !product.variants.some((variant) => variant.availableForSale !== false)) return false;
-  if (filters.availability === "unavailable" && (!product.variants?.length || product.variants.some((variant) => variant.availableForSale !== false))) return false;
-  return true;
-}
-
 function knowledgeProduct(row, extra = {}) {
   const metadata = row.metadata || {};
   return { title: row.title, handle: metadata.handle, description: metadata.description || row.content || "", image: metadata.image || "", vendor: metadata.vendor || "", productType: metadata.productType || "", tags: metadata.tags || [], collections: metadata.collections || [], metafields: metadata.metafields || [], variants: metadata.variants || [], _similarity: Number(row.similarity || 0), ...extra };
@@ -258,8 +200,8 @@ function knowledgeProduct(row, extra = {}) {
 async function discoverShopifyProducts(shop, question, knowledgeRows = []) {
   const filters = extractProductFilters(question);
   const phrase = productSearchPhrase(question);
-  const filterOnlyQuery = !normalizeProductLookup(phrase) || /^(?:show|find|search|recommend|browse|me|some|any|products?|items?|catalog|collection|the|for|please|in|with|under|below|less than|over|above|more than|greater than|at least|at most|between|price|cost|budget|size|small|medium|large|available|stock|color|colour|red|black|white|blue|green|pink|yellow|orange|purple|grey|gray|brown|silver|gold|beige|navy|company|brand|from|by|and|or|a|an|to|buy|purchase|best|selling|popular|trending|latest|new|arrival|sale|discount|cheap|affordable|premium|recommendations?|similar|compare)$/i.test(normalizeProductLookup(phrase));
-  const catalogQuery = filterOnlyQuery ? (filters.brand || filters.colors.join(" ") || "") : phrase;
+  const filterOnlyQuery = !normalizeProductLookup(phrase) || /^(?:show|find|search|recommend|browse|me|some|any|products?|items?|catalog|collection|the|for|please|in|with|under|below|less than|over|above|more than|greater than|at least|at most|between|price|cost|budget|size|small|medium|large|available|stock|color|colour|red|black|white|blue|green|pink|yellow|orange|purple|grey|brown|silver|gold|beige|navy|company|brand|from|by|and|or|a|an|to|buy|purchase|best|selling|popular|trending|latest|new|arrival|sale|discount|cheap|affordable|premium|recommendations?|similar|compare|t shirt|shirt|tee|hoodie|pants|oversized|crew neck|pocket|stripe)$/i.test(normalizeProductLookup(phrase));
+  const catalogQuery = filterOnlyQuery ? [filters.brand, ...filters.colors, filters.productType === "shirt" ? "t shirt" : filters.productType, ...filters.features, ...filters.excludeFeatures].filter(Boolean).join(" ") : phrase;
   const sku = String(question || "").match(/\bsku\s*[:#]?\s*([A-Z0-9][A-Z0-9._/-]{2,})\b/i)?.[1] || String(question || "").match(/\b[A-Z0-9]{2,}(?:-[A-Z0-9]+)+\b/i)?.[0] || "";
   const productsFromKnowledge = knowledgeRows.flatMap((row) => {
     if (row.source_type === "product" && row.metadata?.handle) return [knowledgeProduct(row)];
@@ -282,13 +224,14 @@ async function discoverShopifyProducts(shop, question, knowledgeRows = []) {
       const liveProduct = handle ? (await safeSearch(`handle:${handle}`, 1)).find((product) => product.handle === handle) : null;
       if (liveProduct) exactProduct = { ...exactProduct, ...liveProduct };
     }
-    const relatedTerms = [exactProduct.productType, exactProduct.collections?.[0]?.title, ...(exactProduct.tags || []).slice(0, 2)].filter(Boolean);
+    const asksForAlternatives = /\b(?:compare|similar|another|alternative|options)\b/i.test(question);
+    if (!asksForAlternatives) return { exact: true, products: [{ ...exactProduct, exactMatch: true }], phrase, filters };
+    const relatedTerms = [exactProduct.productType, ...(exactProduct.tags || []).slice(0, 2)].filter(Boolean);
     const relatedQuery = relatedTerms.join(" ") || phrase;
-    const relatedLive = await safeSearch(relatedQuery, 5);
-    const relatedKnowledge = (await Promise.all(productsFromKnowledge.filter((product) => product.handle && product.handle !== exactProduct.handle).slice(0, 8).map(async (product) => (await safeSearch(`handle:${product.handle}`, 1)).find((candidate) => candidate.handle === product.handle)))).filter(Boolean);
-    const relatedByHandle = new Map([...relatedKnowledge, ...relatedLive].filter((product) => product.handle && product.handle !== exactProduct.handle).map((product) => [product.handle, product]));
-    const alternatives = [...relatedByHandle.values()].map((product) => ({ product, score: productRelevance(product, relatedQuery) + Number(product._similarity || 0) * 0.5 })).sort((left, right) => right.score - left.score).map(({ product }) => product).slice(0, 4);
-    return { exact: true, products: [{ ...exactProduct, exactMatch: true }, ...alternatives.map((product) => ({ ...product, exactMatch: false }))].slice(0, 5), phrase };
+    const relatedLive = await safeSearch(relatedQuery, 8);
+    const alternatives = relatedLive.filter((product) => product.handle !== exactProduct.handle && productMatchesFilters(product, filters))
+      .map((product) => ({ product, score: productRelevance(product, relatedQuery) })).sort((left, right) => right.score - left.score).map(({ product }) => product).slice(0, 4);
+    return { exact: true, products: [{ ...exactProduct, exactMatch: true }, ...alternatives.map((product) => ({ ...product, exactMatch: false }))].slice(0, 5), phrase, filters };
   }
   const queryTerms = [...new Set(normalizeProductLookup(catalogQuery).split(/\s+/).filter(Boolean))].slice(0, 6);
   const liveMatches = filterOnlyQuery
@@ -302,22 +245,28 @@ async function discoverShopifyProducts(shop, question, knowledgeRows = []) {
     const ranked = rankedByHandle.get(product.handle);
     merged.set(product.handle, { ...(ranked || {}), ...product, _similarity: Number(ranked?._similarity || product._similarity || 0) });
   });
-  const matchingProducts = [...merged.values()].filter((product) => productMatchesFilters(product, filters));
+  let matchingProducts = [...merged.values()].filter((product) => productMatchesFilters(product, filters));
+  const sizeUnavailable = !matchingProducts.length && Boolean(filters.size) && [...merged.values()].some((product) => productMatchesFilters(product, { ...filters, size: "" }));
+  if (sizeUnavailable) matchingProducts = [...merged.values()].filter((product) => productMatchesFilters(product, { ...filters, size: "" }));
   const hasTextQuery = Boolean(normalizeProductLookup(catalogQuery));
   const priceForSort = (product) => {
     const prices = (product.variants || []).filter((variant) => variant.availableForSale !== false).map((variant) => Number(variant.price)).filter(Number.isFinite);
     if (!prices.length) return null;
-    return filters.maxPrice !== null ? Math.max(...prices.filter((price) => price < filters.maxPrice)) : Math.min(...prices);
+    return Math.min(...prices);
   };
-  const products = matchingProducts.map((product) => ({ product, score: productRelevance(product, catalogQuery) * 0.72 + product._similarity * 0.28, price: priceForSort(product) }))
+  const products = matchingProducts.map((product) => ({ product, score: productRelevance(product, catalogQuery) * 0.72 + product._similarity * 0.28, price: priceForSort(product), bestSeller: (product.tags || []).some((tag) => /best[\s_-]*sell|bestseller/i.test(String(tag))) }))
     .filter((item) => hasTextQuery ? item.score > 0 : true)
-    .sort((left, right) => right.score - left.score || (filters.maxPrice !== null ? (right.price ?? -Infinity) - (left.price ?? -Infinity) : (left.price ?? Infinity) - (right.price ?? Infinity)))
+    .sort((left, right) => filters.sort === "price-desc" ? (right.price ?? -Infinity) - (left.price ?? -Infinity) || right.score - left.score
+      : filters.sort === "price-asc" ? (left.price ?? Infinity) - (right.price ?? Infinity) || right.score - left.score
+        : filters.sort === "best-selling" ? Number(right.bestSeller) - Number(left.bestSeller) || right.score - left.score
+          : right.score - left.score || (filters.maxPrice !== null || filters.priceTarget !== null ? (left.price ?? Infinity) - (right.price ?? Infinity) : 0))
     .slice(0, 5).map(({ product }) => ({ ...product, exactMatch: false }));
-  return { exact: false, products, phrase: phrase || catalogQuery, filters };
+  return { exact: false, products, phrase: phrase || catalogQuery, filters, sizeUnavailable };
 }
 
 function productSearchAnswer(discovery) {
   const filterLabels = [];
+  const matchedNames = discovery.products.slice(0, 3).map((product) => product.title).filter(Boolean);
   if (discovery.filters?.colors.length) filterLabels.push(`${discovery.filters.colors.join("/")} color`);
   if (discovery.filters?.brand) filterLabels.push(`${discovery.filters.brand} brand`);
   if (discovery.filters?.minPrice !== null && discovery.filters?.minPrice !== undefined) filterLabels.push(`over ${discovery.filters.minPrice}`);
@@ -325,10 +274,11 @@ function productSearchAnswer(discovery) {
   if (discovery.filters?.size) filterLabels.push(`size ${discovery.filters.size}`);
   if (discovery.exact && discovery.products.length === 1) return `I found an exact match for “${discovery.products[0].title}”. You can review its details below.`;
   if (discovery.exact && discovery.products.length > 1) return `I found an exact match for “${discovery.products[0].title}”. I’ve also included ${discovery.products.length - 1} related items in case you’d like to compare them.`;
+  if (discovery.sizeUnavailable && discovery.products.length) return `I found ${discovery.products[0].title}, but the requested size isn’t listed as available. Its available options are shown below.`;
   if (discovery.products.length) return filterLabels.length
-    ? `I found ${discovery.products.length === 1 ? "a product" : "products"} matching ${filterLabels.join(", ")}. Review the product details below${discovery.products.length > 1 ? " and compare the options" : ""}.`
+    ? `I found ${discovery.products.length === 1 ? "a product" : "products"} matching ${filterLabels.join(", ")}: ${matchedNames.join(", ")}. Their prices and options are shown below.`
     : discovery.phrase
-      ? `I found ${discovery.products.length === 1 ? "a product" : "products"} matching “${discovery.phrase}”. Review the product details below${discovery.products.length > 1 ? " and compare the options" : ""}.`
+      ? `I found ${matchedNames.join(", ")}. Their prices and options are shown below.`
       : `${discovery.products.length === 1 ? "Here’s a product" : "Here are some products"} from the live store catalog to explore.`;
   if (filterLabels.length) return `I couldn’t find products matching ${filterLabels.join(", ")} in the live catalog. You can try a different budget, color, size, or product type.`;
   return discovery.phrase
@@ -627,7 +577,9 @@ export const action = async ({ request }) => {
     const previousUserMessage = [...priorMessages].reverse().find((item) => item?.role === "user")?.content || "";
     const previousAssistantMessage = [...priorMessages].reverse().find((item) => item?.role === "assistant")?.content || "";
     const productFollowupPrompt = /(?:what are you looking for|what product|product name|share another detail|product type.{0,30}(?:size|color|sku)|tell me.{0,40}(?:product|size|color|budget)|looking for today)/i.test(previousAssistantMessage);
-    const previousSearchTerms = productFollowupPrompt && hasProductSearchLanguage(previousUserMessage) ? productSearchPhrase(previousUserMessage) : "";
+    const refersToPreviousProduct = /\b(?:it|that|that one|those|them|same|another one|this one)\b|^(?:what about|how about|and in|in size|in medium|in large|under \d|over \d)\b/i.test(userMessage)
+      && !/\b(?:t\s*-?\s*shirt|tee|shirt|hoodie|pants|trousers?|jeans|shoes?|sku|catalog|collection)\b/i.test(userMessage);
+    const previousSearchTerms = productFollowupPrompt && refersToPreviousProduct && hasProductSearchLanguage(previousUserMessage) ? productSearchPhrase(previousUserMessage) : "";
     productQuestion = [previousSearchTerms, userMessage].filter(Boolean).join(" ").trim();
     const recentConversation = priorMessages.slice(-6).filter((item) => ["user", "assistant"].includes(item?.role) && typeof item.content === "string")
       .map((item) => ({ role: item.role, content: item.content.replace(/\s+/g, " ").trim().slice(0, 500) }));
@@ -635,7 +587,7 @@ export const action = async ({ request }) => {
     contextualRetrievalQuestion = resolveRetrievalQuestion(userMessage, previousUserMessage, isConversationalFollowup);
     const purchaseRequestedInMessage = /\b(?:i\s+)?(?:want|like|would like|would love|plan|planning)\s+to\s+(?:buy|purchase)|\b(?:buy|purchase)\s+(?:this|that|the|a|an)\s+product\b|\badd\s+.+\s+to\s+(?:my\s+)?cart\b/i.test(userMessage);
     const productFilters = extractProductFilters(productQuestion);
-    const hasProductFilters = Boolean(productFilters.colors.length || productFilters.brand || productFilters.size || productFilters.minPrice !== null || productFilters.maxPrice !== null || productFilters.availability);
+    const hasProductFilters = Boolean(productFilters.colors.length || productFilters.excludedColors.length || productFilters.brand || productFilters.size || productFilters.minPrice !== null || productFilters.maxPrice !== null || productFilters.priceTarget !== null || productFilters.availability || productFilters.productType || productFilters.features.length || productFilters.excludeFeatures.length);
     const purchasePhraseCandidate = productSearchPhrase(userMessage).replace(/\b(?:i|me|my|to|the|a|an|product|item|one)\b/gi, " ").replace(/\s+/g, " ").trim();
     const productPurchaseIntent = purchaseRequestedInMessage && (purchasePhraseCandidate.length > 0 || hasProductFilters);
     const explicitOrderReference = /#\s*\d{3,}\b|\b(?:order|tracking|shipment|delivery)\s*(?:number|no\.?|#|id)?\s*#?\d{3,}\b/i.test(userMessage);
