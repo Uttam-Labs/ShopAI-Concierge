@@ -436,7 +436,23 @@
       persistChat();
       const pending = addMessage(messages, "", "assistant pending");
       pending.bubble.setAttribute("aria-label", "ShopAI is replying");
-      pending.bubble.innerHTML = '<span class="sac-typing" aria-hidden="true"><i></i><i></i><i></i></span><span class="sac-sr-only">ShopAI is replying</span>';
+      pending.bubble.innerHTML = '<span class="sac-typing" aria-hidden="true"><i></i><i></i><i></i></span><span class="sac-typing-status" aria-hidden="true">Typing…</span><span class="sac-sr-only">ShopAI is replying</span>';
+      const pendingStatus = pending.bubble.querySelector(".sac-typing-status");
+      const questionText = message.toLowerCase();
+      const progressMessages = /\b(?:order|tracking|shipment|delivery|parcel)\b/.test(questionText)
+        ? ["Checking order details securely…", "Looking up the latest status…", "Preparing your order update…"]
+        : /\b(?:product|item|shirt|tee|pants|sku|price|size|stock|buy|recommend|catalog)\b/.test(questionText)
+          ? ["Searching the store catalog…", "Checking available product details…", "Preparing your recommendations…"]
+          : /\b(?:return|refund|exchange|shipping|policy|payment|discount)\b/.test(questionText)
+            ? ["Checking the store information…", "Reviewing the relevant policy…", "Preparing a clear answer…"]
+            : ["Thinking…", "Checking the store information…", "Preparing a clear answer…"];
+      let progressIndex = 0;
+      const pendingRevealTimer = window.setTimeout(() => pendingStatus.classList.add("is-visible"), 650);
+      const pendingProgressTimer = window.setInterval(() => {
+        progressIndex = (progressIndex + 1) % progressMessages.length;
+        pendingStatus.textContent = progressMessages[progressIndex];
+        pendingStatus.classList.add("is-visible");
+      }, 4200);
       try {
         const response = await postProxyData(apiEndpoint, { message, shop, storeName, sessionId, customerName: identity?.name || "", customerEmail: identity?.email || "", pageUrl: location.href, ...(faqId ? { faqId } : {}), ...(flowState ? { flowId: flowState.id, flowStepId: flowState.stepId, flowData: flowState.data || {}, ...(options.flow?.choiceId ? { flowChoiceId: options.flow.choiceId } : {}) } : {}) });
         const data = await readApiJson(response, "chat reply");
@@ -482,6 +498,8 @@
         chatHistory.push({ role: "assistant", content: pending.bubble.textContent, createdAt: Date.now(), ...(activeFlow ? { flow: activeFlow } : {}) });
         persistChat();
       } finally {
+        window.clearTimeout(pendingRevealTimer);
+        window.clearInterval(pendingProgressTimer);
         form.dataset.sending = "false";
         panel.querySelector(".sac-send").disabled = false;
         messages.scrollTop = messages.scrollHeight;

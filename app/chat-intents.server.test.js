@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { filterKnowledgeForIntent, isPolicyIntent, isSupportEscalationIntent, isSupportRequestIntent, resolveRetrievalQuestion } from "./chat-intents.server.js";
+import { filterKnowledgeForIntent, findMatchingFaq, isPolicyIntent, isSupportEscalationIntent, isSupportRequestIntent, resolveRetrievalQuestion } from "./chat-intents.server.js";
 
 test("customer wording keeps policy questions separate from previous product searches", () => {
   const question = "if it doesn't fit can i send it back?";
@@ -29,4 +29,14 @@ test("natural requests to talk to a person open support without submitting a tic
 
 test("ordinary follow-up questions retain the preceding customer context", () => {
   assert.equal(resolveRetrievalQuestion("what about in navy?", "show me casual tees", true), "show me casual tees\nwhat about in navy?");
+});
+
+test("prepared FAQ answers match natural customer phrasing", () => {
+  const faqs = [
+    { question: "Where is my package or parcel?", answer: "Use the tracking link in your shipping confirmation email." },
+    { question: "Can I exchange my item for a different size or color?", answer: "Exchange options depend on eligibility and availability." },
+  ];
+  assert.equal(findMatchingFaq(faqs, "where is my package?"), faqs[0]);
+  assert.equal(findMatchingFaq(faqs, "I got the wrong size, can I swap it?"), faqs[1]);
+  assert.equal(findMatchingFaq(faqs, "show me a black T-shirt under 500"), null);
 });
