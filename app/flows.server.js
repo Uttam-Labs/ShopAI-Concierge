@@ -5,21 +5,31 @@ export const DEFAULT_CONVERSATION_FLOWS = [
     description: "A friendly hello with shortcuts to shopping, order updates, and support.",
     enabled: true,
     priority: 10,
-    triggerTerms: ["hi", "hello", "hey", "hiya", "howdy", "good morning", "good afternoon", "good evening", "what can you do", "can you help me", "I need help"],
+    triggerTerms: ["hi", "hello", "hey", "hiya", "howdy", "good morning", "good afternoon", "good evening", "welcome", "start", "help me", "can you help me"],
     steps: [{
       id: "start",
       title: "Welcome",
-      prompt: "Hi there! 👋 What can I help you with today?",
+      prompt: "Hi there! 👋 Welcome to our store. I’m your AI shopping assistant. I can help you find products, track an order, manage a return, or contact our support team. How can I help you today?",
       choices: [
-        { id: "products", label: "Find a product", nextStepId: "product-brief" },
-        { id: "orders", label: "Track an order", action: "openOrderTracking", reply: "I’ll open the secure order lookup for you." },
-        { id: "support", label: "Contact support", action: "openSupport", reply: "I’ll open a support request so the store team can help." },
+        { id: "products", label: "Find a product", nextFlowId: "product-discovery", nextStepId: "brief" },
+        { id: "orders", label: "Track my order", nextFlowId: "order-updates", nextStepId: "start" },
+        { id: "returns", label: "Return or exchange", nextFlowId: "returns-support", nextStepId: "reason" },
+        { id: "problem", label: "Report a problem", nextFlowId: "returns-support", nextStepId: "reason" },
+        { id: "support", label: "Contact support", action: "openSupport", requestTypeId: "other", reply: "Of course. I’ll open a support request so our team can help." },
+        { id: "other", label: "Something else", nextStepId: "general-inquiry" },
       ],
     }, {
-      id: "product-brief",
-      title: "Product search",
-      prompt: "Tell me what you’re looking for. Include a product type, size, budget, color, or features you prefer, and I’ll search this store’s catalog.",
+      id: "general-inquiry",
+      title: "General inquiry",
+      prompt: "Of course! Please tell me what you need help with. I’ll do my best to assist you.",
       inputAction: "continueAI",
+      routes: [
+        { id: "hours", keywords: ["store hours", "opening hours", "business hours", "what time do you open"], reply: "Our store hours are available on our website. I’ll check the store information for you.", action: "continueAI" },
+        { id: "international-shipping", keywords: ["international shipping", "ship internationally", "shipping to another country"], reply: "Let me check the store’s international shipping policy for you.", action: "continueAI" },
+        { id: "payment-methods", keywords: ["payment methods", "payment options", "which cards", "how can i pay"], reply: "Let me check the payment methods listed by the store.", action: "continueAI" },
+        { id: "offers", keywords: ["ongoing offers", "current offers", "promotions", "discounts", "special offers"], reply: "I’ll check the promotions and offers available in the store information.", action: "continueAI" },
+        { id: "human-agent", keywords: ["speak with a human", "human agent", "talk to a person", "speak to an agent", "real person"], reply: "Absolutely. I can help connect you with our support team.", action: "openSupport", requestTypeId: "other" },
+      ],
     }],
   },
   {
@@ -28,12 +38,26 @@ export const DEFAULT_CONVERSATION_FLOWS = [
     description: "Collects a useful product brief, then hands it to catalog-aware AI search.",
     enabled: true,
     priority: 30,
-    triggerTerms: ["help me choose", "help me find a product", "recommend something", "recommend a product", "not sure what to buy", "looking for a product", "show me products", "do you sell", "best product", "product for me", "shopping for"],
+    triggerTerms: ["help me choose", "help me find a product", "recommend something", "recommend a product", "not sure what to buy", "looking for a product", "show me products", "do you sell", "best product", "product for me", "shopping for", "waterproof jackets", "products under $100", "in medium", "best selling product", "similar products", "compare these products", "product details", "is this in stock", "another color", "i want to buy", "i would like to buy", "want to purchase", "buy this product", "product sku", "sku", "product code"],
     steps: [{
       id: "brief",
-      title: "Shopping preferences",
-      prompt: "I can help narrow it down. What product are you looking for? You can include your size, budget, or must-have features.",
+      title: "Product search",
+      prompt: "I’d be happy to help you find the right product! What are you looking for today? You can tell me the product name, category, preferred size, color, or budget.",
       inputAction: "continueAI",
+      routes: [
+        { id: "purchase-intent", keywords: ["i want to buy", "i would like to buy", "want to purchase", "buy this product", "i want this", "i will buy"], reply: "I’d be happy to help with that. I’ll look for the product in this store and show you the closest match so you can confirm before checkout.", action: "continueAI" },
+        { id: "sku-or-title", keywords: ["sku", "product code", "product title", "iphone-123"], reply: "Thanks — I’ll search the store catalog for that product name or SKU.", action: "continueAI" },
+        { id: "waterproof-jacket", keywords: ["waterproof jacket", "waterproof jackets", "waterproof coat"], reply: "Sure! Let me find available waterproof jackets for you.", action: "continueAI" },
+        { id: "budget", keywords: ["under $100", "under 100", "below $100", "within my budget"], reply: "Absolutely! I’ll look for products within your budget.", action: "continueAI" },
+        { id: "size-medium", keywords: ["in medium", "size medium", "available in medium", "size m"], reply: "Let me check which products have a Medium variant available.", action: "continueAI" },
+        { id: "best-seller", keywords: ["best selling product", "best seller", "popular product", "most popular"], reply: "I’ll look for popular products using the store’s product information.", action: "continueAI" },
+        { id: "recommendation", keywords: ["recommend a product", "which product would you recommend", "what do you recommend"], reply: "I’d be happy to recommend products based on what you need. Tell me your preferences and I’ll search the catalog.", action: "continueAI" },
+        { id: "color", keywords: ["another color", "different color", "other colours", "other colors"], reply: "Let me check which colors are available for this product.", action: "continueAI" },
+        { id: "availability", keywords: ["in stock", "available", "stock availability", "is this available"], reply: "I’ll check the current availability shown for the product variants.", action: "continueAI" },
+        { id: "similar", keywords: ["similar products", "something similar", "similar item", "alternative product"], reply: "Absolutely! I’ll look for similar products in the store catalog.", action: "continueAI" },
+        { id: "compare", keywords: ["difference between", "compare these", "compare products", "compare their features"], reply: "I’ll compare the product details and features available in the store information.", action: "continueAI" },
+        { id: "details", keywords: ["product details", "more details", "tell me more about this", "specifications"], reply: "Sure! I’ll show the product details available from the store.", action: "continueAI" },
+      ],
     }],
   },
   {
@@ -42,21 +66,32 @@ export const DEFAULT_CONVERSATION_FLOWS = [
     description: "Routes tracking and cancellation questions to the verified order lookup or support team.",
     enabled: true,
     priority: 70,
-    triggerTerms: ["track my order", "track order", "order tracking", "order status", "where is my order", "order update", "cancel my order", "cancel order", "order history", "my recent orders", "check my purchase", "shipment status", "delivery status"],
+    triggerTerms: ["track my order", "track order", "order tracking", "order status", "where is my order", "order update", "cancel my order", "cancel order", "order history", "my recent orders", "previous orders", "check my purchase", "shipment status", "delivery status", "tracking number", "change shipping address", "partial order", "order says delivered", "wrong email"],
     steps: [{
       id: "start",
       title: "Order help",
-      prompt: "I can help with an existing order. Choose an option below. Order details are checked securely using the order number and checkout email.",
+      prompt: "I can help with your orders! What would you like to do today? For a secure order lookup, I’ll ask for the order number and the email used at checkout.",
       choices: [
-        { id: "track", label: "Track a specific order", action: "openOrderTracking", reply: "Enter the order number and checkout email in the secure order lookup." },
-        { id: "history", label: "I need help finding an order", action: "openSupport", requestTypeId: "order-delivery", details: "Customer needs help locating an order. Please follow up by email and request the checkout email or order number.", reply: "I’ll send this to the store team. They can help locate the order using the checkout email or order number." },
-        { id: "cancel", label: "Ask about cancelling", action: "openSupport", requestTypeId: "order-delivery", details: "Customer is asking whether their order can be cancelled before shipment.", reply: "I’ll pass your cancellation question to the store team so they can check the shipment status." },
+        { id: "history", label: "View order history", action: "openSupport", requestTypeId: "order-delivery", details: "Customer asked to view recent orders. Please verify their checkout email and help locate their order history.", reply: "I can help the team locate your recent orders. I’ll open a support request so they can verify your account." },
+        { id: "track", label: "Track my order", action: "openOrderTracking", reply: "I’d be happy to check that. Enter your order number and the email used at checkout in the secure lookup." },
+        { id: "status", label: "Check order status", action: "openOrderTracking", reply: "I’ll check the latest order status. Please enter your order number and checkout email." },
+        { id: "cancel", label: "Ask to cancel an order", action: "openSupport", requestTypeId: "order-delivery", details: "Customer requests an order cancellation. Support team must verify ownership and actual cancellation eligibility before taking action.", reply: "I can help request a cancellation review. The store team will verify the order and confirm whether it can still be cancelled." },
+        { id: "issue", label: "Report an order issue", nextFlowId: "returns-support", nextStepId: "reason" },
+        { id: "other", label: "Other order question", nextStepId: "general-order-question" },
       ],
       routes: [
-        { keywords: ["track", "tracking", "where is my order", "status", "shipment"], choiceId: "track" },
-        { keywords: ["history", "recent orders", "find an order", "past order"], choiceId: "history" },
-        { keywords: ["cancel", "cancellation"], choiceId: "cancel" },
+        { id: "order-track", keywords: ["where is my order", "track my order", "tracking number", "has my order been shipped", "order status", "when will my order arrive", "late delivery", "order has not arrived", "wrong email", "change shipping address", "partial order", "delivered but not received"], reply: "I’d be happy to check that. Please use the secure lookup with your order number and checkout email.", action: "openOrderTracking" },
+        { id: "order-history", keywords: ["previous orders", "order history", "recent orders", "past orders"], reply: "I can help the team locate your recent orders. I’ll open a support request so they can verify your account.", action: "openSupport", requestTypeId: "order-delivery", details: "Customer asked to view recent order history. Please verify their checkout email and help locate their orders." },
+        { id: "order-cancel", keywords: ["cancel my order", "cancel order", "cancellation"], reply: "I can help request a cancellation review. The store team will verify the order and confirm whether it can still be cancelled.", action: "openSupport", requestTypeId: "order-delivery", details: "Customer requests an order cancellation. Support team must verify ownership and actual cancellation eligibility before taking action." },
+        { id: "order-issue", keywords: ["order issue", "missing item", "order is damaged", "delivered but not received", "only part of my order"], reply: "I’m sorry about the trouble. I’ll help you report this order issue.", nextFlowId: "returns-support", nextStepId: "reason" },
+        { id: "order-other", keywords: ["other order question", "question about my order"], reply: "Please tell me a little more, and I’ll check the store information or help you reach the team.", nextStepId: "general-order-question" },
       ],
+    }, {
+      id: "general-order-question",
+      title: "Other order question",
+      prompt: "Please tell me what you’d like to know about the order. I’ll check the store information and help with the next step.",
+      inputAction: "continueAI",
+      routes: [{ id: "order-address-question", keywords: ["change address", "shipping address", "wrong address"], reply: "I’ll check whether the store information explains when a shipping address can be changed.", action: "continueAI" }],
     }],
   },
   {
@@ -70,7 +105,7 @@ export const DEFAULT_CONVERSATION_FLOWS = [
       {
         id: "reason",
         title: "Understand the issue",
-        prompt: "I’m sorry this hasn’t gone well. What happened? Choose an option, or tell me in your own words.",
+        prompt: "I’m sorry this hasn’t gone as you expected. Could you tell me a little more about what happened? For example, was there a quality, delivery, or order issue?",
         choices: [
           { id: "quality", label: "Product quality", nextStepId: "quality" },
           { id: "return", label: "I want to return it", nextStepId: "return-details" },
@@ -78,16 +113,17 @@ export const DEFAULT_CONVERSATION_FLOWS = [
           { id: "damaged", label: "Wrong, missing, or damaged item", nextStepId: "item-details" },
         ],
         routes: [
-          { keywords: ["quality", "poor", "bad", "defect", "defective"], nextStepId: "quality" },
-          { keywords: ["return", "refund"], nextStepId: "return-details" },
+          { id: "quality", keywords: ["quality", "poor quality", "bad quality", "very bad", "defect", "defective", "not as expected", "doesn't match description", "does not match description", "stopped working"], reply: "I’m sorry the product hasn’t met your expectations. Which item is affected, and would you prefer help with a return or another resolution?", nextStepId: "quality" },
+          { id: "return", keywords: ["return", "refund", "money back", "send it back"], reply: "I can help start a return request. Which product would you like the team to review?", nextStepId: "return-details" },
           { keywords: ["delivery", "shipping", "shipment"], nextStepId: "delivery-details" },
-          { keywords: ["damaged", "broken", "wrong", "missing", "not received"], nextStepId: "item-details" },
+          { id: "damaged", keywords: ["damaged", "arrived broken", "broken", "wrong product", "wrong item", "missing", "not received", "never arrived"], reply: "I’m sorry about that. Please tell me which item was affected and, if you have it, your order number. I’ll help send the details to the store team.", nextStepId: "item-details" },
+          { id: "unclear-issue", keywords: ["something else", "other issue", "not sure", "help", "it is bad", "bad experience"], reply: "I’m sorry you’re dealing with this. Could you share which product is involved and what happened? A few details will help me point you to the right next step.", action: "continueAI" },
         ],
       },
       {
         id: "quality",
         title: "Quality concern",
-        prompt: "I’m sorry the product quality wasn’t what you expected. An exchange isn’t available through this request, but I can help you ask the store team about a return. Would you like to do that?",
+        prompt: "I’m sorry the product quality wasn’t what you expected. Would you like help asking the store team about a return, or would you prefer to tell me more about the issue first? I can check the store’s current policy before suggesting what’s available.",
         choices: [
           { id: "yes-return", label: "Yes, ask about a return", nextStepId: "return-details" },
           { id: "exchange", label: "I was hoping to exchange it", nextStepId: "exchange-info" },
@@ -167,7 +203,7 @@ export function normalizeConversationFlows(value) {
   return DEFAULT_CONVERSATION_FLOWS.map((defaults) => {
     const saved = savedFlows.find((flow) => flow?.id === defaults.id) || {};
     const savedSteps = Array.isArray(saved.steps) ? saved.steps : [];
-    const allowedTriggers = Array.isArray(saved.triggerTerms) ? saved.triggerTerms : defaults.triggerTerms;
+    const allowedTriggers = Array.isArray(saved.triggerTerms) ? saved.triggerTerms : typeof saved.triggerTerms === "string" ? saved.triggerTerms.split(",") : defaults.triggerTerms;
     const triggerTerms = [...new Set(allowedTriggers.map((term) => String(term || "").trim().slice(0, 80)).filter(Boolean))].slice(0, 30);
     return {
       ...defaults,
@@ -178,11 +214,37 @@ export function normalizeConversationFlows(value) {
       steps: defaults.steps.map((step) => {
         const savedStep = savedSteps.find((candidate) => candidate?.id === step.id) || {};
         const savedChoices = Array.isArray(savedStep.choices) ? savedStep.choices : [];
+        const savedRoutes = Array.isArray(savedStep.routes) ? savedStep.routes : [];
+        const defaultRoutes = step.routes || [];
+        const sourceRoutes = [
+          ...defaultRoutes.map((defaultRoute, index) => savedRoutes.find((candidate) => candidate?.id === defaultRoute.id) || (savedRoutes[index] && !savedRoutes[index].id ? savedRoutes[index] : defaultRoute)),
+          ...savedRoutes.filter((candidate) => candidate?.id && !defaultRoutes.some((defaultRoute) => defaultRoute.id === candidate.id)),
+        ];
         return {
           ...step,
           prompt: cleanText(savedStep.prompt, step.prompt, 1000),
           ...(step.inputReply ? { inputReply: cleanText(savedStep.inputReply, step.inputReply, 500) } : {}),
           ...(step.followupStepId ? { followupStepId: step.followupStepId } : {}),
+          routes: sourceRoutes.slice(0, 40).map((route, index) => {
+            const defaultRoute = (step.routes || []).find((candidate) => candidate.id && candidate.id === route?.id) || (step.routes || [])[index] || {};
+            const keywords = Array.isArray(route?.keywords) ? route.keywords : defaultRoute.keywords || [];
+            const action = ["continueAI", "openOrderTracking", "openSupport"].includes(route?.action) ? route.action : route?.action === "" ? "" : defaultRoute.action;
+            const nextFlowId = route?.nextFlowId === "" ? "" : ["welcome", "product-discovery", "order-updates", "returns-support"].includes(route?.nextFlowId) ? route.nextFlowId : defaultRoute.nextFlowId;
+            const targetFlow = DEFAULT_CONVERSATION_FLOWS.find((candidate) => candidate.id === (nextFlowId || defaults.id));
+            const nextStepId = route?.nextStepId === "" ? "" : typeof route?.nextStepId === "string" && targetFlow?.steps.some((candidate) => candidate.id === route.nextStepId) ? route.nextStepId : defaultRoute.nextStepId;
+            return {
+              ...defaultRoute,
+              ...route,
+              id: cleanText(route?.id, `question-${index + 1}`, 80),
+              keywords: [...new Set(keywords.map((phrase) => String(phrase || "").trim().slice(0, 100)).filter(Boolean))].slice(0, 30),
+              reply: typeof route?.reply === "string" ? route.reply.trim().slice(0, 500) : defaultRoute.reply || "",
+              ...(action ? { action } : {}),
+              ...(nextFlowId ? { nextFlowId } : {}),
+              ...(nextStepId ? { nextStepId } : {}),
+              ...(route?.requestTypeId || defaultRoute.requestTypeId ? { requestTypeId: String(route?.requestTypeId || defaultRoute.requestTypeId).slice(0, 80) } : {}),
+              ...(route?.details || defaultRoute.details ? { details: String(route?.details || defaultRoute.details).slice(0, 500) } : {}),
+            };
+          }),
           choices: step.choices?.map((choice) => {
             const savedChoice = savedChoices.find((candidate) => candidate?.id === choice.id) || {};
             return { ...choice, label: cleanText(savedChoice.label, choice.label, 100), ...(choice.reply ? { reply: cleanText(savedChoice.reply, choice.reply, 500) } : {}) };
@@ -205,97 +267,81 @@ function includesTerm(message, term) {
 
 export function resolveConversationFlow(flows, { message, flowId, stepId, choiceId }) {
   const enabledFlows = normalizeConversationFlows(flows).filter((flow) => flow.enabled);
-  let flow;
-  let step;
+  const flowState = (flow, step, answer = step.prompt) => ({
+    answer,
+    flow: step.choices?.length || step.inputAction ? { id: flow.id, stepId: step.id, choices: (step.choices || []).map(({ id, label }) => ({ id, label })) } : null,
+  });
+  const matchingFlow = (excludedId) => enabledFlows.map((candidate) => ({
+    candidate,
+    matchLength: Math.max(0, ...candidate.triggerTerms.filter((term) => includesTerm(message, term)).map((term) => normalizeForMatch(term).length)),
+  })).filter(({ candidate, matchLength }) => matchLength > 0 && candidate.id !== excludedId)
+    .sort((left, right) => right.matchLength - left.matchLength || right.candidate.priority - left.candidate.priority)[0]?.candidate;
+  const transition = (sourceFlow, sourceStep, targetFlowId, targetStepId, reply = "") => {
+    const targetFlow = enabledFlows.find((candidate) => candidate.id === (targetFlowId || sourceFlow.id));
+    const targetStep = targetFlow?.steps.find((candidate) => candidate.id === targetStepId);
+    if (!targetFlow || !targetStep) return null;
+    return flowState(targetFlow, targetStep, [reply, targetStep.prompt].filter(Boolean).join("\n\n"));
+  };
+  const runAction = (flow, step, action, reply, config = {}) => ({
+    answer: reply || step.prompt,
+    action,
+    requestTypeId: config.requestTypeId,
+    details: config.details,
+    followupStepId: config.followupStepId || step.followupStepId,
+    flowId: config.flowId || flow.id,
+    clearFlow: action !== "continueAI",
+  });
+  const runRoute = (flow, step, route) => {
+    const selected = route.choiceId ? step.choices?.find((choice) => choice.id === route.choiceId) : null;
+    const action = route.action || selected?.action;
+    const reply = route.reply || selected?.reply || "";
+    const config = { ...selected, ...route, flowId: flow.id };
+    if (action) return runAction(flow, step, action, reply, config);
+    const targetStepId = route.nextStepId || selected?.nextStepId;
+    const targetFlowId = route.nextFlowId || selected?.nextFlowId;
+    if (targetStepId) return transition(flow, step, targetFlowId, targetStepId, reply);
+    return reply ? { answer: reply, flow: null, clearFlow: true } : null;
+  };
 
-  if (flowId && stepId) {
-    flow = enabledFlows.find((candidate) => candidate.id === flowId);
-    step = flow?.steps.find((candidate) => candidate.id === stepId);
-    if (!flow || !step) return null;
-    if (!choiceId) {
-      const handoff = enabledFlows.map((candidate) => ({
-        candidate,
-        matchLength: Math.max(0, ...candidate.triggerTerms.filter((term) => includesTerm(message, term)).map((term) => normalizeForMatch(term).length)),
-      })).filter((item) => item.matchLength > 0 && item.candidate.id !== flowId).sort((a, b) => b.matchLength - a.matchLength || b.candidate.priority - a.candidate.priority)[0]?.candidate;
-      if (handoff) {
-        flow = handoff;
-        step = flow.steps[0];
-        const route = step.routes?.find((entry) => entry.keywords.some((keyword) => includesTerm(message, keyword)));
-        if (route) step = flow.steps.find((candidate) => candidate.id === route.nextStepId) || step;
-        return { answer: step.prompt, flow: step.choices?.length || step.inputAction ? { id: flow.id, stepId: step.id, choices: (step.choices || []).map(({ id, label }) => ({ id, label })) } : null };
-      }
+  let flow = flowId ? enabledFlows.find((candidate) => candidate.id === flowId) : null;
+  let step = flow?.steps.find((candidate) => candidate.id === stepId);
+  const isContinuation = Boolean(flowId && stepId && flow && step);
+  if (isContinuation && !choiceId) {
+    const otherFlow = matchingFlow(flow.id);
+    if (otherFlow) {
+      flow = otherFlow;
+      step = flow.steps[0];
+      const handoffRoute = step.routes?.find((route) => route.keywords.some((keyword) => includesTerm(message, keyword)));
+      if (handoffRoute) return runRoute(flow, step, handoffRoute);
+      return flowState(flow, step);
     }
-  } else {
-    flow = enabledFlows.map((candidate) => ({
-      candidate,
-      matchLength: Math.max(0, ...candidate.triggerTerms.filter((term) => includesTerm(message, term)).map((term) => normalizeForMatch(term).length)),
-    })).filter((item) => item.matchLength > 0).sort((a, b) => b.candidate.priority - a.candidate.priority || b.matchLength - a.matchLength)[0]?.candidate;
-    if (!flow) {
-      flow = enabledFlows.map((candidate) => ({
-        candidate,
-        matchLength: Math.max(0, ...candidate.triggerTerms.filter((term) => includesTerm(message, term)).map((term) => normalizeForMatch(term).length)),
-      })).filter((item) => item.matchLength > 0 && item.candidate.id !== flowId).sort((a, b) => b.matchLength - a.matchLength || b.candidate.priority - a.candidate.priority)[0]?.candidate;
-      if (!flow) return null;
-    }
+  }
+  if (!isContinuation) {
+    flow = matchingFlow("");
+    if (!flow) return null;
     step = flow.steps[0];
     const initialRoute = step.routes?.find((route) => route.keywords.some((keyword) => includesTerm(message, keyword)));
-    if (initialRoute?.choiceId) {
-      const choice = step.choices?.find((candidate) => candidate.id === initialRoute.choiceId);
-      if (choice?.action) return { answer: choice.reply || step.prompt, action: choice.action, requestTypeId: choice.requestTypeId, details: choice.details, followupStepId: choice.followupStepId || step.followupStepId, flowId: flow.id, clearFlow: true };
-      if (choice?.nextStepId) step = flow.steps.find((candidate) => candidate.id === choice.nextStepId) || step;
-    } else if (initialRoute) step = flow.steps.find((candidate) => candidate.id === initialRoute.nextStepId) || step;
+    if (initialRoute) return runRoute(flow, step, initialRoute);
+    return flowState(flow, step);
   }
 
-  if (flowId && stepId) {
-    const explicitChoice = step.choices?.find((choice) => choice.id === choiceId);
-    const selectedRoute = !explicitChoice ? step.routes?.find((route) => route.keywords.some((keyword) => includesTerm(message, keyword))) : null;
-    const selected = explicitChoice || (selectedRoute?.choiceId ? step.choices?.find((choice) => choice.id === selectedRoute.choiceId) : null);
-    if (selected?.action === "continueAI") return null;
-    if (selected?.action) return {
-      answer: selected.reply || step.prompt,
-      action: selected.action,
-      requestTypeId: selected.requestTypeId,
-      details: selected.details,
-      followupStepId: selected.followupStepId || step.followupStepId,
-      flowId: flow.id,
-      clearFlow: true,
-    };
-    let nextStepId = selected?.nextStepId;
-    if (!nextStepId) {
-      const normalizedMessage = normalizeForMatch(message);
-      const routed = selectedRoute || step.routes?.find((route) => route.keywords.some((keyword) => includesTerm(normalizedMessage, keyword)));
-      nextStepId = routed?.nextStepId;
-    }
-    if (!nextStepId && step.inputAction === "continueAI") return null;
-    if (step.inputAction) return {
-      answer: step.inputReply || "Thanks for sharing that. I’ll use those details to help you find the right next step.",
-      action: step.inputAction,
+  const selected = step.choices?.find((choice) => choice.id === choiceId);
+  if (selected) {
+    if (selected.action) return runAction(flow, step, selected.action, selected.reply, selected);
+    if (selected.nextStepId) return transition(flow, step, selected.nextFlowId, selected.nextStepId, selected.reply || "");
+  }
+  const route = step.routes?.find((candidate) => candidate.keywords.some((keyword) => includesTerm(message, keyword)));
+  if (route) return runRoute(flow, step, route);
+  if (step.inputAction) {
+    if (step.inputAction === "continueAI") return null;
+    return runAction(flow, step, step.inputAction, step.inputReply || "Thanks for sharing that. I’ll use those details to help you find the right next step.", {
       requestTypeId: step.requestTypeId,
       details: `${step.detailsPrefix || ""}${String(message || "").trim().slice(0, 1500)}`,
       followupStepId: step.followupStepId,
-      flowId: flow.id,
-      clearFlow: true,
-    };
-    if (!nextStepId) {
-      const handoff = enabledFlows.map((candidate) => ({
-        candidate,
-        matchLength: Math.max(0, ...candidate.triggerTerms.filter((term) => includesTerm(message, term)).map((term) => normalizeForMatch(term).length)),
-      })).filter((item) => item.matchLength > 0 && item.candidate.id !== flow.id).sort((a, b) => b.matchLength - a.matchLength || b.candidate.priority - a.candidate.priority)[0]?.candidate;
-      if (!handoff) return null;
-      flow = handoff;
-      step = flow.steps[0];
-      const route = step.routes?.find((entry) => entry.keywords.some((keyword) => includesTerm(message, keyword)));
-      if (route) step = flow.steps.find((candidate) => candidate.id === route.nextStepId) || step;
-      return { answer: step.prompt, flow: step.choices?.length || step.inputAction ? { id: flow.id, stepId: step.id, choices: (step.choices || []).map(({ id, label }) => ({ id, label })) } : null };
-    }
-    step = flow.steps.find((candidate) => candidate.id === nextStepId);
+    });
   }
-
-  if (!step) return null;
-  return {
-    answer: step.prompt,
-    flow: step.choices?.length || step.inputAction ? { id: flow.id, stepId: step.id, choices: (step.choices || []).map(({ id, label }) => ({ id, label })) } : null,
-  };
+  const handoff = matchingFlow(flow.id);
+  return handoff ? flowState(handoff, handoff.steps[0]) : null;
 }
 
 export function getConversationFlowStep(flows, flowId, stepId) {

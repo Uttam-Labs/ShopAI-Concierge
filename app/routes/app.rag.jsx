@@ -1,3 +1,5 @@
+/* eslint-env node */
+/* eslint-disable react/prop-types */
 import { useMemo, useState } from "react";
 import { useFetcher } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
@@ -94,11 +96,11 @@ export const action = async ({ request }) => {
             ... on Product {
               id title descriptionHtml vendor productType tags
               featuredImage { url }
-              variants(first: 100) { edges { node { id title price availableForSale } } }
+              variants(first: 100) { edges { node { id title sku price availableForSale } } }
             }
             ... on Collection {
               id title handle description image { url }
-              products(first: 30) { edges { node { id title handle descriptionHtml vendor productType tags featuredImage { url } variants(first: 20) { edges { node { id title price availableForSale } } } } } }
+              products(first: 30) { edges { node { id title handle descriptionHtml vendor productType tags featuredImage { url } variants(first: 20) { edges { node { id title sku price availableForSale } } } } } }
             }
             ... on Page { id title body handle }
           }
@@ -110,7 +112,7 @@ export const action = async ({ request }) => {
       for (const node of nodes) {
         if (!node) continue;
         resolvedShopifyIds.add(node.id);
-        if (node.variants) docs.push({ source_type: "product", source_id: node.id, title: node.title, content: [node.title, node.descriptionHtml?.replace(/<[^>]+>/g, " "), node.vendor, node.productType, node.tags?.join(", "), ...(node.variants.edges ?? []).map(({ node: variant }) => `${variant.title} $${variant.price} ${variant.availableForSale ? "in stock" : "out of stock"}`)].filter(Boolean).join("\n"), metadata: { handle: node.handle, image: node.featuredImage?.url, tags: node.tags || [], variants: node.variants.edges?.map(({ node: variant }) => variant) } });
+        if (node.variants) docs.push({ source_type: "product", source_id: node.id, title: node.title, content: [node.title, node.descriptionHtml?.replace(/<[^>]+>/g, " "), node.vendor, node.productType, node.tags?.join(", "), ...(node.variants.edges ?? []).map(({ node: variant }) => `${variant.title} SKU ${variant.sku || ""} $${variant.price} ${variant.availableForSale ? "in stock" : "out of stock"}`)].filter(Boolean).join("\n"), metadata: { handle: node.handle, image: node.featuredImage?.url, description: node.descriptionHtml?.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim(), tags: node.tags || [], variants: node.variants.edges?.map(({ node: variant }) => variant) } });
         else if (node.products) {
           const collectionProducts = (node.products.edges ?? []).map(({ node: product }) => ({
             title: product.title,
@@ -120,13 +122,13 @@ export const action = async ({ request }) => {
             productType: product.productType || "",
             description: product.descriptionHtml?.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() || "",
             tags: product.tags || [],
-            variants: (product.variants?.edges ?? []).map(({ node: variant }) => ({ id: variant.id, title: variant.title, price: variant.price, availableForSale: variant.availableForSale })),
+            variants: (product.variants?.edges ?? []).map(({ node: variant }) => ({ id: variant.id, title: variant.title, sku: variant.sku, price: variant.price, availableForSale: variant.availableForSale })),
           }));
           docs.push({
             source_type: "collection",
             source_id: node.id,
             title: node.title,
-            content: [node.title, node.description, ...collectionProducts.map((product) => [product.title, product.vendor, product.productType, product.description, product.tags.join(", "), ...product.variants.map((variant) => `${variant.title} $${variant.price} ${variant.availableForSale ? "in stock" : "out of stock"}`)].filter(Boolean).join("\n"))].filter(Boolean).join("\n"),
+            content: [node.title, node.description, ...collectionProducts.map((product) => [product.title, product.vendor, product.productType, product.description, product.tags.join(", "), ...product.variants.map((variant) => `${variant.title} SKU ${variant.sku || ""} $${variant.price} ${variant.availableForSale ? "in stock" : "out of stock"}`)].filter(Boolean).join("\n"))].filter(Boolean).join("\n"),
             metadata: { handle: node.handle, image: node.image?.url, products: collectionProducts },
           });
         }

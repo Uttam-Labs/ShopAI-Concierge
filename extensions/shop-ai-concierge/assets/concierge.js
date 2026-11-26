@@ -149,7 +149,7 @@
         if (item.openOrderTracking && item.role === "assistant") addOrderTrackingAction(restored.row);
         if (item.flow && item.role === "assistant" && activeFlow?.id === item.flow.id && activeFlow?.stepId === item.flow.stepId) renderFlowChoices(restored.row, item.flow, sendMessage);
         if (item.order && item.role === "assistant") restoredOrderRows.push({ row: restored.row, order: item.order, answer: item.content });
-        if (item.products?.length && item.role === "assistant") renderProducts(messages, item.products, { persist: false });
+        if (item.products?.length && item.role === "assistant") renderProducts(messages, item.products, { persist: false, purchaseIntent: item.purchaseIntent === true });
       });
       messages.append(faqSection);
     } else {
@@ -310,6 +310,20 @@
       const message = String(rawMessage || "").trim();
       const faqId = typeof options.faqId === "string" ? options.faqId : "";
       if (!message || form.dataset.sending === "true") return;
+      const previousAssistantTurn = chatHistory[chatHistory.length - 1];
+      if (!options.flow && /^(yes|yes please|sure|go ahead|please do|that one)$/i.test(message) && previousAssistantTurn?.role === "assistant" && previousAssistantTurn.purchaseIntent) {
+        const pendingPurchase = messages.querySelector('.sac-products[data-purchase-intent="true"] .sac-card button:not(:disabled)');
+        if (pendingPurchase && (previousAssistantTurn.products || []).length === 1) {
+          addMessage(messages, message, "user");
+          chatHistory.push({ role: "user", content: message, createdAt: Date.now() });
+          persistChat();
+          addMessage(messages, "Great, I’ll add that item to your cart and take you to checkout.", "assistant");
+          pendingPurchase.click();
+          input.value = "";
+          resizeComposer();
+          return;
+        }
+      }
       const flowState = options.flow || (faqId ? null : activeFlow);
       activeFlow = null;
       chatHistory.forEach((item) => { delete item.flow; });
@@ -341,9 +355,9 @@
         if (activeFlow) renderFlowChoices(reply.row, activeFlow, sendMessage);
         const recommendedProducts = enableRecommendations && Array.isArray(data.products) ? data.products.slice(0, 12) : [];
         const savedProducts = recommendedProducts.slice(0, 4);
-        chatHistory.push({ role: "assistant", content: answer, createdAt: Date.now(), ...(activeFlow ? { flow: activeFlow } : {}), ...(data.openOrderTracking ? { openOrderTracking: true } : {}), ...(data.order ? { order: data.order } : {}), ...(savedProducts.length ? { products: savedProducts } : {}) });
+        chatHistory.push({ role: "assistant", content: answer, createdAt: Date.now(), ...(activeFlow ? { flow: activeFlow } : {}), ...(data.openOrderTracking ? { openOrderTracking: true } : {}), ...(data.order ? { order: data.order } : {}), ...(data.purchaseIntent ? { purchaseIntent: true } : {}), ...(savedProducts.length ? { products: savedProducts } : {}) });
         persistChat();
-        if (recommendedProducts.length) renderProducts(messages, recommendedProducts);
+        if (recommendedProducts.length) renderProducts(messages, recommendedProducts, { purchaseIntent: data.purchaseIntent === true });
       } catch (error) {
         pending.bubble.classList.remove("pending", "error");
         const isIdentityQuestion = /\b(who are you|what are you|what can you do|how can you help)\b/i.test(message);
@@ -655,9 +669,10 @@
   function escapeHtml(text) {
     return String(text).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
   }
-  async function renderProducts(container, products) {
+  async function renderProducts(container, products, options = {}) {
     const wrap = document.createElement("div");
     wrap.className = "sac-products";
+    if (options.purchaseIntent) wrap.dataset.purchaseIntent = "true";
     const rootUrl = window.Shopify?.routes?.root || "/";
     const currentProducts = await Promise.all(products.map(async (product) => {
       if (!product.handle) return { ...product, url: product.url || "" };
@@ -669,6 +684,7 @@
           ...product,
           title: current.title || product.title,
           image: current.featured_image || current.images?.[0] || product.image,
+          description: String(current.description || current.description_html || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim() || product.description || "",
           url: current.url || `${rootUrl}products/${encodeURIComponent(product.handle)}`,
           priceCents: Number(current.price_min ?? current.price ?? 0),
           variants: (current.variants || []).map((variant) => ({ id: variant.id, title: variant.public_title || variant.title, priceCents: Number(variant.price || 0), availableForSale: variant.available !== false })),
@@ -715,12 +731,13 @@
       const availableVariants = allVariants.filter((value) => value.availableForSale !== false);
       const outOfStock = allVariants.length > 0 && availableVariants.length === 0;
       info.append(titleRow, price);
+      if (product.description) { const description = document.createElement("p"); description.className = "sac-card-description"; description.textContent = product.description; info.append(description); }
       const variant = document.createElement("select"); variant.setAttribute("aria-label", `Choose ${product.title || "product"} variant`);
       availableVariants.forEach((value) => { const option = document.createElement("option"); option.value = String(value.id).split("/").pop(); option.textContent = `${value.title}${Number.isFinite(value.priceCents) ? ` · ${formatCents(value.priceCents)}` : ""}`; variant.append(option); });
       if (availableVariants.length > 1 || (availableVariants.length === 1 && !/^default title$/i.test(availableVariants[0].title || ""))) info.append(variant);
       variant.addEventListener("change", () => { const selected = product.variants.find((value) => String(value.id).split("/").pop() === variant.value); if (selected && Number.isFinite(selected.priceCents)) price.textContent = formatCents(selected.priceCents); });
       if (outOfStock) { const stock = document.createElement("span"); stock.className = "sac-stock-badge is-out"; stock.textContent = "Out of stock"; info.append(stock); }
-      const add = document.createElement("button"); add.type = "button"; add.textContent = outOfStock ? "Unavailable" : "Add to cart"; add.disabled = outOfStock || !variant.value;
+      const add = document.createElement("button"); add.type = "button"; add.textContent = outOfStock ? "Unavailable" : options.purchaseIntent ? "Yes — add to cart & checkout" : "Add to cart"; if (options.purchaseIntent) add.classList.add("sac-purchase-confirm"); add.disabled = outOfStock || !variant.value;
       add.addEventListener("click", async () => {
         const originalLabel = add.textContent;
         add.disabled = true;
@@ -739,6 +756,11 @@
           animateProductToCart(media, product.url);
           add.textContent = "Added ✓";
           add.classList.add("is-added");
+          if (options.purchaseIntent) {
+            add.textContent = "Added — opening checkout…";
+            window.setTimeout(() => { window.location.assign(`${rootPath}checkout`); }, 650);
+            return;
+          }
           window.setTimeout(() => { add.textContent = originalLabel; add.classList.remove("is-added"); add.disabled = false; }, 1800);
         } catch (error) {
           add.textContent = error.message || "Try again";
