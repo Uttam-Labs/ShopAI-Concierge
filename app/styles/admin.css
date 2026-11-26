@@ -605,8 +605,8 @@ button:disabled, s-button[disabled] { cursor: not-allowed; }
 .flow-canvas-node strong { font-size: 11px; line-height: 1.35; }
 .flow-canvas-node em { display: -webkit-box; overflow: hidden; color: #657080; font-size: 9px; font-style: normal; line-height: 1.5; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .flow-node-edit { flex: 0 0 auto; padding: 5px 7px; border: 1px solid #e8edf2; border-radius: 6px; color: #667386; background: #f9fafb; font-size: 8px; font-weight: 750; }
-.flow-canvas-flowline, .flow-canvas-nextline { width: 1px; height: 26px; margin: 0 auto; background: #bfc9d4; }
-.flow-canvas-flowline::after, .flow-canvas-nextline::after { display: block; width: 7px; height: 7px; margin: 19px 0 0 -3px; transform: rotate(45deg); border-right: 1px solid #aab5c2; border-bottom: 1px solid #aab5c2; content: ""; }
+.flow-canvas-nextline { width: 1px; height: 26px; margin: 0 auto; background: #bfc9d4; }
+.flow-canvas-nextline::after { display: block; width: 7px; height: 7px; margin: 19px 0 0 -3px; transform: rotate(45deg); border-right: 1px solid #aab5c2; border-bottom: 1px solid #aab5c2; content: ""; }
 .flow-canvas-steps { display: grid; justify-items: center; }
 .flow-canvas-step-group { position: relative; width: 100%; min-width: 520px; }
 .flow-canvas-connectors { position: absolute; z-index: 0; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
@@ -871,4 +871,16 @@ button:disabled, s-button[disabled] { cursor: not-allowed; }
 .flow-branch-user-text { font-size: 12px; }
 .flow-branch-info { font-size: 10px; }
 .flow-branch-info b { font-size: 8px; }
+.flow-studio { align-items: start; }
+.flow-studio-library { position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow-y: auto; scrollbar-gutter: stable; }
+.flow-studio-main { height: clamp(360px, calc(100vh - 370px), 920px); min-height: 0; grid-template-rows: auto minmax(0, 1fr); }
+.flow-studio-body { height: 100%; min-height: 0; overflow: hidden; }
+.flow-canvas-wrap { height: 100%; min-height: 0; max-height: 100%; overscroll-behavior: contain; }
+.flow-canvas-empty { height: 100%; min-height: 0; }
+.flow-canvas-node small svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.5; }
+.flow-canvas-start + .flow-canvas-steps { margin-top: 30px; }
+@media (max-width: 720px) {
+  .flow-studio-library { position: static; max-height: none; overflow: visible; }
+  .flow-studio-main { height: clamp(320px, calc(100dvh - 300px), 700px); }
+}
 @media (max-width: 720px) { .flow-canvas-branches { margin-top: 76px; column-gap: 18px; row-gap: 46px; } }
