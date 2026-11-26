@@ -35,6 +35,7 @@ export default function App() {
         <s-link href="/app/flows" onClick={navigateInApp("/app/flows")}>Flows</s-link>
         <s-link href="/app/tickets" onClick={navigateInApp("/app/tickets")}>Tickets</s-link>
         <s-link href="/app/conversations" onClick={navigateInApp("/app/conversations")}>Concierge</s-link>
+        <s-link href="/app/guardrails" onClick={navigateInApp("/app/guardrails")}>Guardrails</s-link>
         <s-link href="/app/settings" onClick={navigateInApp("/app/settings")}>Settings</s-link>
       </s-app-nav>
       {isLoadingAdminPage ? <AdminPageSkeleton /> : <Outlet />}

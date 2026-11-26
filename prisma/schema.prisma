@@ -113,6 +113,7 @@ model AssistantSettings {
   faqs               Boolean  @default(true)
   defaultGreeting    String   @default("Hi there! 👋 Tell me what you’re shopping for, ask about our policies, or track an order.")
   responseGuidelines String   @default("Be concise, helpful, and on-brand. Use only approved store information. Never invent products, stock, policies, tracking details, or discounts.")
+  guardrails          Json     @default("[]")
   ticketPrefix       String   @default("SAC")
   ticketOptions      Json     @default("[]")
   flows              Json     @default("[]")

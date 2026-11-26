@@ -8,6 +8,7 @@ import { embedTexts } from "../gemini.server";
 import { generateProviderAnswer, resolveEmbeddingKey, resolveProviderKey } from "../ai.server";
 import { createSupabaseServerClient, hasSupabaseServerConfig } from "../supabase.server";
 import { getConversationFlowStep, normalizeConversationFlows, resolveConversationFlow } from "../flows.server";
+import { findMatchingGuardrail, normalizeGuardrails } from "../guardrails.server";
 import { filterKnowledgeForIntent, findMatchingFaq, isPolicyIntent, isReturnRequestIntent, isSupportEscalationIntent, isSupportRequestIntent, resolveOrderQuestionIntent, resolveRetrievalQuestion } from "../chat-intents.server";
 
 const cors = (origin) => ({
@@ -494,6 +495,14 @@ export const action = async ({ request }) => {
       prisma.faq.findMany({ where: { shop: normalizedShop, active: true }, select: { id: true, question: true, answer: true, sourceTitle: true, sourceContent: true }, take: 100 }),
     ]);
     settings = { aiProvider: "gemini", recommendations: true, orderLookup: true, orderEmailRequired: true, humanHandoff: true, faqs: true, responseGuidelines: "", ticketPrefix: "SAC", ticketOptions: [], ...(storedSettings || {}) };
+    settings.guardrails = normalizeGuardrails(storedSettings?.guardrails);
+    if (!supportRequest && !orderLookupRequest && !supportSuccessMessage) {
+      const matchedGuardrail = findMatchingGuardrail(settings.guardrails, userMessage);
+      if (matchedGuardrail) {
+        await saveConversation(normalizedShop, sessionId, userMessage, matchedGuardrail.response, identity, userCreatedAt).catch((error) => console.error("Guardrail conversation save failed", error));
+        return Response.json({ answer: matchedGuardrail.response, guardrailId: matchedGuardrail.id }, { headers });
+      }
+    }
     const activeFaqs = settings.faqs ? loadedFaqs : [];
     const hasInlineOrderDetails = settings.orderLookup
       && /#\s*\d{3,}\b|\b(?:order|tracking|shipment|delivery)\s*(?:number|no\.?|#|id)?\s*#?\d{3,}\b/i.test(userMessage)
