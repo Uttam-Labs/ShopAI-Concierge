@@ -1029,8 +1029,9 @@ export const action = async ({ request }) => {
             ? `I found ${discovery.products[0].title} in the store catalog. Review the details, choose an available option if needed, then select “Yes, buy this” to add it to your cart and go to checkout. You can also choose No thanks or Another product.`
             : productSearchAnswer(discovery)
           : productSearchAnswer(discovery);
+        const recoveryFlow = products.length ? null : getConversationFlowStep(settings.flows, "welcome", "start");
         await saveConversation(normalizedShop, sessionId, userMessage, answer, identity, userCreatedAt);
-        return Response.json({ answer, products, ...(productPurchaseIntent && products.length ? { purchaseIntent: true } : {}), ...(discovery.exact ? { exactProductMatch: true } : {}), ...(productSearchIntent ? { showBrowseAll: true } : {}), ...(continuationFlow ? { flow: continuationFlow } : {}) }, { headers });
+        return Response.json({ answer, products, ...(productPurchaseIntent && products.length ? { purchaseIntent: true } : {}), ...(discovery.exact ? { exactProductMatch: true } : {}), ...(productSearchIntent ? { showBrowseAll: true } : {}), ...(continuationFlow ? { flow: continuationFlow } : recoveryFlow ? { flow: recoveryFlow } : {}) }, { headers });
       }
     }
     const relevantProductRows = productPurchaseIntent ? productRows : collectionProductRows;
@@ -1072,7 +1073,8 @@ export const action = async ({ request }) => {
       answer = `Here are the closest matches I found using the store’s product information${names.length ? `: ${names.join(", ")}` : ""}. You can compare their details below.`;
     }
     await saveConversation(normalizedShop, sessionId, userMessage, answer, identity, userCreatedAt);
-    const nextActions = matches.length === 0 && products.length === 0 ? getConversationFlowStep(settings.flows, "welcome", "start") : null;
+    const noUsefulAnswer = /^I can help with .*Could you share the product name or a little more detail/i.test(answer);
+    const nextActions = products.length === 0 && (matches.length === 0 || noUsefulAnswer) ? getConversationFlowStep(settings.flows, "welcome", "start") : null;
     return Response.json({ answer, products, ...(productPurchaseIntent && products.length ? { purchaseIntent: true } : {}), ...(productSearchIntent ? { showBrowseAll: true } : {}), ...(continuationFlow ? { flow: continuationFlow } : nextActions ? { flow: nextActions } : {}) }, { headers });
   } catch (error) {
     console.error("Chat request failed", error);

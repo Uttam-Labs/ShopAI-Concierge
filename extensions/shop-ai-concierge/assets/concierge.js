@@ -159,6 +159,7 @@
       const answer = "No problem — you’ve left this topic. What would you like help with next?";
       addMessage(messages, answer, "assistant");
       chatHistory.push({ role: "assistant", content: answer, createdAt: Date.now() });
+      welcomeActions.hidden = false;
       persistChat();
       messages.scrollTop = messages.scrollHeight;
     };
@@ -419,7 +420,7 @@
         if (data.order) addOrderDetailsAction(reply.row, data.order, answer);
         if (data.openSupport) openSupportRequest(data.openSupport);
         activeFlow = data.flow || null;
-        if (activeFlow) renderFlowChoices(reply.row, activeFlow, sendMessage);
+        if (activeFlow) renderFlowChoices(reply.row, activeFlow, sendMessage, exitActiveFlow);
         if (!activeFlow && !purchaseIntent) renderHelpfulActions(reply.row, message, answer, sendMessage, openOrderTracking);
         const recommendedProducts = enableRecommendations && Array.isArray(data.products) ? data.products.slice(0, 5) : [];
         const savedProducts = recommendedProducts.slice(0, 5);
@@ -517,7 +518,7 @@
         const reply = addMessage(messages, confirmedReply, "assistant");
         addTicketReference(reply.row, ticketReference);
         activeFlow = data.flow || null;
-        if (activeFlow) renderFlowChoices(reply.row, activeFlow, sendMessage);
+        if (activeFlow) renderFlowChoices(reply.row, activeFlow, sendMessage, exitActiveFlow);
         chatHistory.push({ role: "assistant", content: confirmedReply, createdAt: Date.now(), ticketReference, ...(activeFlow ? { flow: activeFlow } : {}) });
         persistChat();
         supportFollowup = null;
@@ -718,7 +719,6 @@
   }
   function renderFlowChoices(row, flow, sendMessage, exitActiveFlow) {
     if (!flow || !Array.isArray(flow.choices)) return;
-    if (flow.id === "welcome" && flow.stepId === "start") return;
     const content = row.querySelector(".sac-message-content");
     if (!content) return;
     const group = document.createElement("div");
@@ -737,7 +737,7 @@
     const exitButton = document.createElement("button");
     exitButton.type = "button";
     exitButton.className = "sac-flow-choice sac-flow-exit";
-    exitButton.textContent = "Exit this topic";
+    exitButton.textContent = "Exit from this topic";
     exitButton.addEventListener("click", exitActiveFlow);
     group.append(exitButton);
     const time = content.querySelector(".sac-message-time");
