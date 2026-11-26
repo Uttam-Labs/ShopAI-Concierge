@@ -58,6 +58,23 @@
     const messages = panel.querySelector(".sac-messages");
     const form = panel.querySelector(".sac-form");
     const input = panel.querySelector(".sac-input");
+    const productExamples = [
+      "Try: black shoes under $50",
+      "Search by product name, SKU, or handle",
+      "Show me new arrivals or best sellers",
+      "Find affordable products on sale",
+      "Show Titan products in black",
+      "Compare two products or find similar items",
+      "Try: cheap shoes / black tshrt",
+    ];
+    let productExampleIndex = 0;
+    input.placeholder = productExamples[0];
+    const productExampleTimer = window.setInterval(() => {
+      if (document.activeElement === input || input.value.trim()) return;
+      productExampleIndex = (productExampleIndex + 1) % productExamples.length;
+      input.placeholder = productExamples[productExampleIndex];
+    }, 4200);
+    input.addEventListener("focus", () => { window.clearInterval(productExampleTimer); input.placeholder = "Enter a product name, SKU, or what you’re looking for…"; });
     const faqSection = panel.querySelector(".sac-faqs");
     const faqList = panel.querySelector(".sac-faq-list");
     const enableOrderLookup = root.dataset.enableOrderLookup !== "false";
