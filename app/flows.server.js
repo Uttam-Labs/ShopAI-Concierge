@@ -5,7 +5,7 @@ export const DEFAULT_CONVERSATION_FLOWS = [
     description: "A friendly hello with shortcuts to shopping, order updates, and support.",
     enabled: true,
     priority: 10,
-    triggerTerms: ["hi", "hello", "hey", "hiya", "howdy", "good morning", "good afternoon", "good evening", "welcome", "start", "help me", "can you help me"],
+    triggerTerms: ["hi", "hello", "hey", "hiya", "howdy", "good morning", "good afternoon", "good evening", "welcome", "start", "help me", "can you help me", "give me options", "show me options", "what can you help me with"],
     steps: [{
       id: "start",
       title: "Welcome",
@@ -100,7 +100,7 @@ export const DEFAULT_CONVERSATION_FLOWS = [
     description: "A calm issue-triage flow for quality concerns, returns, exchanges, delivery, and damaged items.",
     enabled: true,
     priority: 100,
-    triggerTerms: ["frustrated", "angry", "upset", "unhappy", "bad quality", "poor quality", "low quality", "product is bad", "damaged", "broken", "wrong item", "missing item", "return", "exchange", "refund", "complaint", "not satisfied", "disappointed", "late delivery", "never arrived", "need to return", "want a refund"],
+    triggerTerms: ["frustrated", "angry", "upset", "unhappy", "i am not feeling good", "i'm not feeling good", "im not feeling good", "i feel bad", "not doing well", "something happened", "bad quality", "poor quality", "low quality", "product is bad", "damaged", "broken", "wrong item", "missing item", "return", "exchange", "refund", "complaint", "not satisfied", "disappointed", "late delivery", "never arrived", "need to return", "want a refund"],
     steps: [
       {
         id: "reason",
@@ -247,7 +247,11 @@ export function normalizeConversationFlows(value) {
           }),
           choices: step.choices?.map((choice) => {
             const savedChoice = savedChoices.find((candidate) => candidate?.id === choice.id) || {};
-            return { ...choice, label: cleanText(savedChoice.label, choice.label, 100), ...(choice.reply ? { reply: cleanText(savedChoice.reply, choice.reply, 500) } : {}) };
+            const action = ["continueAI", "openOrderTracking", "openSupport"].includes(savedChoice.action) ? savedChoice.action : savedChoice.action === "" ? "" : choice.action;
+            const nextFlowId = savedChoice.nextFlowId === "" ? "" : ["welcome", "product-discovery", "order-updates", "returns-support"].includes(savedChoice.nextFlowId) ? savedChoice.nextFlowId : choice.nextFlowId;
+            const targetFlow = DEFAULT_CONVERSATION_FLOWS.find((candidate) => candidate.id === (nextFlowId || defaults.id));
+            const nextStepId = savedChoice.nextStepId === "" ? "" : typeof savedChoice.nextStepId === "string" && targetFlow?.steps.some((candidate) => candidate.id === savedChoice.nextStepId) ? savedChoice.nextStepId : choice.nextStepId;
+            return { ...choice, ...savedChoice, label: cleanText(savedChoice.label, choice.label, 100), ...(typeof savedChoice.reply === "string" ? { reply: savedChoice.reply.trim().slice(0, 500) } : choice.reply ? { reply: choice.reply } : {}), ...(action ? { action } : {}), ...(nextFlowId ? { nextFlowId } : {}), ...(nextStepId ? { nextStepId } : {}), ...(savedChoice.requestTypeId || choice.requestTypeId ? { requestTypeId: String(savedChoice.requestTypeId || choice.requestTypeId).slice(0, 80) } : {}), ...(savedChoice.details || choice.details ? { details: String(savedChoice.details || choice.details).slice(0, 500) } : {}) };
           }),
         };
       }),

@@ -166,7 +166,7 @@ export const action = async ({ request }) => {
     const retainedSources = new Set(rows.map((row) => `${row.source_type}:${row.source_id}`));
     const { data: existingSources, error: readError } = await supabase.from("shopai_knowledge").select("id,source_type,source_id").eq("shop_domain", session.shop);
     if (readError) throw readError;
-    const staleIds = (existingSources || []).filter((row) => !retainedSources.has(`${row.source_type}:${row.source_id}`)).map((row) => row.id);
+    const staleIds = (existingSources || []).filter((row) => row.source_type !== "flow" && !retainedSources.has(`${row.source_type}:${row.source_id}`)).map((row) => row.id);
     for (let offset = 0; offset < staleIds.length; offset += 500) {
       const { error } = await supabase.from("shopai_knowledge").delete().eq("shop_domain", session.shop).in("id", staleIds.slice(offset, offset + 500));
       if (error) throw error;
