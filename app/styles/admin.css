@@ -217,6 +217,14 @@ input[type="checkbox"] { width: 17px; height: 17px; margin-right: 8px; vertical-
 .rag-policy-warning p { margin: 5px 0 0; font-size: 12px; line-height: 1.55; }
 .rag-custom-prompt { display: flex; min-height: 280px; flex-direction: column; align-items: center; justify-content: center; gap: 9px; border: 1px dashed #e3d9cf; border-radius: 13px; background: #fcfbfa; text-align: center; }
 .rag-custom-prompt .admin-cta { margin-top: 5px; }
+.rag-document-library { display: flex; flex-direction: column; gap: 14px; }
+.rag-document-upload { display: flex; align-items: end; gap: 10px; flex-wrap: wrap; padding: 14px; border: 1px solid #eee6de; border-radius: 12px; background: #fcfbfa; }
+.rag-document-upload .admin-field { flex: 1 1 240px; margin: 0; }
+.rag-document-upload > small { flex: 1 1 100%; margin-top: -5px; color: #857b73; font-size: 11px; }
+.rag-document-message { margin: 0; color: #28724a; font-size: 12px; }
+.rag-document-message.error { color: #b42318; }
+.rag-document-actions { display: flex; gap: 8px; }
+.rag-document-preview { max-height: min(60vh, 560px); overflow: auto; margin: 0; padding: 14px; border: 1px solid #eee6de; border-radius: 10px; background: #fcfbfa; color: #3c3732; font: 12px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
 
 @keyframes admin-enter { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes admin-fade { from { opacity: 0; } to { opacity: 1; } }

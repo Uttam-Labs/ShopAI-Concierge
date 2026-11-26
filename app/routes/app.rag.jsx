@@ -1,7 +1,8 @@
 /* eslint-env node */
 /* eslint-disable react/prop-types */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useFetcher } from "react-router";
+import { randomUUID } from "node:crypto";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import AdminPageHeader, { AdminIcon } from "../components/AdminPageHeader";
@@ -27,9 +28,10 @@ export const loader = async ({ request }) => {
     `),
     import("../db.server.js").then((module) => module.default),
   ]);
-  const [result, config] = await Promise.all([
+  const [result, config, documents] = await Promise.all([
     response.json(),
     prisma.knowledgeConfig.findUnique({ where: { shop: session.shop } }),
+    prisma.knowledgeDocument.findMany({ where: { shop: session.shop }, select: { id: true, fileName: true, contentType: true, size: true, createdAt: true }, orderBy: { createdAt: "desc" } }),
   ]);
   const data = result.data ?? {};
   const products = data.products?.edges?.map(({ node }) => node) ?? [];
@@ -52,18 +54,105 @@ export const loader = async ({ request }) => {
     ...policies.filter((item) => policyIds.includes(item.id)).map((item) => ({ ...item, sourceType: "policy" })),
     ...customSources.map((item) => ({ ...item, sourceType: "custom" })),
   ];
-  return { products, collections, pages, policies, policyLoadError, productIds, collectionIds, pageIds, policyIds, customSources, selected, shopHandle: session.shop.replace(/\.myshopify\.com$/i, "") };
+  return { products, collections, pages, policies, policyLoadError, productIds, collectionIds, pageIds, policyIds, customSources, selected, documents, shopHandle: session.shop.replace(/\.myshopify\.com$/i, "") };
 };
 
 export const action = async ({ request }) => {
   const { session, admin } = await authenticate.admin(request);
   const form = await request.formData();
+  const intent = String(form.get("intent") || "");
+  const prisma = (await import("../db.server.js")).default;
+  if (intent === "uploadDocument") {
+    const file = form.get("documentFile");
+    if (!file || typeof file.arrayBuffer !== "function" || !file.size) return { error: "Choose a document to upload." };
+    if (file.size > 10 * 1024 * 1024) return { error: "Each document must be 10 MB or smaller." };
+    const fileName = String(file.name || "document").replace(/[\\/]/g, "_").slice(0, 180);
+    const extension = fileName.split(".").pop()?.toLowerCase();
+    const supported = ["txt", "docx", "xlsx"];
+    if (!supported.includes(extension)) return { error: "Use a .txt, .docx, or .xlsx document." };
+    const buffer = Buffer.from(await file.arrayBuffer());
+    let content = "";
+    try {
+      if (extension === "txt") content = new TextDecoder("utf-8", { fatal: true }).decode(buffer);
+      else if (extension === "docx") {
+        const mammoth = await import("mammoth");
+        content = (await mammoth.extractRawText({ buffer })).value;
+      } else {
+        const ExcelJS = await import("exceljs");
+        const workbook = new ExcelJS.default.Workbook();
+        await workbook.xlsx.load(buffer);
+        content = workbook.worksheets.map((sheet) => {
+          const rows = [];
+          sheet.eachRow({ includeEmpty: false }, (row) => rows.push(row.values.slice(1).map((value) => {
+            if (value == null) return "";
+            if (typeof value !== "object") return String(value);
+            if ("text" in value) return String(value.text || "");
+            if ("richText" in value) return value.richText.map((part) => part.text || "").join("");
+            if ("result" in value) return String(value.result ?? "");
+            return JSON.stringify(value);
+          }).join("\t")));
+          return `Sheet: ${sheet.name}\n${rows.join("\n")}`;
+        }).join("\n\n");
+      }
+    } catch (error) {
+      console.error("Knowledge document parsing failed", error);
+      return { error: "We couldn’t read this file. Please check that it is a valid, text-based document." };
+    }
+    content = content.replace(/\u0000/g, "").trim();
+    if (!content) return { error: "This document has no readable text to add." };
+    if (content.length > 200_000) return { error: "This document contains too much text. Keep it under 200,000 characters." };
+    const id = randomUUID();
+    const storagePath = `${session.shop.replace(/[^a-z0-9.-]/gi, "_")}/${id}.${extension}`;
+    const supabase = createSupabaseServerClient();
+    const contentType = file.type || (extension === "txt" ? "text/plain" : extension === "docx" ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    const { error: bucketError } = await supabase.storage.createBucket("shopai-knowledge-documents", { public: false, fileSizeLimit: 10 * 1024 * 1024, allowedMimeTypes: ["text/plain", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"] });
+    if (bucketError && !/already exists|duplicate/i.test(bucketError.message || "")) {
+      console.error("Knowledge document storage bucket setup failed", bucketError);
+      return { error: "Document storage could not be prepared. Check the Supabase server credentials." };
+    }
+    const { error: storageError } = await supabase.storage.from("shopai-knowledge-documents").upload(storagePath, buffer, { contentType, upsert: false });
+    if (storageError) {
+      console.error("Knowledge document storage failed", storageError);
+      return { error: "The document couldn’t be stored. Check the Knowledge Documents storage migration and server credentials." };
+    }
+    try {
+      await prisma.knowledgeDocument.create({ data: { id, shop: session.shop, fileName, storagePath, contentType, size: file.size, content } });
+    } catch (error) {
+      await supabase.storage.from("shopai-knowledge-documents").remove([storagePath]);
+      console.error("Knowledge document record save failed", error);
+      return { error: "The document upload could not be saved. Please try again." };
+    }
+    return { uploaded: fileName };
+  }
+  if (intent === "readDocument") {
+    const document = await prisma.knowledgeDocument.findFirst({ where: { id: String(form.get("documentId") || ""), shop: session.shop }, select: { id: true, fileName: true, content: true } });
+    return document ? { readDocument: document } : { error: "That document is no longer available." };
+  }
+  if (intent === "trainDocuments") {
+    const ids = parseList(form.get("documentIds"));
+    const documents = await prisma.knowledgeDocument.findMany({ where: { shop: session.shop, id: { in: ids } }, select: { id: true, fileName: true, content: true } });
+    return { trainingDocuments: documents.map((document) => ({ id: `document-${document.id}`, documentId: document.id, title: document.fileName, content: document.content, category: "Uploaded document" })) };
+  }
+  if (intent === "deleteDocument") {
+    const id = String(form.get("documentId") || "");
+    const document = await prisma.knowledgeDocument.findFirst({ where: { id, shop: session.shop } });
+    if (!document) return { error: "That document is no longer available." };
+    const supabase = createSupabaseServerClient();
+    const { error: storageError } = await supabase.storage.from("shopai-knowledge-documents").remove([document.storagePath]);
+    if (storageError) return { error: "The document file couldn’t be deleted. Please try again." };
+    await prisma.knowledgeDocument.delete({ where: { id: document.id } });
+    const config = await prisma.knowledgeConfig.findUnique({ where: { shop: session.shop } });
+    const customSources = (config?.customSources || []).filter((item) => item.documentId !== document.id);
+    if (config) await prisma.knowledgeConfig.update({ where: { shop: session.shop }, data: { customSources } });
+    const { error: vectorError } = await supabase.from("shopai_knowledge").delete().eq("shop_domain", session.shop).eq("source_type", "custom").like("source_id", `document-${document.id}-chunk-%`);
+    if (vectorError) console.error("Deleted document vectors could not be removed", vectorError);
+    return { deletedDocumentId: document.id };
+  }
   const productIds = parseList(form.get("productIds"));
   const collectionIds = parseList(form.get("collectionIds"));
   const pageIds = parseList(form.get("pageIds"));
   const policyIds = parseList(form.get("policyIds"));
   const customSources = parseList(form.get("customSources"));
-  const prisma = (await import("../db.server.js")).default;
   try {
     await prisma.knowledgeConfig.upsert({
       where: { shop: session.shop },
@@ -157,7 +246,25 @@ export const action = async ({ request }) => {
         else docs.push({ source_type: policyIds.includes(node.id) ? "policy" : "page", source_id: node.id, title: node.title, content: `${node.title}\n${node.body?.replace(/<[^>]+>/g, " ") || ""}`, metadata: { handle: node.handle } });
       }
     }
-    for (const item of customSources) docs.push({ source_type: "custom", source_id: item.id, title: item.title, content: item.content, metadata: { category: item.category || "Custom content" } });
+    for (const item of customSources) {
+      if (item.documentId) {
+        const paragraphs = String(item.content || "").split(/\n+/);
+        const chunks = [];
+        let chunk = "";
+        for (const paragraph of paragraphs) {
+          const value = paragraph.trim();
+          if (!value) continue;
+          if (chunk && chunk.length + value.length + 1 > 4500) { chunks.push(chunk); chunk = ""; }
+          if (value.length > 4500) {
+            if (chunk) chunks.push(chunk);
+            for (let offset = 0; offset < value.length; offset += 4500) chunks.push(value.slice(offset, offset + 4500));
+            chunk = "";
+          } else chunk = chunk ? `${chunk}\n${value}` : value;
+        }
+        if (chunk) chunks.push(chunk);
+        chunks.forEach((content, index) => docs.push({ source_type: "custom", source_id: `${item.id}-chunk-${index + 1}`, title: chunks.length > 1 ? `${item.title} · part ${index + 1}` : item.title, content, metadata: { category: item.category || "Uploaded document", document_id: item.documentId, document_name: item.title, part: index + 1, total_parts: chunks.length } }));
+      } else docs.push({ source_type: "custom", source_id: item.id, title: item.title, content: item.content, metadata: { category: item.category || "Custom content" } });
+    }
     const selectedPolicyIds = new Set(policyIds);
     const policyResponse = policyIds.length ? await admin.graphql(`#graphql
       query SelectedStorePolicies {
@@ -232,11 +339,12 @@ export const action = async ({ request }) => {
 };
 
 const tabs = [
-  ["products", "Products", "P"], ["collections", "Collections", "C"], ["pages", "Pages", "↗"], ["policies", "Policies", "§"], ["custom", "Custom content", "+"],
+  ["products", "Products", "P"], ["collections", "Collections", "C"], ["pages", "Pages", "↗"], ["policies", "Policies", "§"], ["custom", "Custom content", "+"], ["documents", "Documents", "▤"],
 ];
 
 export default function RagSettings({ loaderData }) {
   const fetcher = useFetcher();
+  const documentFetcher = useFetcher();
   useActionToast(fetcher);
   const [activeTab, setActiveTab] = useState("products");
   const [modal, setModal] = useState(null);
@@ -246,10 +354,45 @@ export default function RagSettings({ loaderData }) {
   const [pageNumber, setPageNumber] = useState(1);
   const [selectedPage, setSelectedPage] = useState(1);
   const [customDraft, setCustomDraft] = useState({ title: "", content: "" });
+  const [pendingDocuments, setPendingDocuments] = useState([]);
+  const [syncAfterTraining, setSyncAfterTraining] = useState(false);
+  const handledTraining = useRef("");
+  const handledRead = useRef("");
 
-  const currentItems = useMemo(() => ({ products: loaderData.products, collections: loaderData.collections, pages: loaderData.pages, policies: loaderData.policies, custom: customSources }[activeTab] || []), [activeTab, loaderData, customSources]);
+  useEffect(() => {
+    const docs = documentFetcher.data?.trainingDocuments;
+    if (!docs?.length) return;
+    if (handledTraining.current === documentFetcher.data) return;
+    handledTraining.current = documentFetcher.data;
+    setCustomSources((current) => [...current.filter((item) => !docs.some((doc) => doc.id === item.id)), ...docs]);
+    setSyncAfterTraining(true);
+  }, [documentFetcher.data]);
+
+  useEffect(() => {
+    const document = documentFetcher.data?.readDocument;
+    if (!document || handledRead.current === documentFetcher.data) return;
+    handledRead.current = documentFetcher.data;
+    setModal({ type: "read", document });
+  }, [documentFetcher.data]);
+
+  useEffect(() => {
+    const id = documentFetcher.data?.deletedDocumentId;
+    if (id) setCustomSources((current) => current.filter((item) => item.documentId !== id));
+  }, [documentFetcher.data]);
+
+  useEffect(() => {
+    if (!syncAfterTraining || fetcher.state !== "idle") return;
+    const form = document.getElementById("rag-save-form");
+    if (form instanceof HTMLFormElement) {
+      setSyncAfterTraining(false);
+      form.requestSubmit();
+    }
+  }, [syncAfterTraining, fetcher.state, customSources]);
+
+  const currentItems = useMemo(() => ({ products: loaderData.products, collections: loaderData.collections, pages: loaderData.pages, policies: loaderData.policies, custom: customSources, documents: loaderData.documents }[activeTab] || []), [activeTab, loaderData, customSources]);
+  const trainedDocuments = new Set(customSources.filter((item) => item.documentId).map((item) => item.documentId));
   const selectedCount = draftIds.products.length + draftIds.collections.length + draftIds.pages.length + draftIds.policies.length + customSources.length;
-  const activeLabels = { products: "products", collections: "collections", pages: "pages", policies: "policies", custom: "custom content" };
+  const activeLabels = { products: "products", collections: "collections", pages: "pages", policies: "policies", custom: "custom content", documents: "documents" };
   const pageSize = 25;
   const pageCount = Math.max(1, Math.ceil(currentItems.length / pageSize));
   const pageItems = currentItems.slice((pageNumber - 1) * pageSize, pageNumber * pageSize);
@@ -288,29 +431,30 @@ export default function RagSettings({ loaderData }) {
     else setDraftIds((current) => ({ ...current, [item.sourceType === "policy" ? "policies" : `${item.sourceType}s`]: current[item.sourceType === "policy" ? "policies" : `${item.sourceType}s`].filter((id) => id !== item.id) }));
   };
 
-  const syncing = fetcher.state !== "idle";
+  const syncing = fetcher.state !== "idle" || documentFetcher.state !== "idle";
   const syncLatest = () => {
     const form = document.getElementById("rag-save-form");
     if (form instanceof HTMLFormElement && !syncing) form.requestSubmit();
   };
 
-  return <s-page heading="Knowledge library" inlineSize="large">
-    <s-button slot="primary-action" variant="primary" disabled={syncing} onClick={syncLatest}><AdminIcon name="save"/>{syncing ? "Syncing latest data…" : "Sync latest data"}</s-button><AdminPageHeader title="RAG knowledge library" description="Sync selected Shopify products, collections, pages, policies, and notes to keep concierge answers current." metrics={[{ label: "Selected sources", value: selectedCount }, { label: "Products", value: draftIds.products.length }, { label: "Policies & pages", value: draftIds.policies.length + draftIds.pages.length }, { label: "Custom notes", value: customSources.length }]} />
+  return <s-page heading="Knowledge Source" inlineSize="large">
+    <s-button slot="primary-action" variant="primary" disabled={syncing} onClick={syncLatest}><AdminIcon name="save"/>{syncing ? "Syncing latest data…" : "Sync latest data"}</s-button><AdminPageHeader title="Knowledge Source" description="Choose the trusted store information your concierge can use to answer shoppers." metrics={[{ label: "Selected sources", value: selectedCount }, { label: "Products", value: draftIds.products.length }, { label: "Policies & pages", value: draftIds.policies.length + draftIds.pages.length }, { label: "Custom notes & documents", value: customSources.length }]} />
     {syncing && <section className="rag-sync-progress" role="status" aria-live="polite"><span className="rag-sync-spinner" aria-hidden="true"/><div className="rag-sync-copy"><strong>Refreshing your knowledge library</strong><p>Loading the latest selected Shopify data, rebuilding search vectors, and removing outdated entries.</p><div className="rag-sync-track" role="progressbar" aria-label="Knowledge library sync in progress"><span/></div></div></section>}
     <fetcher.Form id="rag-save-form" method="post"><input type="hidden" name="productIds" value={JSON.stringify(draftIds.products)}/><input type="hidden" name="collectionIds" value={JSON.stringify(draftIds.collections)}/><input type="hidden" name="pageIds" value={JSON.stringify(draftIds.pages)}/><input type="hidden" name="policyIds" value={JSON.stringify(draftIds.policies)}/><input type="hidden" name="customSources" value={JSON.stringify(customSources)}/></fetcher.Form>
     <div className="rag-workspace">
       <aside className="rag-library-panel"><div className="rag-panel-heading"><div><span className="rag-eyebrow">YOUR KNOWLEDGE BASE</span><h2>Selected sources</h2><p>{selectedCount} {selectedCount === 1 ? "source" : "sources"} ready for indexing</p></div><span className="rag-count">{selectedCount}</span></div>
-        <div className="rag-selected-list">{selectedPageItems.map((item) => <article className="rag-selected-card" key={`${item.sourceType}-${item.id}`}><span className={`rag-source-icon ${item.sourceType}`}>{item.sourceType === "product" ? "P" : item.sourceType === "collection" ? "C" : item.sourceType === "policy" ? "§" : item.sourceType === "custom" ? "✎" : "↗"}</span><div className="rag-card-copy"><strong>{sourceUrl(item) ? <a className="rag-source-link" href={sourceUrl(item)} target="_blank" rel="noreferrer">{item.title}<span aria-hidden="true">↗</span></a> : item.title}</strong><small><span className={`rag-type-badge ${item.sourceType}`}>{item.sourceType === "custom" ? "Custom" : item.sourceType}</span>{item.sourceType === "policy" && item.type ? <span className="rag-source-handle">{item.type.replaceAll("_", " ").toLowerCase()}</span> : item.handle ? <span className="rag-source-handle">/{item.handle}</span> : null}</small></div><button className="rag-remove" type="button" aria-label={`Remove ${item.title}`} title="Remove from library" onClick={() => removeSource(item)}>×</button></article>)}{!selectedCount && <div className="rag-empty"><span className="rag-empty-mark">✦</span><strong>Your library is ready</strong><p>Add trusted store knowledge to help your concierge answer with confidence.</p></div>}</div>
+        <div className="rag-selected-list">{selectedPageItems.map((item) => <article className="rag-selected-card" key={`${item.sourceType}-${item.id}`}><span className={`rag-source-icon ${item.sourceType}`}>{item.sourceType === "product" ? "P" : item.sourceType === "collection" ? "C" : item.sourceType === "policy" ? "§" : item.documentId ? "▤" : item.sourceType === "custom" ? "✎" : "↗"}</span><div className="rag-card-copy"><strong>{sourceUrl(item) ? <a className="rag-source-link" href={sourceUrl(item)} target="_blank" rel="noreferrer">{item.title}<span aria-hidden="true">↗</span></a> : item.title}</strong><small><span className={`rag-type-badge ${item.sourceType}`}>{item.documentId ? "Document" : item.sourceType === "custom" ? "Custom" : item.sourceType}</span>{item.sourceType === "policy" && item.type ? <span className="rag-source-handle">{item.type.replaceAll("_", " ").toLowerCase()}</span> : item.handle ? <span className="rag-source-handle">/{item.handle}</span> : null}</small></div><button className="rag-remove" type="button" aria-label={`Remove ${item.title}`} title="Remove from library" onClick={() => removeSource(item)}>×</button></article>)}{!selectedCount && <div className="rag-empty"><span className="rag-empty-mark">✦</span><strong>Your library is ready</strong><p>Add trusted store knowledge to help your concierge answer with confidence.</p></div>}</div>
         {selectedCount > pageSize && <div className="rag-library-pagination"><span>{(selectedPageIndex - 1) * pageSize + 1}–{Math.min(selectedPageIndex * pageSize, selectedCount)} of {selectedCount}</span><div className="rag-pagination"><button className="admin-secondary" type="button" disabled={selectedPageIndex <= 1} onClick={() => setSelectedPage((page) => Math.max(1, page - 1))}>← Previous</button><span>Page {selectedPageIndex} of {selectedPageCount}</span><button className="admin-secondary" type="button" disabled={selectedPageIndex >= selectedPageCount} onClick={() => setSelectedPage((page) => Math.min(selectedPageCount, page + 1))}>Next →</button></div></div>}
       </aside>
-      <section className="rag-browser-panel"><div className="rag-browser-heading"><div><span className="rag-eyebrow">BROWSE STORE CONTENT</span><h2>Add knowledge</h2><p>Choose content to add to your concierge library.</p></div>{activeTab === "custom" ? <button className="admin-cta" type="button" onClick={() => setModal("custom")}><AdminIcon name="plus"/> Create content</button> : <div className="rag-header-actions"><button className="admin-secondary" type="button" onClick={() => setPending(pending.length === pageItems.length ? [] : pageItems.filter((item) => !(draftIds[activeTab] || []).includes(item.id)).map((item) => item.id))}><AdminIcon name={pending.length === pageItems.filter((item) => !(draftIds[activeTab] || []).includes(item.id)).length ? "close" : "check"}/>{pending.length === pageItems.filter((item) => !(draftIds[activeTab] || []).includes(item.id)).length ? "Clear page selection" : "Select page"}</button><button className="admin-cta" type="button" disabled={!pending.length} onClick={addPending}><AdminIcon name="plus"/> Add selected{pending.length ? ` · ${pending.length}` : ""}</button></div>}</div>
-        <div className="rag-tabs" role="tablist" aria-label="Knowledge source types">{tabs.map(([id, label, icon]) => <button key={id} className={`rag-tab ${activeTab === id ? "active" : ""}`} role="tab" aria-selected={activeTab === id} type="button" onClick={() => { setActiveTab(id); setPending([]); setPageNumber(1); }}><span>{icon}</span>{label}</button>)}</div>
-        <div className="rag-tab-content"><div className="rag-content-top"><div><strong>{activeLabels[activeTab]}</strong><span>{currentItems.length} available</span></div>{activeTab !== "custom" && <span className="rag-selection-hint">{pending.length} selected</span>}</div>
-          {activeTab === "custom" ? <div className="rag-custom-prompt"><span className="rag-empty-mark">✎</span><strong>Add your own trusted content</strong><p>Create sizing notes, care guides, support instructions, or other information that is not in Shopify.</p><button className="admin-cta" type="button" onClick={() => setModal("custom")}><AdminIcon name="plus"/> Create custom content</button></div> : currentItems.length ? <><div className="rag-source-grid">{pageItems.map((item) => { const chosen = (draftIds[activeTab] || []).includes(item.id); const checked = pending.includes(item.id); const sourceType = activeTab === "products" ? "product" : activeTab === "collections" ? "collection" : activeTab === "policies" ? "policy" : "page"; return <article key={item.id} className={`rag-source-card ${chosen ? "is-added" : ""} ${checked ? "is-checked" : ""}`}><div className="rag-card-top"><label className="rag-select-control"><input type="checkbox" checked={checked} disabled={chosen} onChange={() => togglePending(item.id)} aria-label={`Select ${item.title}`}/><span>{chosen ? "Added" : checked ? "Selected" : "Select"}</span></label><span className={`rag-status ${chosen ? "added" : "available"}`}>{chosen ? "In library" : "Available"}</span></div><strong>{sourceUrl({ ...item, sourceType }) ? <a className="rag-source-link" href={sourceUrl({ ...item, sourceType })} target="_blank" rel="noreferrer">{item.title}<span aria-hidden="true">↗</span></a> : item.title}</strong><small>{activeTab === "products" ? `${item.vendor || "Store product"} · ${item.status.toLowerCase()}` : activeTab === "collections" ? `${item.productsCount?.count || 0} products` : activeTab === "policies" ? String(item.type || "Store policy").replaceAll("_", " ").toLowerCase() : `/${item.handle}`}</small>{!chosen && <button className="rag-card-action" type="button" onClick={() => { setDraftIds((current) => ({ ...current, [activeTab]: [...current[activeTab], item.id] })); setPending((current) => current.filter((id) => id !== item.id)); }}><AdminIcon name="plus"/> Add to library</button>}{chosen && <button className="rag-card-action added" type="button" onClick={() => removeSource({ ...item, sourceType })}><AdminIcon name="trash"/> Remove from library</button>}</article>; })}</div><div className="rag-bulk-action"><span>Showing {Math.min((pageNumber - 1) * pageSize + 1, currentItems.length)}–{Math.min(pageNumber * pageSize, currentItems.length)} of {currentItems.length} · {pending.length} selected</span><div className="rag-pagination"><button className="admin-secondary" type="button" disabled={pageNumber <= 1} onClick={() => { setPageNumber((page) => page - 1); setPending([]); }}>← Previous</button><span>Page {pageNumber} of {pageCount}</span><button className="admin-secondary" type="button" disabled={pageNumber >= pageCount} onClick={() => { setPageNumber((page) => page + 1); setPending([]); }}>Next →</button></div></div></> : activeTab === "policies" && loaderData.policyLoadError ? <div className="rag-policy-warning"><span><AdminIcon name="info"/></span><div><strong>Policies need permission</strong><p>{loaderData.policyLoadError}</p></div></div> : <div className="rag-empty rag-empty-inline"><span className="rag-empty-mark">⌕</span><strong>No {activeLabels[activeTab]} found</strong><p>When you add store content in Shopify, it will appear here.</p></div>}
+      <section className="rag-browser-panel"><div className="rag-browser-heading"><div><span className="rag-eyebrow">BROWSE STORE CONTENT</span><h2>Add knowledge</h2><p>Choose content to add to your concierge library.</p></div>{activeTab === "custom" ? <button className="admin-cta" type="button" onClick={() => setModal("custom")}><AdminIcon name="plus"/> Create content</button> : activeTab === "documents" ? <div className="rag-header-actions"><button className="admin-secondary" type="button" disabled={!pendingDocuments.length || documentFetcher.state !== "idle"} onClick={() => documentFetcher.submit({ intent: "trainDocuments", documentIds: JSON.stringify(pendingDocuments) }, { method: "post" })}><AdminIcon name="plus"/> Add to training{pendingDocuments.length ? ` · ${pendingDocuments.length}` : ""}</button></div> : <div className="rag-header-actions"><button className="admin-secondary" type="button" onClick={() => setPending(pending.length === pageItems.length ? [] : pageItems.filter((item) => !(draftIds[activeTab] || []).includes(item.id)).map((item) => item.id))}><AdminIcon name={pending.length === pageItems.filter((item) => !(draftIds[activeTab] || []).includes(item.id)).length ? "close" : "check"}/>{pending.length === pageItems.filter((item) => !(draftIds[activeTab] || []).includes(item.id)).length ? "Clear page selection" : "Select page"}</button><button className="admin-cta" type="button" disabled={!pending.length} onClick={addPending}><AdminIcon name="plus"/> Add selected{pending.length ? ` · ${pending.length}` : ""}</button></div>}</div>
+        <div className="rag-tabs" role="tablist" aria-label="Knowledge source types">{tabs.map(([id, label, icon]) => <button key={id} className={`rag-tab ${activeTab === id ? "active" : ""}`} role="tab" aria-selected={activeTab === id} type="button" onClick={() => { setActiveTab(id); setPending([]); setPendingDocuments([]); setPageNumber(1); }}><span>{icon}</span>{label}</button>)}</div>
+        <div className="rag-tab-content"><div className="rag-content-top"><div><strong>{activeLabels[activeTab]}</strong><span>{currentItems.length} available</span></div>{activeTab === "documents" ? <span className="rag-selection-hint">{pendingDocuments.length} selected</span> : activeTab !== "custom" && <span className="rag-selection-hint">{pending.length} selected</span>}</div>
+          {activeTab === "custom" ? <div className="rag-custom-prompt"><span className="rag-empty-mark">✎</span><strong>Add your own trusted content</strong><p>Create sizing notes, care guides, support instructions, or other information that is not in Shopify.</p><button className="admin-cta" type="button" onClick={() => setModal("custom")}><AdminIcon name="plus"/> Create custom content</button></div> : activeTab === "documents" ? <div className="rag-document-library"><documentFetcher.Form method="post" encType="multipart/form-data" className="rag-document-upload"><input type="hidden" name="intent" value="uploadDocument"/><label className="admin-field">Upload a document<input className="admin-text-input" type="file" name="documentFile" accept=".txt,.docx,.xlsx" required/></label><small>TXT, Word (.docx), and Excel (.xlsx), up to 10 MB each.</small><button className="admin-cta" type="submit" disabled={documentFetcher.state !== "idle"}><AdminIcon name="plus"/>{documentFetcher.state !== "idle" ? "Working…" : "Upload document"}</button></documentFetcher.Form>{documentFetcher.data?.error && <p className="rag-document-message error" role="alert">{documentFetcher.data.error}</p>}{documentFetcher.data?.uploaded && <p className="rag-document-message" role="status">{documentFetcher.data.uploaded} uploaded. Select it below to add it to training.</p>}{currentItems.length ? <div className="rag-source-grid">{currentItems.map((item) => { const trained = trainedDocuments.has(item.id); const checked = pendingDocuments.includes(item.id); return <article key={item.id} className={`rag-source-card ${trained ? "is-added" : ""} ${checked ? "is-checked" : ""}`}><div className="rag-card-top"><label className="rag-select-control"><input type="checkbox" checked={checked} disabled={trained} onChange={() => setPendingDocuments((current) => current.includes(item.id) ? current.filter((id) => id !== item.id) : [...current, item.id])} aria-label={`Select ${item.fileName} for training`}/><span>{trained ? "In training" : checked ? "Selected" : "Select"}</span></label><span className={`rag-status ${trained ? "added" : "available"}`}>{trained ? "Trained" : "Uploaded"}</span></div><strong>{item.fileName}</strong><small>{(item.size / 1024).toFixed(1)} KB · {new Date(item.createdAt).toLocaleDateString()}</small><div className="rag-document-actions"><button className="rag-card-action" type="button" disabled={documentFetcher.state !== "idle"} onClick={() => documentFetcher.submit({ intent: "readDocument", documentId: item.id }, { method: "post" })}>Read</button><button className="rag-card-action" type="button" disabled={documentFetcher.state !== "idle"} onClick={() => { if (window.confirm(`Delete ${item.fileName}?`)) documentFetcher.submit({ intent: "deleteDocument", documentId: item.id }, { method: "post" }); }}>Delete</button></div></article>; })}</div> : <div className="rag-empty rag-empty-inline"><span className="rag-empty-mark">▤</span><strong>No documents uploaded</strong><p>Upload a text, Word, or Excel file. Then select it and add it to training.</p></div>}</div> : currentItems.length ? <><div className="rag-source-grid">{pageItems.map((item) => { const chosen = (draftIds[activeTab] || []).includes(item.id); const checked = pending.includes(item.id); const sourceType = activeTab === "products" ? "product" : activeTab === "collections" ? "collection" : activeTab === "policies" ? "policy" : "page"; return <article key={item.id} className={`rag-source-card ${chosen ? "is-added" : ""} ${checked ? "is-checked" : ""}`}><div className="rag-card-top"><label className="rag-select-control"><input type="checkbox" checked={checked} disabled={chosen} onChange={() => togglePending(item.id)} aria-label={`Select ${item.title}`}/><span>{chosen ? "Added" : checked ? "Selected" : "Select"}</span></label><span className={`rag-status ${chosen ? "added" : "available"}`}>{chosen ? "In library" : "Available"}</span></div><strong>{sourceUrl({ ...item, sourceType }) ? <a className="rag-source-link" href={sourceUrl({ ...item, sourceType })} target="_blank" rel="noreferrer">{item.title}<span aria-hidden="true">↗</span></a> : item.title}</strong><small>{activeTab === "products" ? `${item.vendor || "Store product"} · ${item.status.toLowerCase()}` : activeTab === "collections" ? `${item.productsCount?.count || 0} products` : activeTab === "policies" ? String(item.type || "Store policy").replaceAll("_", " ").toLowerCase() : `/${item.handle}`}</small>{!chosen && <button className="rag-card-action" type="button" onClick={() => { setDraftIds((current) => ({ ...current, [activeTab]: [...current[activeTab], item.id] })); setPending((current) => current.filter((id) => id !== item.id)); }}><AdminIcon name="plus"/> Add to library</button>}{chosen && <button className="rag-card-action added" type="button" onClick={() => removeSource({ ...item, sourceType })}><AdminIcon name="trash"/> Remove from library</button>}</article>; })}</div><div className="rag-bulk-action"><span>Showing {Math.min((pageNumber - 1) * pageSize + 1, currentItems.length)}–{Math.min(pageNumber * pageSize, currentItems.length)} of {currentItems.length} · {pending.length} selected</span><div className="rag-pagination"><button className="admin-secondary" type="button" disabled={pageNumber <= 1} onClick={() => { setPageNumber((page) => page - 1); setPending([]); }}>← Previous</button><span>Page {pageNumber} of {pageCount}</span><button className="admin-secondary" type="button" disabled={pageNumber >= pageCount} onClick={() => { setPageNumber((page) => page + 1); setPending([]); }}>Next →</button></div></div></> : activeTab === "policies" && loaderData.policyLoadError ? <div className="rag-policy-warning"><span><AdminIcon name="info"/></span><div><strong>Policies need permission</strong><p>{loaderData.policyLoadError}</p></div></div> : <div className="rag-empty rag-empty-inline"><span className="rag-empty-mark">⌕</span><strong>No {activeLabels[activeTab]} found</strong><p>When you add store content in Shopify, it will appear here.</p></div>}
         </div>
       </section>
     </div>
     {modal === "custom" && <div className="admin-modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setModal(null)}><section className="admin-modal" role="dialog" aria-modal="true" aria-labelledby="rag-custom-title"><header className="admin-modal-header"><div><span className="admin-modal-kicker">CUSTOM STORE KNOWLEDGE</span><h2 id="rag-custom-title">Add custom content</h2><p>Write guidance your concierge can use when helping shoppers.</p></div><button className="admin-modal-x" type="button" onClick={() => setModal(null)} aria-label="Close">×</button></header><form onSubmit={addCustom}><label className="admin-field">Content title<input className="admin-text-input" value={customDraft.title} onChange={(event) => setCustomDraft((current) => ({ ...current, title: event.target.value }))} placeholder="e.g. Jacket sizing advice" required/></label><label className="admin-field">Content<textarea className="admin-text-input admin-textarea" value={customDraft.content} onChange={(event) => setCustomDraft((current) => ({ ...current, content: event.target.value }))} placeholder="Add helpful details, instructions, or answers…" required/></label><footer className="admin-modal-actions"><button className="admin-secondary" type="button" onClick={() => setModal(null)}><AdminIcon name="close"/> Cancel</button><button className="admin-cta" type="submit"><AdminIcon name="plus"/> Add to library</button></footer></form></section></div>}
+    {modal?.type === "read" && <div className="admin-modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setModal(null)}><section className="admin-modal" role="dialog" aria-modal="true" aria-labelledby="rag-document-title"><header className="admin-modal-header"><div><span className="admin-modal-kicker">UPLOADED DOCUMENT</span><h2 id="rag-document-title">{modal.document.fileName}</h2><p>Extracted text preview</p></div><button className="admin-modal-x" type="button" onClick={() => setModal(null)} aria-label="Close">×</button></header><pre className="rag-document-preview">{modal.document.content}</pre><footer className="admin-modal-actions"><button className="admin-secondary" type="button" onClick={() => setModal(null)}>Close</button></footer></section></div>}
   </s-page>;
 }
 export const headers = (args) => boundary.headers(args);

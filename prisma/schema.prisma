@@ -89,6 +89,19 @@ model KnowledgeConfig {
   updatedAt     DateTime @updatedAt
 }
 
+model KnowledgeDocument {
+  id          String   @id @default(cuid())
+  shop        String
+  fileName    String
+  storagePath String   @unique
+  contentType String
+  size        Int
+  content     String   @db.Text
+  createdAt   DateTime @default(now())
+
+  @@index([shop, createdAt])
+}
+
 model AssistantSettings {
   shop               String   @id
   aiProvider         String   @default("gemini")

@@ -8,7 +8,7 @@ import { embedTexts } from "../gemini.server";
 import { generateProviderAnswer, resolveEmbeddingKey, resolveProviderKey } from "../ai.server";
 import { createSupabaseServerClient, hasSupabaseServerConfig } from "../supabase.server";
 import { getConversationFlowStep, normalizeConversationFlows, resolveConversationFlow } from "../flows.server";
-import { filterKnowledgeForIntent, findMatchingFaq, isPolicyIntent, isSupportEscalationIntent, isSupportRequestIntent, resolveRetrievalQuestion } from "../chat-intents.server";
+import { filterKnowledgeForIntent, findMatchingFaq, isPolicyIntent, isReturnRequestIntent, isSupportEscalationIntent, isSupportRequestIntent, resolveOrderQuestionIntent, resolveRetrievalQuestion } from "../chat-intents.server";
 
 const cors = (origin) => ({
   "Access-Control-Allow-Origin": origin || "*",
@@ -495,12 +495,90 @@ export const action = async ({ request }) => {
     ]);
     settings = { aiProvider: "gemini", recommendations: true, orderLookup: true, orderEmailRequired: true, humanHandoff: true, faqs: true, responseGuidelines: "", ticketPrefix: "SAC", ticketOptions: [], ...(storedSettings || {}) };
     const activeFaqs = settings.faqs ? loadedFaqs : [];
+    const hasInlineOrderDetails = settings.orderLookup
+      && /#\s*\d{3,}\b|\b(?:order|tracking|shipment|delivery)\s*(?:number|no\.?|#|id)?\s*#?\d{3,}\b/i.test(userMessage)
+      && Boolean(identity.email || userMessage.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i));
+    const orderQuestionIntent = !flowId && !supportRequest && !orderLookupRequest && !hasInlineOrderDetails ? resolveOrderQuestionIntent(userMessage) : null;
+    if (orderQuestionIntent) {
+      let answer = "";
+      let response = { products: [] };
+      const canContactTeam = settings.humanHandoff;
+      const contactDetails = { requestTypeId: "order-delivery", details: userMessage };
+      if (orderQuestionIntent === "cancellation") {
+        answer = "I can help you request a cancellation review. The Support Team must confirm whether it’s possible; your order won’t be cancelled by this chat. Please share the order number to get started.";
+        const flow = getConversationFlowStep(settings.flows, "order-cancellation", "start", {});
+        response = { ...response, ...(flow ? { flow } : {}) };
+      } else if (orderQuestionIntent === "order_change") {
+        answer = canContactTeam
+          ? "I can ask the store team to review that change. It may depend on whether the order has been processed or shipped, so I can’t promise it can be changed. I’ll open a request form; nothing is sent until you review and submit it."
+          : "I can’t change an order from this chat. Please use the store’s contact page promptly; whether a change is possible depends on the order’s processing and shipping status.";
+        if (canContactTeam) response.openSupport = contactDetails;
+      } else if (orderQuestionIntent === "order_item_issue" || orderQuestionIntent === "order_delivery_issue") {
+        const requestTypeId = orderQuestionIntent === "order_item_issue" ? "product-support" : "order-delivery";
+        answer = canContactTeam
+          ? "I’m sorry this happened. I can help you send the details to the store team so they can check what happened and explain the available options. I’ll open a request form; your request is only sent if you review and submit it."
+          : "I’m sorry this happened. I can’t verify or resolve order issues in this chat right now. Please use the store’s contact page and include your order number if available.";
+        if (canContactTeam) response.openSupport = { requestTypeId, details: userMessage };
+      } else if (orderQuestionIntent === "tracking_delay") {
+        answer = settings.orderLookup
+          ? "Tracking can take time to show a new carrier scan. I can check the latest order status securely; enter your order number and checkout email below. If the tracking still looks wrong, contact the store team with the order number."
+          : "Tracking can take time to show a new carrier scan. Please check the tracking link in your shipping confirmation email, or contact the store team with your order number.";
+        if (settings.orderLookup) response.openOrderTracking = true;
+        else if (canContactTeam) response.openSupport = contactDetails;
+      } else if (orderQuestionIntent === "order_status") {
+        answer = settings.orderLookup
+          ? "I can check the latest order status securely. Enter the order number and the email used at checkout below."
+          : canContactTeam
+            ? "Order tracking isn’t available in this chat right now. I can open a request for the store team to check the status."
+            : "Order tracking isn’t available in this chat right now. Please use the store’s contact page for help.";
+        if (settings.orderLookup) response.openOrderTracking = true;
+        else if (canContactTeam) response.openSupport = contactDetails;
+      } else if (orderQuestionIntent === "general_order") {
+        answer = "I can help with that. Are you looking for an order update, trying to change or cancel something, or reporting a problem?";
+        const flow = getConversationFlowStep(settings.flows, "order-updates", "start", {});
+        response = { ...response, ...(flow ? { flow } : {}) };
+      } else if (orderQuestionIntent === "find_order_number") {
+        answer = "Your order number is usually in the confirmation email sent after checkout. Search your inbox (including spam) for the store’s order confirmation. Once you have it, use the secure lookup with the email used at checkout. If you still can’t find it, I can help you contact the store team.";
+        if (settings.orderLookup) response.openOrderTracking = true;
+        else if (canContactTeam) response.openSupport = contactDetails;
+      } else if (orderQuestionIntent === "track_without_number") {
+        answer = canContactTeam
+          ? "For privacy, the secure lookup needs the order number and checkout email. The number is usually in your order confirmation email; check your inbox and spam folder. If you still can’t find it, I can open a request so the store team can help locate your order."
+          : "For privacy, the secure lookup needs the order number and checkout email. The number is usually in your order confirmation email; check your inbox and spam folder, or use the store’s contact page if you still can’t find it.";
+        if (canContactTeam) response.openSupport = contactDetails;
+      } else if (orderQuestionIntent === "confirmation_email") {
+        answer = canContactTeam
+          ? "Please check that you’re looking in the email account used at checkout, including spam and promotions. I can’t resend a confirmation from this chat, but the store team can check what happened. I’ll open a request form; it’s only sent if you submit it."
+          : "Please check the email account used at checkout, including spam and promotions. I can’t resend a confirmation from this chat; use the store’s contact page so the team can check it.";
+        if (canContactTeam) response.openSupport = contactDetails;
+      } else if (orderQuestionIntent === "payment_confirmation") {
+        answer = settings.orderLookup
+          ? "Please check your inbox and spam folder for an order confirmation. I can’t confirm payment or order acceptance without verifying the order. Use the secure lookup below with your order number and checkout email; if you don’t have the number, contact the store team."
+          : "Please check your inbox and spam folder for an order confirmation. I can’t confirm payment or order acceptance from this chat. Contact the store team before placing the order again so they can check whether it went through.";
+        if (settings.orderLookup) response.openOrderTracking = true;
+        else if (canContactTeam) response.openSupport = contactDetails;
+      } else if (orderQuestionIntent === "invoice") {
+        answer = canContactTeam
+          ? "I can’t create or retrieve an invoice in this chat. I can ask the store team whether they can provide one for your order. I’ll open a request form; nothing is sent until you review and submit it."
+          : "I can’t create or retrieve an invoice in this chat. Please use the store’s contact page and include your order number so the team can check.";
+        if (canContactTeam) response.openSupport = contactDetails;
+      }
+      await saveConversation(normalizedShop, sessionId, userMessage, answer, identity, userCreatedAt).catch((error) => console.error("Order guidance conversation save failed", error));
+      return Response.json({ answer, ...response }, { headers });
+    }
     const quickOrderHelpIntent = settings.orderLookup && /(?:\b(?:track|tracking|status|where is|where's|check|find)\b.{0,35}\border\b|\border\b.{0,35}\b(?:track|tracking|status|where|update|details)\b|\border number\b|অর্ডার.{0,24}(?:ট্র্যাক|স্ট্যাটাস|কোথায়|কোথায়|চেক|খুঁজে|আপডেট)|(?:ট্র্যাক|স্ট্যাটাস|কোথায়|কোথায়).{0,24}অর্ডার)/i.test(userMessage);
-    const selectedFaq = typeof faqId === "string" && faqId ? activeFaqs.find((faq) => faq.id === faqId) : null;
     const cancellationActionIntent = /\b(?:(?:i\s+(?:want|need|would like|wanna)|i['’]d\s+like|please|can you|help me)\s+(?:to\s+)?(?:cancel|change|modify|update)\b.{0,45}\b(?:order|purchase|address)\b|(?:cancel|change|modify|update)\s+(?:my|an|the|this)\s+(?:order|purchase|address)\b)/i.test(userMessage);
-    const returnActionIntent = /\b(?:i want to return|i need to return|i['’]d like to return|i want a refund|i need a refund|please refund|please return|submit a return|request (?:a )?refund|request (?:a )?return|start a return|i want an exchange|i need an exchange)\b/i.test(userMessage);
+    const returnActionIntent = isReturnRequestIntent(userMessage);
     const catalogActionIntent = /\b(?:find|show|search|recommend|compare|buy|purchase|shop for|looking for)\b/i.test(userMessage) && /\b(?:product|products|item|items|shirt|t-?shirt|tee|pants|sku|catalog|collection|gift)\b/i.test(userMessage);
     const supportActionIntent = settings.humanHandoff && (isSupportRequestIntent(userMessage) || isSupportEscalationIntent(userMessage));
+    if (!flowId && !faqId && !supportRequest && !orderLookupRequest && returnActionIntent && !catalogActionIntent) {
+      const returnFlow = resolveConversationFlow(settings.flows, { message: userMessage, flowData: {} });
+      if (returnFlow) {
+        await saveConversation(normalizedShop, sessionId, userMessage, returnFlow.answer, identity, userCreatedAt).catch((error) => console.error("Return request flow save failed", error));
+        return Response.json({ answer: returnFlow.answer, ...(returnFlow.flow ? { flow: returnFlow.flow } : {}), ...(returnFlow.clearFlow ? { clearFlow: true } : {}) }, { headers });
+      }
+    }
+    const selectedFaq = !flowId && typeof faqId === "string" && faqId ? activeFaqs.find((faq) => faq.id === faqId) : null;
     const matchedFaq = selectedFaq || (!flowId && !supportRequest && !orderLookupRequest && !supportActionIntent && !quickOrderHelpIntent && !cancellationActionIntent && !returnActionIntent && !catalogActionIntent
       ? findMatchingFaq(activeFaqs, userMessage)
       : null);
@@ -623,7 +701,6 @@ export const action = async ({ request }) => {
     const productSearchIntent = settings.recommendations && !policyIntent && !productInformationIntent && (productPurchaseIntent || explicitProductIntent || bestProductIntent || Boolean(skuCandidate) || hasProductFilters || productCategoryIntent || flowId === "product-discovery" || hasProductSearchLanguage(userMessage));
     productSearchRequested = productSearchIntent;
     purchaseRequested = purchaseRequested || productPurchaseIntent;
-    const hasInlineOrderDetails = settings.orderLookup && explicitOrderReference && !productPurchaseIntent && Boolean(identity.email || userMessage.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i));
     let flowData = submittedFlowData && typeof submittedFlowData === "object" && !Array.isArray(submittedFlowData) ? { ...submittedFlowData } : {};
     delete flowData.orderVerified;
     delete flowData.verifiedOrder;
@@ -648,7 +725,7 @@ export const action = async ({ request }) => {
       }
     }
     const useCatalogSearch = productSearchIntent && !flowChoiceId && (!flowId || flowId === "product-discovery");
-    const resolvedFlow = useCatalogSearch || orderLookupRequest || supportRequest || faqId || (hasInlineOrderDetails && !flowId) || (!flowId && (productPurchaseIntent || Boolean(skuCandidate)))
+    const resolvedFlow = useCatalogSearch || orderLookupRequest || supportRequest || (faqId && !flowId) || (hasInlineOrderDetails && !flowId) || (!flowId && (productPurchaseIntent || Boolean(skuCandidate)))
       ? null
       : resolveConversationFlow(settings.flows, { message: userMessage, flowId, stepId: flowStepId, choiceId: flowChoiceId, flowData });
     let flowGuidance = "";
@@ -819,7 +896,7 @@ export const action = async ({ request }) => {
       await saveConversation(normalizedShop, sessionId, userMessage, answer, identity, userCreatedAt);
       return Response.json({ answer, products: [] }, { headers });
     }
-    if (typeof faqId === "string" && faqId) {
+    if (!flowId && typeof faqId === "string" && faqId) {
       const selectedFaq = await prisma.faq.findFirst({ where: { id: faqId, shop: normalizedShop, active: true }, select: { question: true, answer: true, sourceTitle: true, sourceContent: true } });
       if (selectedFaq) {
         const answer = await answerFaq(userMessage, selectedFaq, settings);
