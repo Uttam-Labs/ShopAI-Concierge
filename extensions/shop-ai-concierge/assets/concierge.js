@@ -87,6 +87,7 @@
     orderButton.innerHTML = '<span aria-hidden="true">↗</span><span>Track an order</span>';
     const welcomeActions = document.createElement("div");
     welcomeActions.className = "sac-welcome-actions";
+    welcomeActions.hidden = chatHistory.some((item) => item.role === "user");
     const makeQuickAction = (label, message) => {
       const button = document.createElement("button");
       button.type = "button";
@@ -152,6 +153,16 @@
     const persistChat = () => {
       try { sessionStorage.setItem(storageKey, JSON.stringify({ sessionId, identity, activeFlow, messages: chatHistory.slice(-40) })); } catch { /* Session storage can be disabled by the browser. */ }
     };
+    const exitActiveFlow = () => {
+      activeFlow = null;
+      chatHistory.forEach((item) => { delete item.flow; });
+      panel.querySelectorAll(".sac-flow-choices").forEach((choices) => choices.remove());
+      const answer = "No problem — you’ve left this topic. What would you like help with next?";
+      addMessage(messages, answer, "assistant");
+      chatHistory.push({ role: "assistant", content: answer, createdAt: Date.now() });
+      persistChat();
+      messages.scrollTop = messages.scrollHeight;
+    };
     const openOrderTracking = () => {
       orderNotice.textContent = "";
       orderResult.hidden = true;
@@ -176,15 +187,14 @@
         const restored = addMessage(messages, item.content, item.role === "user" ? "user" : "assistant", item.createdAt);
         if (item.ticketReference && item.role === "assistant") addTicketReference(restored.row, item.ticketReference);
         if (item.openOrderTracking && item.role === "assistant") addOrderTrackingAction(restored.row);
-        if (item.flow && item.role === "assistant" && activeFlow?.id === item.flow.id && activeFlow?.stepId === item.flow.stepId) renderFlowChoices(restored.row, item.flow, sendMessage);
-        if (item.role === "assistant" && index === latestAssistantIndex) renderHelpfulActions(restored.row, chatHistory[index - 1]?.content || "", item.content, sendMessage, openOrderTracking, openSupportRequest);
+        if (item.flow && item.role === "assistant" && activeFlow?.id === item.flow.id && activeFlow?.stepId === item.flow.stepId) renderFlowChoices(restored.row, item.flow, sendMessage, exitActiveFlow);
+        if (item.role === "assistant" && index === latestAssistantIndex && chatHistory.some((entry) => entry.role === "user") && !item.flow && !item.purchaseIntent) renderHelpfulActions(restored.row, chatHistory[index - 1]?.content || "", item.content, sendMessage, openOrderTracking);
         if (item.order && item.role === "assistant") restoredOrderRows.push({ row: restored.row, order: item.order, answer: item.content });
         if (item.products?.length && item.role === "assistant") renderProducts(messages, item.products, { persist: false, purchaseIntent: item.purchaseIntent === true });
       });
       messages.append(faqSection);
     } else {
       const greeting = initialGreeting.querySelector(".sac-greeting").textContent;
-      renderHelpfulActions(initialGreeting, "", greeting, sendMessage, openOrderTracking, openSupportRequest);
       chatHistory.push({ role: "assistant", content: greeting, createdAt: Date.now() });
       persistChat();
     }
@@ -323,8 +333,7 @@
         const reply = addMessage(messages, data.answer || "Your order status is ready.", "assistant");
         addOrderDetailsAction(reply.row, data.order, data.answer);
         activeFlow = data.flow || null;
-        if (activeFlow) renderFlowChoices(reply.row, activeFlow, sendMessage);
-        renderHelpfulActions(reply.row, customerText, data.answer || "Your order status is ready.", sendMessage, openOrderTracking, openSupportRequest);
+        if (activeFlow) renderFlowChoices(reply.row, activeFlow, sendMessage, exitActiveFlow);
         chatHistory.push({ role: "assistant", content: data.answer || "Your order status is ready.", createdAt: Date.now(), order: data.order, ...(activeFlow ? { flow: activeFlow } : {}) });
         setOrderResult(data.order, data.answer);
         persistChat();
@@ -335,7 +344,6 @@
           : (error.message || "Order tracking is temporarily unavailable. Please try again.");
         orderNotice.textContent = errorMessage;
         const reply = addMessage(messages, errorMessage, "assistant");
-        renderHelpfulActions(reply.row, customerText, errorMessage, sendMessage, openOrderTracking, openSupportRequest);
         chatHistory.push({ role: "assistant", content: errorMessage, createdAt: Date.now() });
         reply.bubble.classList.add("error");
         persistChat();
@@ -379,6 +387,7 @@
       const emailFromMessage = message.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0];
       if (emailFromMessage && !identity?.email) identity = { ...(identity || {}), name: identity?.name || "Anonymous shopper", email: emailFromMessage.toLowerCase() };
       addMessage(messages, message, "user");
+      welcomeActions.hidden = true;
       input.value = "";
       resizeComposer();
       form.dataset.sending = "true";
@@ -412,7 +421,7 @@
         if (data.openSupport) openSupportRequest(data.openSupport);
         activeFlow = data.flow || null;
         if (activeFlow) renderFlowChoices(reply.row, activeFlow, sendMessage);
-        renderHelpfulActions(reply.row, message, answer, sendMessage, openOrderTracking, openSupportRequest);
+        if (!activeFlow && !purchaseIntent) renderHelpfulActions(reply.row, message, answer, sendMessage, openOrderTracking);
         const recommendedProducts = enableRecommendations && Array.isArray(data.products) ? data.products.slice(0, 5) : [];
         const savedProducts = recommendedProducts.slice(0, 5);
         chatHistory.push({ role: "assistant", content: answer, createdAt: Date.now(), ...(purchaseIntent ? { purchaseIntent: true } : {}), ...(activeFlow ? { flow: activeFlow } : {}), ...(data.openOrderTracking ? { openOrderTracking: true } : {}), ...(data.order ? { order: data.order } : {}), ...(savedProducts.length ? { products: savedProducts } : {}) });
@@ -429,8 +438,7 @@
             ? "I’d be happy to help find the right product. I can’t access the store’s live catalog right now, so I don’t want to guess. Please try again shortly, or use the order and support options above."
             : "I’m sorry, I can’t reach the store service right now. You can use the order or support options above, or try your question again in a moment.";
         activeFlow = flowState || null;
-        if (activeFlow) renderFlowChoices(pending.row, activeFlow, sendMessage);
-        renderHelpfulActions(pending.row, message, pending.bubble.textContent, sendMessage, openOrderTracking, openSupportRequest);
+        if (activeFlow) renderFlowChoices(pending.row, activeFlow, sendMessage, exitActiveFlow);
         chatHistory.push({ role: "assistant", content: pending.bubble.textContent, createdAt: Date.now(), ...(activeFlow ? { flow: activeFlow } : {}) });
         persistChat();
       } finally {
@@ -511,7 +519,6 @@
         addTicketReference(reply.row, ticketReference);
         activeFlow = data.flow || null;
         if (activeFlow) renderFlowChoices(reply.row, activeFlow, sendMessage);
-        renderHelpfulActions(reply.row, "contact support", confirmedReply, sendMessage, openOrderTracking, openSupportRequest);
         chatHistory.push({ role: "assistant", content: confirmedReply, createdAt: Date.now(), ticketReference, ...(activeFlow ? { flow: activeFlow } : {}) });
         persistChat();
         supportFollowup = null;
@@ -519,7 +526,6 @@
         const errorMessage = error.message || "We couldn’t create your ticket. Please try again.";
         pending.row.remove();
         const reply = addMessage(messages, errorMessage, "assistant");
-        renderHelpfulActions(reply.row, "contact support", errorMessage, sendMessage, openOrderTracking, openSupportRequest);
         reply.bubble.classList.add("error");
         chatHistory.push({ role: "assistant", content: errorMessage, createdAt: Date.now() });
         persistChat();
@@ -711,8 +717,9 @@
     });
     section.hidden = list.childElementCount === 0;
   }
-  function renderFlowChoices(row, flow, sendMessage) {
-    if (!flow || !Array.isArray(flow.choices) || !flow.choices.length) return;
+  function renderFlowChoices(row, flow, sendMessage, exitActiveFlow) {
+    if (!flow || !Array.isArray(flow.choices)) return;
+    if (flow.id === "welcome" && flow.stepId === "start") return;
     const content = row.querySelector(".sac-message-content");
     if (!content) return;
     const group = document.createElement("div");
@@ -728,6 +735,12 @@
       button.addEventListener("click", () => sendMessage(choice.label, { flow: { id: flow.id, stepId: flow.stepId, choiceId: choice.id } }));
       group.append(button);
     });
+    const exitButton = document.createElement("button");
+    exitButton.type = "button";
+    exitButton.className = "sac-flow-choice sac-flow-exit";
+    exitButton.textContent = "Exit this topic";
+    exitButton.addEventListener("click", exitActiveFlow);
+    group.append(exitButton);
     const time = content.querySelector(".sac-message-time");
     if (time) content.insertBefore(group, time);
     else content.append(group);
@@ -759,55 +772,30 @@
     if (time) content.insertBefore(group, time);
     else content.append(group);
   }
-  function renderHelpfulActions(row, question, answer, sendMessage, openOrderTracking, openSupportRequest) {
+  function renderHelpfulActions(row, question, answer, sendMessage, openOrderTracking) {
     const content = row?.querySelector(".sac-message-content");
     if (!content || content.querySelector(".sac-helpful-actions")) return;
     const context = `${question || ""} ${answer || ""}`.toLowerCase();
-    const actions = /cancel|cancellation/.test(context)
-      ? [
-          { label: "Start a cancellation request", run: () => sendMessage("I want to cancel my order", { clearFlow: true }) },
-          { label: "Track an order", run: openOrderTracking },
-          { label: "Contact support", run: () => openSupportRequest() },
-        ]
+    const action = /cancel|cancellation/.test(context)
+      ? { label: "Start cancellation request", run: () => sendMessage("I want to cancel my order", { clearFlow: true }) }
       : /return|refund/.test(context)
-        ? [
-            { label: "Ask about a return", run: () => sendMessage("I want to return a product", { clearFlow: true }) },
-            { label: "Track an order", run: openOrderTracking },
-            { label: "Contact support", run: () => openSupportRequest() },
-          ]
-        : /product|products|catalog|shopping|buy|price|size|stock/.test(context)
-          ? [
-              { label: "Find products", run: () => sendMessage("Help me find a product", { clearFlow: true }) },
-              { label: "Track an order", run: openOrderTracking },
-              { label: "Contact support", run: () => openSupportRequest() },
-            ]
-          : /order|shipping|delivery|tracking|shipped|package/.test(context)
-            ? [
-                { label: "Track an order", run: openOrderTracking },
-                { label: "Find products", run: () => sendMessage("Help me find a product", { clearFlow: true }) },
-                { label: "Contact support", run: () => openSupportRequest() },
-              ]
-            : [
-                { label: "Find products", run: () => sendMessage("Help me find a product", { clearFlow: true }) },
-                { label: "Track an order", run: openOrderTracking },
-                { label: "Contact support", run: () => openSupportRequest() },
-              ];
+        ? { label: "Ask about a return", run: () => sendMessage("I want to return a product", { clearFlow: true }) }
+        : /order|shipping|delivery|tracking|shipped|package/.test(context)
+          ? { label: "Track this order", run: openOrderTracking }
+          : /product|products|catalog|shopping|buy|price|size|stock/.test(context)
+            ? { label: "Find a product", run: () => sendMessage("Help me find a product", { clearFlow: true }) }
+            : null;
+    if (!action) return;
     const group = document.createElement("div");
     group.className = "sac-helpful-actions";
     group.setAttribute("role", "group");
-    group.setAttribute("aria-label", "How else can we help?");
-    const title = document.createElement("span");
-    title.className = "sac-helpful-title";
-    title.textContent = "What would you like to do next?";
-    group.append(title);
-    actions.forEach((action) => {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "sac-flow-choice sac-helpful-action";
-      button.textContent = action.label;
-      button.addEventListener("click", action.run);
-      group.append(button);
-    });
+    group.setAttribute("aria-label", "Related next step");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "sac-flow-choice sac-helpful-action";
+    button.textContent = action.label;
+    button.addEventListener("click", action.run);
+    group.append(button);
     const time = content.querySelector(".sac-message-time");
     if (time) content.insertBefore(group, time);
     else content.append(group);
