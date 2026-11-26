@@ -124,34 +124,131 @@ async function lookupShopifyOrder(shop, orderNumber, email, requireEmail = true)
   };
 }
 
-async function lookupShopifyProductsBySku(shop, sku) {
-  const token = await getShopifyAdminToken(shop);
-  if (!token) return [];
-  const query = `query ProductsBySku($query: String!) { products(first: 5, query: $query) { nodes { title handle description vendor productType tags variants(first: 100) { nodes { id title sku price availableForSale } } } } }`;
-  const response = await fetch(`https://${shop}/admin/api/2026-10/graphql.json`, { method: "POST", headers: { "content-type": "application/json", "X-Shopify-Access-Token": token }, body: JSON.stringify({ query, variables: { query: `sku:${sku}` } }) });
-  if (!response.ok) return [];
-  const payload = await response.json();
-  if (payload.errors?.length) return [];
-  return (payload.data?.products?.nodes || []).filter((product) => product.variants?.nodes?.some((variant) => String(variant.sku || "").toLowerCase() === sku.toLowerCase())).map((product) => ({
-    source_type: "product",
+function mapAdminProduct(product) {
+  const variants = product.variants?.nodes || [];
+  const metafields = product.metafields?.nodes || [];
+  const collections = product.collections?.nodes || [];
+  return {
     title: product.title,
-    content: [product.title, product.description, product.vendor, product.productType, product.tags?.join(", "), ...product.variants.nodes.map((variant) => `${variant.title} SKU ${variant.sku} ${variant.price} ${variant.availableForSale ? "in stock" : "out of stock"}`)].filter(Boolean).join("\n"),
-    similarity: 1,
-    metadata: { handle: product.handle, description: product.description, tags: product.tags || [], variants: product.variants.nodes.map((variant) => ({ id: variant.id, title: variant.title, sku: variant.sku, price: variant.price, availableForSale: variant.availableForSale })) },
-  }));
+    handle: product.handle,
+    description: product.description || "",
+    image: product.featuredMedia?.image?.url || "",
+    vendor: product.vendor || "",
+    productType: product.productType || "",
+    tags: product.tags || [],
+    collections,
+    metafields,
+    variants: variants.map((variant) => ({ id: variant.id, title: variant.title, sku: variant.sku || "", price: variant.price, availableForSale: variant.availableForSale, selectedOptions: variant.selectedOptions || [] })),
+  };
 }
 
-async function searchStorefrontProducts(shop, queryText) {
-  const searchUrl = new URL(`https://${shop}/search/suggest.json`);
-  searchUrl.searchParams.set("q", queryText.slice(0, 180));
-  searchUrl.searchParams.set("resources[type]", "product");
-  searchUrl.searchParams.set("resources[limit]", "6");
-  searchUrl.searchParams.set("resources[options][unavailable_products]", "show");
-  searchUrl.searchParams.set("resources[options][fields]", "title,product_type,variants.title,tag");
-  const response = await fetch(searchUrl, { headers: { accept: "application/json" } });
-  if (!response.ok) return [];
-  const data = await response.json();
-  return (data?.resources?.results?.products || []).slice(0, 6).map((product) => ({ title: product.title, handle: product.handle, image: product.image, url: product.url, tags: product.tags || "" }));
+async function searchShopifyProducts(shop, queryText, limit = 5) {
+  const token = await getShopifyAdminToken(shop);
+  if (!token || !queryText) return [];
+  const query = `query ConciergeProductSearch($query: String!, $first: Int!) { products(first: $first, query: $query) { nodes { title handle description vendor productType tags featuredMedia { ... on MediaImage { image { url } } } variants(first: 100) { nodes { id title sku price availableForSale selectedOptions { name value } } } metafields(first: 50) { nodes { namespace key value type } } collections(first: 20) { nodes { title handle } } } } }`;
+  const response = await fetch(`https://${shop}/admin/api/2026-10/graphql.json`, { method: "POST", headers: { "content-type": "application/json", "X-Shopify-Access-Token": token }, body: JSON.stringify({ query, variables: { query: queryText.slice(0, 250), first: Math.min(5, Math.max(1, limit)) } }) });
+  if (!response.ok) throw new Error(`Shopify product search failed (${response.status})`);
+  const payload = await response.json();
+  if (payload.errors?.length) throw new Error(payload.errors.map((error) => error.message).join("; "));
+  return (payload.data?.products?.nodes || []).map(mapAdminProduct);
+}
+
+function normalizeProductLookup(value) {
+  return String(value || "").toLocaleLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+}
+
+function productSearchPhrase(value) {
+  return String(value || "").replace(/^\s*(?:please\s+)?(?:can you|could you)\s+/i, "").replace(/^(?:do you have|have you got|is there|can i get|where can i (?:find|buy)|where is)\s+/i, "").replace(/^(?:i(?:'m|’m| am)?\s+)?(?:want(?:\s+to\s+(?:buy|purchase|find))?|would like(?:\s+to\s+(?:buy|purchase|find))?|would love(?:\s+to\s+(?:buy|purchase|find))?|plan(?:ning)?(?:\s+to\s+(?:buy|purchase|find))?|need|looking for|searching for|show me|find me|find|search for|search|look for|buy|purchase|recommend)\s+/i, "").replace(/\b(?:can you|could you|please|product|products|item|items|sku|any)\b/gi, " ").replace(/\s+/g, " ").trim();
+}
+
+function exactProductMatch(product, phrase, sku) {
+  const normalizedPhrase = normalizeProductLookup(phrase);
+  const normalizedHandle = normalizeProductLookup(String(phrase || "").replace(/\s+/g, "-"));
+  const titleMatches = normalizedPhrase && normalizeProductLookup(product.title) === normalizedPhrase;
+  const handleMatches = normalizedHandle && normalizeProductLookup(product.handle) === normalizedHandle;
+  const skuMatches = sku && (product.variants || []).some((variant) => String(variant.sku || "").trim().toLocaleLowerCase() === sku.trim().toLocaleLowerCase());
+  return Boolean(titleMatches || handleMatches || skuMatches);
+}
+
+function productRelevance(product, phrase) {
+  const terms = [...new Set(normalizeProductLookup(phrase).split(/\s+/).filter((term) => term.length > 1))];
+  if (!terms.length) return 0;
+  const fields = [product.title, product.handle, product.description, product.vendor, product.productType, ...(product.tags || []), ...(product.collections || []).flatMap((collection) => [collection.title, collection.handle]), ...(product.metafields || []).map((field) => `${field.namespace} ${field.key} ${field.value}`), ...(product.variants || []).flatMap((variant) => [variant.title, variant.sku, variant.price, ...(variant.selectedOptions || []).map((option) => option.value)])];
+  const haystack = normalizeProductLookup(fields.join(" "));
+  return terms.filter((term) => haystack.includes(term)).length / terms.length;
+}
+
+function knowledgeProduct(row, extra = {}) {
+  const metadata = row.metadata || {};
+  return { title: row.title, handle: metadata.handle, description: metadata.description || row.content || "", image: metadata.image || "", vendor: metadata.vendor || "", productType: metadata.productType || "", tags: metadata.tags || [], collections: metadata.collections || [], metafields: metadata.metafields || [], variants: metadata.variants || [], _similarity: Number(row.similarity || 0), ...extra };
+}
+
+async function discoverShopifyProducts(shop, question, knowledgeRows = []) {
+  const phrase = productSearchPhrase(question) || String(question || "").trim();
+  const sku = String(question || "").match(/\bsku\s*[:#]?\s*([A-Z0-9][A-Z0-9._/-]{2,})\b/i)?.[1] || String(question || "").match(/\b[A-Z0-9]{2,}(?:-[A-Z0-9]+)+\b/i)?.[0] || "";
+  const productsFromKnowledge = knowledgeRows.flatMap((row) => {
+    if (row.source_type === "product" && row.metadata?.handle) return [knowledgeProduct(row)];
+    if (row.source_type === "collection" && Array.isArray(row.metadata?.products)) return row.metadata.products.filter((product) => product?.handle).map((product) => ({ ...product, _similarity: Number(row.similarity || 0) }));
+    return [];
+  });
+  const exactFromKnowledge = productsFromKnowledge.find((product) => exactProductMatch(product, phrase, sku));
+  const safeSearch = async (query, limit = 5) => {
+    try { return await searchShopifyProducts(shop, query, limit); }
+    catch (error) { console.warn("Shopify product search request failed", { query, message: error?.message }); return []; }
+  };
+  let exactProduct = sku ? (await safeSearch(`sku:${sku}`, 1)).find((product) => exactProductMatch(product, phrase, sku)) : null;
+  const handleQuery = normalizeProductLookup(phrase).replace(/\s+/g, "-");
+  if (!exactProduct && handleQuery) exactProduct = (await safeSearch(`handle:${handleQuery}`, 1)).find((product) => exactProductMatch(product, phrase, sku));
+  if (!exactProduct && phrase) exactProduct = (await safeSearch(`title:${JSON.stringify(phrase)}`, 1)).find((product) => exactProductMatch(product, phrase, sku));
+  exactProduct ||= exactFromKnowledge;
+  if (exactProduct) {
+    if (!exactProduct.image || !exactProduct.variants?.length) {
+      const handle = exactProduct.handle;
+      const liveProduct = handle ? (await safeSearch(`handle:${handle}`, 1)).find((product) => product.handle === handle) : null;
+      if (liveProduct) exactProduct = { ...exactProduct, ...liveProduct };
+    }
+    const relatedTerms = [exactProduct.productType, exactProduct.collections?.[0]?.title, ...(exactProduct.tags || []).slice(0, 2)].filter(Boolean);
+    const relatedQuery = relatedTerms.join(" ") || phrase;
+    const relatedLive = await safeSearch(relatedQuery, 5);
+    const relatedKnowledge = productsFromKnowledge.filter((product) => product.handle !== exactProduct.handle);
+    const relatedByHandle = new Map([...relatedKnowledge, ...relatedLive].filter((product) => product.handle && product.handle !== exactProduct.handle).map((product) => [product.handle, product]));
+    const alternatives = [...relatedByHandle.values()].map((product) => ({ product, score: productRelevance(product, relatedQuery) + Number(product._similarity || 0) * 0.5 })).sort((left, right) => right.score - left.score).map(({ product }) => product).slice(0, 4);
+    return { exact: true, products: [{ ...exactProduct, exactMatch: true }, ...alternatives.map((product) => ({ ...product, exactMatch: false }))].slice(0, 5), phrase };
+  }
+  const liveMatches = await safeSearch(phrase, 5);
+  const rankedByHandle = new Map(productsFromKnowledge.filter((product) => product.handle).map((product) => [product.handle, product]));
+  const merged = new Map();
+  [...productsFromKnowledge, ...liveMatches].forEach((product) => {
+    if (!product.handle) return;
+    const ranked = rankedByHandle.get(product.handle);
+    merged.set(product.handle, { ...(ranked || {}), ...product, _similarity: Number(ranked?._similarity || product._similarity || 0) });
+  });
+  const products = [...merged.values()].map((product) => ({ product, score: productRelevance(product, phrase) * 0.72 + product._similarity * 0.28 })).filter((item) => item.score > 0).sort((left, right) => right.score - left.score).slice(0, 5).map(({ product }) => ({ ...product, exactMatch: false }));
+  return { exact: false, products, phrase };
+}
+
+function productSearchAnswer(discovery) {
+  if (discovery.exact && discovery.products.length === 1) return `I found an exact match for “${discovery.products[0].title}”. You can review its details below.`;
+  if (discovery.exact && discovery.products.length > 1) return `I found an exact match for “${discovery.products[0].title}”. I’ve also included ${discovery.products.length - 1} related items in case you’d like to compare them.`;
+  if (discovery.products.length) return `I found a few close matches for “${discovery.phrase}”. “${discovery.products[0].title}” looks like the closest fit based on the product details. You can compare up to four more options below.`;
+  return `I couldn’t find a close catalog match for “${discovery.phrase}” yet. Could you share another detail, such as the product type, size, color, or SKU?`;
+}
+
+function productCards(products) {
+  return products.slice(0, 5).map((product) => {
+    const tags = Array.isArray(product.tags) ? product.tags : String(product.tags || "").split(",").map((tag) => tag.trim()).filter(Boolean);
+    return {
+      title: product.title,
+      handle: product.handle,
+      image: product.image,
+      description: product.description,
+      price: product.variants?.[0]?.price,
+      variants: product.variants || [],
+      tags,
+      bestSeller: Boolean(product.bestSeller || product.isBestSeller || tags.some((tag) => /best[\s_-]*sell|bestseller/i.test(String(tag)))),
+      exactMatch: product.exactMatch === true,
+    };
+  });
 }
 
 async function saveConversation(shop, sessionId, userMessage, assistantMessage, identity = {}, userCreatedAt = new Date().toISOString()) {
@@ -272,6 +369,8 @@ export const action = async ({ request }) => {
   let supportSubmission = false;
   let settings;
   let retrievedKnowledge = [];
+  let productSearchRequested = false;
+  let purchaseRequested = false;
   try {
     const proxyContext = await authenticate.public.appProxy(request);
     verifiedShop = proxyContext.session?.shop?.toLowerCase();
@@ -290,8 +389,15 @@ export const action = async ({ request }) => {
     settings = { aiProvider: "gemini", recommendations: true, orderLookup: true, orderEmailRequired: true, humanHandoff: true, faqs: true, responseGuidelines: "", ticketPrefix: "SAC", ticketOptions: [], ...(await prisma.assistantSettings.findUnique({ where: { shop: normalizedShop } }) || {}) };
     const productPurchaseIntent = /\b(?:i\s+)?(?:want|like|would like|would love|plan|planning)\s+to\s+(?:buy|purchase)|\b(?:buy|purchase)\s+(?:this|that|the|a|an)\s+product\b|\badd\s+.+\s+to\s+(?:my\s+)?cart\b/i.test(userMessage);
     const explicitOrderReference = /#\s*\d{3,}\b|\b(?:order|tracking|shipment|delivery)\s*(?:number|no\.?|#|id)?\s*#?\d{3,}\b/i.test(userMessage);
+    const policyIntent = /\b(policy|policies|shipping|delivery|return|returns|refund|exchange|cancel|cancellation|privacy|terms|warranty|guarantee|payment|dispatch)\b|নীতি|শিপিং|ডেলিভারি|ফেরত|রিটার্ন|রিফান্ড|বাতিল|গোপনীয়তা|পেমেন্ট|ওয়ারেন্টি/i.test(userMessage);
+    const explicitProductIntent = /\b(buy|purchase|shop|sell|recommend|recommendation|show me|looking for|price|cost|in stock|available|size|colour|color|search|find)\b|প্রোডাক্ট|পণ্য|কিনতে|দাম|মূল্য|দেখাও|সাজেস্ট|সাইজ|কালার|রঙ/i.test(userMessage);
+    const bestProductIntent = /\b(best|top|popular|most (?:bought|ordered|popular)|bestseller|best selling|trending)\b|সেরা|সবচেয়ে ভালো|জনপ্রিয়/i.test(userMessage);
+    const skuCandidate = !explicitOrderReference ? userMessage.match(/\bsku\s*[:#]?\s*([A-Z0-9][A-Z0-9._/-]{2,})\b/i)?.[1] || userMessage.match(/\b[A-Z0-9]{2,}(?:-[A-Z0-9]+)+\b/i)?.[0] : null;
+    const productSearchIntent = settings.recommendations && !policyIntent && (productPurchaseIntent || explicitProductIntent || bestProductIntent || Boolean(skuCandidate));
+    productSearchRequested = productSearchIntent;
+    purchaseRequested = productPurchaseIntent;
     const hasInlineOrderDetails = settings.orderLookup && explicitOrderReference && !productPurchaseIntent && Boolean(identity.email || userMessage.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i));
-    const resolvedFlow = orderLookupRequest || supportRequest || faqId || hasInlineOrderDetails
+    const resolvedFlow = orderLookupRequest || supportRequest || faqId || hasInlineOrderDetails || productPurchaseIntent || Boolean(skuCandidate)
       ? null
       : resolveConversationFlow(settings.flows, { message: userMessage, flowId, stepId: flowStepId, choiceId: flowChoiceId });
     let flowGuidance = "";
@@ -484,28 +590,16 @@ export const action = async ({ request }) => {
       await saveConversation(normalizedShop, sessionId, userMessage, answer, identity, userCreatedAt);
       return Response.json({ answer, openOrderTracking: true, products: [] }, { headers });
     }
-    const skuCandidate = /\b(?:product|item|buy|purchase|sku|looking for)\b/i.test(userMessage) && !explicitOrderReference ? userMessage.match(/\b[A-Z0-9]+(?:-[A-Z0-9]+)+\b/i)?.[0] : null;
     if (skuCandidate && settings.recommendations) {
       try {
-        const skuProducts = await lookupShopifyProductsBySku(normalizedShop, skuCandidate);
-        if (skuProducts.length) {
-          const products = skuProducts.map((row) => ({ title: row.title, handle: row.metadata.handle, image: row.metadata.image, description: row.metadata.description, price: row.metadata.variants?.[0]?.price, variants: row.metadata.variants, tags: row.metadata.tags }));
-          const answer = `I found ${products[0].title} in the store catalog. Please check the product details and choose your preferred option. Would you like me to add it to your cart and take you to checkout?`;
+        const discovered = await discoverShopifyProducts(normalizedShop, userMessage, []);
+        if (discovered.exact && discovered.products.length) {
+          const products = discovered.products.slice(0, 5);
+          const answer = `I found an exact match for “${products[0].title}” in the store. You can review it below, along with a few related items. Would you like to add one to your cart?`;
           await saveConversation(normalizedShop, sessionId, userMessage, answer, identity, userCreatedAt);
-          return Response.json({ answer, products, purchaseIntent: true }, { headers });
+          return Response.json({ answer, products, purchaseIntent: true, exactProductMatch: true }, { headers });
         }
       } catch (skuError) { console.error("Exact product SKU lookup failed", skuError); }
-    }
-    if (productPurchaseIntent && settings.recommendations) {
-      const productQuery = userMessage.replace(/\b(?:i\s+)?(?:want|like|would like|would love|plan|planning)\s+to\s+(?:buy|purchase)|\b(?:buy|purchase)\s+(?:this|that|the|a|an)\b|\b(?:product|please|can you|could you)\b/gi, " ").replace(/\s+/g, " ").trim();
-      try {
-        const products = await searchStorefrontProducts(normalizedShop, productQuery || userMessage);
-        if (products.length) {
-          const answer = `I found these close matches in the store catalog. Please check the product details and choose your preferred option. Would you like me to add one to your cart and take you to checkout?`;
-          await saveConversation(normalizedShop, sessionId, userMessage, answer, identity, userCreatedAt);
-          return Response.json({ answer, products, purchaseIntent: true }, { headers });
-        }
-      } catch (catalogError) { console.error("Storefront product search failed", catalogError); }
     }
     const providerKey = resolveProviderKey(settings);
     const embeddingKey = resolveEmbeddingKey(settings);
@@ -521,6 +615,14 @@ export const action = async ({ request }) => {
       if (supabaseReady) {
         try { fallbackRows = await lexicalKnowledgeFallback(normalizedShop, userMessage); }
         catch (fallbackError) { console.warn("Store knowledge fallback lookup failed", fallbackError?.message); }
+      }
+      const fallbackProductIntent = fallbackRows.some((row) => ["product", "collection"].includes(row.source_type) && Number(row.similarity) >= 0.25);
+      if (productSearchIntent || (!policyIntent && fallbackProductIntent)) {
+        const discovery = await discoverShopifyProducts(normalizedShop, userMessage, fallbackRows);
+        const answer = productSearchAnswer(discovery);
+        const products = productCards(discovery.products);
+        await saveConversation(normalizedShop, sessionId, userMessage, answer, identity, userCreatedAt).catch((error) => console.error("Fallback product conversation save failed", error));
+        return Response.json({ answer, products, ...(productPurchaseIntent && products.length ? { purchaseIntent: true } : {}), ...(discovery.exact ? { exactProductMatch: true } : {}) }, { headers });
       }
       const answer = closestKnowledgeAnswer(userMessage, fallbackRows);
       await saveConversation(normalizedShop, sessionId, userMessage, answer, identity, userCreatedAt).catch((error) => console.error("Fallback conversation save failed", error));
@@ -538,14 +640,11 @@ export const action = async ({ request }) => {
       const flow = getConversationFlowStep(settings.flows, "welcome", "start");
       return Response.json({ answer, products: [], ...(flow ? { flow } : {}) }, { headers });
     }
-    const policyIntent = /\b(policy|policies|shipping|delivery|return|returns|refund|exchange|cancel|cancellation|privacy|terms|warranty|guarantee|payment|dispatch)\b|নীতি|শিপিং|ডেলিভারি|ফেরত|রিটার্ন|রিফান্ড|বাতিল|গোপনীয়তা|পেমেন্ট|ওয়ারেন্টি/i.test(message);
-    const explicitProductIntent = /\b(product|products|item|items|buy|purchase|shop|sell|recommend|recommendation|show me|looking for|price|cost|in stock|available|size|colour|color)\b|প্রোডাক্ট|পণ্য|কিনতে|দাম|মূল্য|দেখাও|সাজেস্ট|সাইজ|কালার|রঙ/i.test(message);
     const answerContext = policyIntent
       ? matches.filter((row) => ["policy", "page", "faq", "custom"].includes(row.source_type))
       : explicitProductIntent
         ? matches.filter((row) => ["product", "collection", "page", "policy", "custom"].includes(row.source_type))
         : matches;
-    const bestProductIntent = /\b(best|top|popular|most (?:bought|ordered|popular)|bestseller|best selling|trending)\b|সেরা|সবচেয়ে ভালো|জনপ্রিয়/i.test(message);
     let productRows = matches.filter((row) => row.source_type === "product" && row.metadata?.handle);
     if (productPurchaseIntent) {
       const titleTokens = userMessage.toLocaleLowerCase().normalize("NFKD").match(/[\p{L}\p{N}]{3,}/gu) || [];
@@ -554,7 +653,7 @@ export const action = async ({ request }) => {
         const matched = titleTokens.filter((token) => haystack.includes(token)).length;
         return { row, matched, score: matched / Math.max(1, titleTokens.length) };
       }).sort((left, right) => right.score - left.score || Number(right.row.similarity) - Number(left.row.similarity));
-      productRows = ranked.filter((item) => item.score >= 0.25).slice(0, 4).map((item) => item.row);
+      productRows = ranked.filter((item) => item.score >= 0.25).slice(0, 5).map((item) => item.row);
     }
     const collectionRows = matches.filter((row) => row.source_type === "collection");
     const collectionHandles = collectionRows.map((row) => String(row.metadata?.handle || "")).filter(Boolean);
@@ -575,6 +674,18 @@ export const action = async ({ request }) => {
     const indexedCollectionProducts = collectionRows.flatMap((row) => Array.isArray(row.metadata?.products) ? row.metadata.products : []);
     const collectionProductRows = (liveCollectionProducts.length ? liveCollectionProducts : indexedCollectionProducts).map((product) => ({ source_type: "product", title: product.title, content: [product.title, product.vendor, product.productType, product.description, product.tags, ...(product.variants || []).map((variant) => `${variant.title} ${variant.price} ${variant.availableForSale ? "in stock" : "out of stock"}`)].filter(Boolean).join("\n"), metadata: product }));
     const matchedCollection = collectionRows.length > 0;
+    const vectorProductMatch = productRows.some((row) => Number(row.similarity) >= 0.22) || matchedCollection;
+    if (settings.recommendations && !policyIntent && (productSearchIntent || vectorProductMatch)) {
+      const discovery = await discoverShopifyProducts(normalizedShop, userMessage, [...productRows, ...collectionRows, ...collectionProductRows]);
+      if (discovery.products.length || productSearchIntent) {
+        const products = productCards(discovery.products);
+        const answer = discovery.products.length
+          ? productSearchAnswer(discovery)
+          : `I couldn’t find a close match in the live catalog for “${discovery.phrase}”. Could you share another detail, such as the product type, size, color, or SKU?`;
+        await saveConversation(normalizedShop, sessionId, userMessage, answer, identity, userCreatedAt);
+        return Response.json({ answer, products, ...(productPurchaseIntent && products.length ? { purchaseIntent: true } : {}), ...(discovery.exact ? { exactProductMatch: true } : {}) }, { headers });
+      }
+    }
     let rankedProductRows = productRows;
     if (bestProductIntent) {
       const tokens = message.toLowerCase().normalize("NFKD").match(/[\p{L}\p{N}]{3,}/gu) || [];
@@ -617,10 +728,8 @@ export const action = async ({ request }) => {
       return { title: row.title, handle: row.metadata?.handle, image: row.metadata?.image, description: row.metadata?.description, price: row.metadata?.variants?.[0]?.price, variants: row.metadata?.variants || [], tags, bestSeller: Boolean(row.metadata?.bestSeller || row.metadata?.isBestSeller || /best[\s_-]*sell|bestseller/i.test(`${tagText} ${row.content || ""}`)) };
     }) : [];
     if (showProductCards && !products.length) {
-      try {
-        const searchPhrase = message.replace(/\b(?:i\s+)?(?:want|would like|need|plan|planning)\s+to\s+(?:buy|purchase)\b|\b(?:buy|purchase)\s+(?:this|that|the|a|an)\b|\b(?:product|sku|please|can you|could you)\b/gi, " ").replace(/\s+/g, " ").trim();
-        products = await searchStorefrontProducts(normalizedShop, searchPhrase || message);
-      } catch { /* Storefront search is a fallback when the knowledge index has no product match. */ }
+      const discovery = await discoverShopifyProducts(normalizedShop, userMessage, matches);
+      products = productCards(discovery.products);
     }
     if (productPurchaseIntent && products.length) {
       answer = `I found ${products[0].title} in the store catalog. Please check the details and choose your preferred option. Would you like me to add it to your cart and take you to checkout?`;
@@ -643,6 +752,16 @@ export const action = async ({ request }) => {
       if (!fallbackRows.length) {
         try { fallbackRows = await lexicalKnowledgeFallback(normalizedShop, userMessage); }
         catch (fallbackError) { console.warn("Store knowledge fallback lookup failed", fallbackError?.message); }
+      }
+      const fallbackProductIntent = fallbackRows.some((row) => ["product", "collection"].includes(row.source_type) && Number(row.similarity) >= 0.25);
+      if (productSearchRequested || fallbackProductIntent) {
+        const discovery = await discoverShopifyProducts(normalizedShop, userMessage, fallbackRows);
+        if (discovery.products.length || productSearchRequested) {
+          const answer = productSearchAnswer(discovery);
+          const products = productCards(discovery.products);
+          await saveConversation(normalizedShop, sessionId, userMessage, answer, identity, userCreatedAt).catch((saveError) => console.error("Fallback product conversation save failed", saveError));
+          return Response.json({ answer, products, ...(purchaseRequested && products.length ? { purchaseIntent: true } : {}), ...(discovery.exact ? { exactProductMatch: true } : {}) }, { headers });
+        }
       }
       const answer = identityQuestion
         ? "I’m ShopAI Concierge, your store’s virtual shopping assistant. I can help with store products and information, order lookups, and support requests. What would you like help with?"

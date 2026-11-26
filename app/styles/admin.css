@@ -849,3 +849,16 @@ button:disabled, s-button[disabled] { cursor: not-allowed; }
 .flow-canvas-connectors > path { stroke: #a5b0bd; stroke-width: 1.65; }
 .flow-canvas-connectors marker path { fill: #a5b0bd; }
 @media (max-width: 720px) { .flow-canvas-zoom-content { min-width: 640px; } .flow-canvas-wrap { overflow: auto; } .has-multiple-branches .flow-canvas-branches, .has-two-branch-layout .flow-canvas-branches { grid-template-columns: repeat(2, minmax(210px, 1fr)); } }
+.flow-canvas-branches { margin-top: 24px; gap: 36px 24px; }
+.flow-canvas-branch-node { border-radius: 12px; }
+.flow-branch-card-header { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; min-height: 36px; padding: 7px 12px; }
+.flow-branch-card-header svg { width: 14px; height: 14px; flex: 0 0 14px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.6; }
+.flow-branch-card-header.is-option { color: #fff; background: #27804b; }
+.flow-branch-card-header.is-user-input { color: #fff; background: #262626; }
+.flow-user-select-badge { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; padding: 4px 7px; border: 1px solid #ffffff55; border-radius: 999px; color: #fff; background: #ffffff17; font-size: 7px; font-weight: 800; letter-spacing: .05em; }
+.flow-user-select-badge svg { width: 11px; height: 11px; }
+.flow-branch-info b { display: inline-flex; align-items: center; gap: 4px; }
+.flow-branch-info b svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.7; }
+.flow-branch-action b { color: #fff; background: #ed6b22; }
+.flow-canvas-connectors > path { stroke: #97a5b5; stroke-width: 1.55; stroke-linecap: round; stroke-linejoin: round; }
+@media (max-width: 720px) { .flow-canvas-branches { margin-top: 24px; gap: 30px 18px; } }

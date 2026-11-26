@@ -304,3 +304,6 @@
   .sac-panel .sac-support-form { gap: 10px; }
   .sac-panel .sac-support-copy { margin-bottom: 12px; }
 }
+.sac-exact-match-badge { flex: 0 0 auto; padding: 3px 6px; border: 1px solid #cbe7d2; border-radius: 999px; color: #236b3c; background: #effaf1; font-size: 8px; font-weight: 750; line-height: 1.2; white-space: nowrap; }
+.sac-view-all-products { display: inline-flex; width: fit-content; min-height: 34px; align-items: center; justify-content: center; justify-self: end; padding: 0 12px; border: 1px solid #f0d4c0; border-radius: 999px; color: #a64a17; background: #fff8f3; font-size: 10px; font-weight: 750; text-decoration: none; transition: background .15s, border-color .15s; }
+.sac-view-all-products:hover { border-color: #e9b895; background: #fff0e5; }

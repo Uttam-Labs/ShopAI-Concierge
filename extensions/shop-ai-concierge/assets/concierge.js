@@ -312,8 +312,10 @@
       if (!message || form.dataset.sending === "true") return;
       const previousAssistantTurn = chatHistory[chatHistory.length - 1];
       if (!options.flow && /^(yes|yes please|sure|go ahead|please do|that one)$/i.test(message) && previousAssistantTurn?.role === "assistant" && previousAssistantTurn.purchaseIntent) {
-        const pendingPurchase = messages.querySelector('.sac-products[data-purchase-intent="true"] .sac-card button:not(:disabled)');
-        if (pendingPurchase && (previousAssistantTurn.products || []).length === 1) {
+        const purchaseCards = [...messages.querySelectorAll('.sac-products[data-purchase-intent="true"] .sac-card')];
+        const exactCard = purchaseCards.find((card) => card.querySelector(".sac-exact-match-badge"));
+        const pendingPurchase = exactCard?.querySelector("button:not(:disabled)") || (purchaseCards.length === 1 ? purchaseCards[0].querySelector("button:not(:disabled)") : null);
+        if (pendingPurchase) {
           addMessage(messages, message, "user");
           chatHistory.push({ role: "user", content: message, createdAt: Date.now() });
           persistChat();
@@ -353,8 +355,8 @@
         if (data.openSupport) openSupportRequest(data.openSupport);
         activeFlow = data.flow || null;
         if (activeFlow) renderFlowChoices(reply.row, activeFlow, sendMessage);
-        const recommendedProducts = enableRecommendations && Array.isArray(data.products) ? data.products.slice(0, 12) : [];
-        const savedProducts = recommendedProducts.slice(0, 4);
+        const recommendedProducts = enableRecommendations && Array.isArray(data.products) ? data.products.slice(0, 5) : [];
+        const savedProducts = recommendedProducts.slice(0, 5);
         chatHistory.push({ role: "assistant", content: answer, createdAt: Date.now(), ...(activeFlow ? { flow: activeFlow } : {}), ...(data.openOrderTracking ? { openOrderTracking: true } : {}), ...(data.order ? { order: data.order } : {}), ...(data.purchaseIntent ? { purchaseIntent: true } : {}), ...(savedProducts.length ? { products: savedProducts } : {}) });
         persistChat();
         if (recommendedProducts.length) renderProducts(messages, recommendedProducts, { purchaseIntent: data.purchaseIntent === true });
@@ -696,11 +698,7 @@
       try { return new Intl.NumberFormat(document.documentElement.lang || "en", { style: "currency", currency }).format(Number(value) / 100); }
       catch { return `${currency} ${(Number(value) / 100).toFixed(2)}`; }
     };
-    currentProducts.filter(Boolean).sort((left, right) => {
-      const leftAvailable = (left.variants || []).some((variant) => variant.availableForSale !== false);
-      const rightAvailable = (right.variants || []).some((variant) => variant.availableForSale !== false);
-      return Number(rightAvailable) - Number(leftAvailable);
-    }).slice(0, 4).forEach((product) => {
+    currentProducts.filter(Boolean).slice(0, 5).forEach((product) => {
       const card = document.createElement("article");
       card.className = "sac-card";
       const mediaContent = product.image ? document.createElement("img") : createProductPlaceholder();
@@ -726,6 +724,7 @@
       const productTags = Array.isArray(product.tags) ? product.tags : String(product.tags || "").split(",");
       const isBestSeller = product.bestSeller === true || product.isBestSeller === true || productTags.some((tag) => /best[\s_-]*sell|bestseller/i.test(String(tag)));
       if (isBestSeller) { const badge = document.createElement("span"); badge.className = "sac-best-seller-badge"; badge.textContent = "Best seller"; titleRow.append(badge); }
+      if (product.exactMatch === true) { const badge = document.createElement("span"); badge.className = "sac-exact-match-badge"; badge.textContent = "Exact match"; titleRow.append(badge); }
       const price = document.createElement("div"); price.className = "sac-card-price"; price.textContent = Number.isFinite(product.priceCents) ? formatCents(product.priceCents) : (product.price ? `${currency} ${product.price}` : "");
       const allVariants = product.variants || [];
       const availableVariants = allVariants.filter((value) => value.availableForSale !== false);
@@ -771,7 +770,16 @@
       if (product.url) { const details = document.createElement("a"); details.className = "sac-product-details-link"; details.href = product.url; details.target = "_blank"; details.rel = "noopener noreferrer"; details.textContent = "View product details ↗"; info.append(details); }
       card.append(media, info); wrap.append(card);
     });
-    if (wrap.childElementCount) container.append(wrap);
+    if (wrap.querySelector(".sac-card")) {
+      const allProducts = document.createElement("a");
+      allProducts.className = "sac-view-all-products";
+      allProducts.href = `${rootUrl.replace(/\/?$/, "/")}collections/all`;
+      allProducts.target = "_blank";
+      allProducts.rel = "noopener noreferrer";
+      allProducts.textContent = "View all products ↗";
+      wrap.append(allProducts);
+      container.append(wrap);
+    }
   }
   function createProductPlaceholder() {
     const placeholder = document.createElement("span");

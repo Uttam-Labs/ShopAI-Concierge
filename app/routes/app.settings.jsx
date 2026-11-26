@@ -104,7 +104,7 @@ export const action = async ({ request }) => {
 };
 
 const features = [
-  ["recommendations", "Product recommendations", "Show up to four relevant products when the store catalog matches a shopper’s request.", "book"],
+  ["recommendations", "Product recommendations", "Show up to five relevant products when the store catalog matches a shopper’s request.", "book"],
   ["orderLookup", "Order tracking", "Let customers securely check fulfillment status using their order number and checkout email.", "list"],
   ["humanHandoff", "Customer support requests", "Let shoppers submit a structured request to your support team.", "chat"],
   ["faqs", "Approved FAQ answers", "Use active answers from your FAQ library when responding to shoppers.", "check"],
@@ -146,7 +146,7 @@ export default function Settings({ loaderData }) {
           </div>
           <div className="ai-connect-row"><div className={`ai-provider-status ${currentProviderConnected || fetcher.data?.connected ? "connected" : "disconnected"}`}><span className="settings-connection-dot"/><span><strong>{currentProviderConnected || fetcher.data?.connected ? `${providerName} connected` : "Provider not connected"}</strong><small>{currentProviderConnected || fetcher.data?.connected ? "Your assistant is using this provider for shopper answers." : "Enter your API key, then connect to verify and save it."}</small></span></div><button className="ai-connect-button" type="submit" name="intent" value="connect" disabled={saving}>{connecting ? <span className="ai-connect-spinner"/> : <span className="ai-connect-check">✓</span>}{connecting ? "Connecting…" : currentProviderConnected || fetcher.data?.connected ? "Reconnect" : "Connect"}</button></div>
           {provider !== "gemini" && <div className="settings-info-note"><AdminIcon name="info" size={15}/><p>Knowledge search uses Gemini embeddings. Add <code>GEMINI_API_KEY</code> to Vercel for indexing and semantic search; {providerName} will continue to write the answers.</p></div>}
-          <div className="settings-info-note"><AdminIcon name="book" size={15}/><p>Answers use selected products, pages, policies, and FAQs. When a product is a good match, shoppers see up to four suggestions with current prices and Add to cart.</p></div>
+          <div className="settings-info-note"><AdminIcon name="book" size={15}/><p>Answers use selected products, pages, policies, and FAQs. When products match, shoppers see up to five suggestions with current prices and Add to cart.</p></div>
         </section>
         <section className="settings-card settings-section-card">
           <header className="settings-card-heading"><span className="settings-card-icon"><AdminIcon name="chat" size={19}/></span><div><span className="settings-section-kicker">CHAT CONTENT</span><h2>Welcome and answer style</h2><p>Set the first message shoppers see and the tone used in replies.</p></div></header>

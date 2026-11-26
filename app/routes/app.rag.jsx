@@ -87,20 +87,22 @@ export const action = async ({ request }) => {
     const supabase = createSupabaseServerClient();
     const docs = [];
     const resolvedShopifyIds = new Set();
-    const idsToFetch = [...productIds, ...collectionIds, ...pageIds];
-    for (let offset = 0; offset < idsToFetch.length; offset += 50) {
-      const ids = idsToFetch.slice(offset, offset + 50);
+    const batches = (ids, size) => Array.from({ length: Math.ceil(ids.length / size) }, (_, index) => ids.slice(index * size, (index + 1) * size));
+    const knowledgeBatches = [...batches(productIds, 5), ...batches(collectionIds, 1), ...batches(pageIds, 50)];
+    for (const ids of knowledgeBatches) {
       const result = await admin.graphql(`#graphql
         query SelectedKnowledge($ids: [ID!]!) {
           nodes(ids: $ids) {
             ... on Product {
               id title descriptionHtml vendor productType tags
-              featuredImage { url }
-              variants(first: 100) { edges { node { id title sku price availableForSale } } }
+              featuredMedia { ... on MediaImage { image { url } } }
+              variants(first: 100) { edges { node { id title sku price availableForSale selectedOptions { name value } } } }
+              metafields(first: 50) { nodes { namespace key value type } }
+              collections(first: 20) { nodes { title handle } }
             }
             ... on Collection {
               id title handle description image { url }
-              products(first: 30) { edges { node { id title handle descriptionHtml vendor productType tags featuredImage { url } variants(first: 20) { edges { node { id title sku price availableForSale } } } } } }
+              products(first: 30) { edges { node { id title handle descriptionHtml vendor productType tags featuredMedia { ... on MediaImage { image { url } } } variants(first: 20) { edges { node { id title sku price availableForSale selectedOptions { name value } } } } metafields(first: 10) { nodes { namespace key value type } } } } }
             }
             ... on Page { id title body handle }
           }
@@ -112,23 +114,43 @@ export const action = async ({ request }) => {
       for (const node of nodes) {
         if (!node) continue;
         resolvedShopifyIds.add(node.id);
-        if (node.variants) docs.push({ source_type: "product", source_id: node.id, title: node.title, content: [node.title, node.descriptionHtml?.replace(/<[^>]+>/g, " "), node.vendor, node.productType, node.tags?.join(", "), ...(node.variants.edges ?? []).map(({ node: variant }) => `${variant.title} SKU ${variant.sku || ""} $${variant.price} ${variant.availableForSale ? "in stock" : "out of stock"}`)].filter(Boolean).join("\n"), metadata: { handle: node.handle, image: node.featuredImage?.url, description: node.descriptionHtml?.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim(), tags: node.tags || [], variants: node.variants.edges?.map(({ node: variant }) => variant) } });
+        if (node.variants) {
+          const description = node.descriptionHtml?.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() || "";
+          const tags = node.tags || [];
+          const variants = node.variants.edges?.map(({ node: variant }) => variant) || [];
+          const metafields = node.metafields?.nodes || [];
+          const collections = node.collections?.nodes || [];
+          docs.push({
+            source_type: "product",
+            source_id: node.id,
+            title: node.title,
+            content: [node.title, `Handle: ${node.handle}`, `Tags: ${tags.join(", ")}`, `Collections: ${collections.map((collection) => `${collection.title} (${collection.handle})`).join(", ")}`, ...metafields.map((field) => `Metafield ${field.namespace}.${field.key}: ${String(field.value || "").slice(0, 300)}`), ...variants.map((variant) => `${variant.title} SKU ${variant.sku || ""} $${variant.price} ${variant.availableForSale ? "in stock" : "out of stock"} ${variant.selectedOptions?.map((option) => `${option.name} ${option.value}`).join(" ") || ""}`), node.vendor, node.productType, description.slice(0, 1800)].filter(Boolean).join("\n"),
+            metadata: { handle: node.handle, image: node.featuredMedia?.image?.url, description, vendor: node.vendor || "", productType: node.productType || "", tags, collections, metafields, variants },
+          });
+        }
         else if (node.products) {
           const collectionProducts = (node.products.edges ?? []).map(({ node: product }) => ({
+            id: product.id,
             title: product.title,
             handle: product.handle,
-            image: product.featuredImage?.url || "",
+            image: product.featuredMedia?.image?.url || "",
             vendor: product.vendor || "",
             productType: product.productType || "",
             description: product.descriptionHtml?.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() || "",
             tags: product.tags || [],
-            variants: (product.variants?.edges ?? []).map(({ node: variant }) => ({ id: variant.id, title: variant.title, sku: variant.sku, price: variant.price, availableForSale: variant.availableForSale })),
+            metafields: product.metafields?.nodes || [],
+            variants: (product.variants?.edges ?? []).map(({ node: variant }) => ({ id: variant.id, title: variant.title, sku: variant.sku, price: variant.price, availableForSale: variant.availableForSale, selectedOptions: variant.selectedOptions || [] })),
+            collections: [{ title: node.title, handle: node.handle }],
           }));
+          for (const product of collectionProducts) {
+            const variantText = product.variants.map((variant) => `${variant.title} SKU ${variant.sku || ""} $${variant.price} ${variant.availableForSale ? "in stock" : "out of stock"} ${variant.selectedOptions?.map((option) => `${option.name} ${option.value}`).join(" ") || ""}`);
+            docs.push({ source_type: "product", source_id: product.id, title: product.title, content: [product.title, `Handle: ${product.handle}`, `Tags: ${product.tags.join(", ")}`, `Collection: ${node.title} (${node.handle})`, ...product.metafields.map((field) => `Metafield ${field.namespace}.${field.key}: ${String(field.value || "").slice(0, 300)}`), ...variantText, product.vendor, product.productType, product.description.slice(0, 1800)].filter(Boolean).join("\n"), metadata: { handle: product.handle, image: product.image, description: product.description, vendor: product.vendor, productType: product.productType, tags: product.tags, collections: product.collections, metafields: product.metafields, variants: product.variants } });
+          }
           docs.push({
             source_type: "collection",
             source_id: node.id,
             title: node.title,
-            content: [node.title, node.description, ...collectionProducts.map((product) => [product.title, product.vendor, product.productType, product.description, product.tags.join(", "), ...product.variants.map((variant) => `${variant.title} SKU ${variant.sku || ""} $${variant.price} ${variant.availableForSale ? "in stock" : "out of stock"}`)].filter(Boolean).join("\n"))].filter(Boolean).join("\n"),
+            content: [node.title, `Collection handle: ${node.handle}`, node.description, ...collectionProducts.map((product) => [product.title, `Handle: ${product.handle}`, product.vendor, product.productType, product.description, `Tags: ${product.tags.join(", ")}`, `Collection: ${node.title} (${node.handle})`, ...product.variants.map((variant) => `${variant.title} SKU ${variant.sku || ""} $${variant.price} ${variant.availableForSale ? "in stock" : "out of stock"} ${variant.selectedOptions?.map((option) => `${option.name} ${option.value}`).join(" ") || ""}`)].filter(Boolean).join("\n"))].filter(Boolean).join("\n"),
             metadata: { handle: node.handle, image: node.image?.url, products: collectionProducts },
           });
         }
@@ -150,9 +172,21 @@ export const action = async ({ request }) => {
       const policyText = policy.body?.replace(/<[^>]+>/g, " ").replace(/&nbsp;|&#160;/gi, " ").replace(/&amp;/gi, "&").replace(/&lt;/gi, "<").replace(/&gt;/gi, "> ").replace(/&quot;/gi, '"').trim() || "";
       if (policyText) docs.push({ source_type: "policy", source_id: policy.id, title: policy.title || policy.type?.replaceAll("_", " ") || "Store policy", content: `${policy.title || "Store policy"}\n${policyText}`, metadata: { url: policy.url, policy_type: policy.type } });
     }
+    const docsBySource = new Map();
+    for (const doc of docs) {
+      const key = `${doc.source_type}:${doc.source_id}`;
+      const existing = docsBySource.get(key);
+      if (!existing) docsBySource.set(key, doc);
+      else if (doc.source_type === "product") {
+        const richer = (doc.metadata?.metafields?.length || 0) > (existing.metadata?.metafields?.length || 0) ? doc : existing;
+        const collections = [...(existing.metadata?.collections || []), ...(doc.metadata?.collections || [])].filter((item, index, list) => item?.handle && list.findIndex((candidate) => candidate?.handle === item.handle) === index);
+        docsBySource.set(key, { ...richer, metadata: { ...richer.metadata, collections } });
+      }
+    }
+    const uniqueDocs = [...docsBySource.values()];
     const rows = [];
-    for (let i = 0; i < docs.length; i += 100) {
-      const batch = docs.slice(i, i + 100);
+    for (let i = 0; i < uniqueDocs.length; i += 100) {
+      const batch = uniqueDocs.slice(i, i + 100);
       indexingStage = "Gemini embeddings";
       const embeddings = await embedTexts(batch.map((doc) => `${doc.title}\n${doc.content}`.slice(0, 6000)), "RETRIEVAL_DOCUMENT", embeddingKey);
       batch.forEach((doc, index) => rows.push({ ...doc, metadata: { ...doc.metadata, embedding_model: process.env.GEMINI_EMBEDDING_MODEL || "gemini-embedding-001" }, shop_domain: session.shop, embedding: embeddings[index] }));
