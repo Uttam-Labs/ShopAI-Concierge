@@ -142,18 +142,18 @@ export default function Flows({ loaderData }) {
         const branches = [...group.querySelectorAll(".flow-canvas-branch-node")].map((branch) => {
           const target = branch.getBoundingClientRect();
           // Keep the arrowhead outside the card edge so the card cannot cover it.
-          return { endX: target.left + target.width / 2 - groupRect.left, endY: target.top - groupRect.top - 1, row: Math.round((target.top - groupRect.top) / 12) };
+          return { endX: target.left + target.width / 2 - groupRect.left, endY: target.top - groupRect.top - 2, row: Math.round((target.top - groupRect.top) / 12) };
         });
         if (!branches.length) return;
         const rows = new Map();
         branches.forEach((branch) => rows.set(branch.row, [...(rows.get(branch.row) || []), branch]));
         const sortedRows = [...rows.values()].sort((left, right) => left[0].endY - right[0].endY);
-        const junctions = sortedRows.map((row) => Math.min(...row.map((branch) => branch.endY)) - 17);
+        const junctions = sortedRows.map((row) => Math.min(...row.map((branch) => branch.endY)) - 34);
         const paths = [{ d: `M ${startX} ${startY} L ${startX} ${junctions[junctions.length - 1]}`, arrow: false }];
         sortedRows.forEach((row, rowIndex) => {
           const junctionY = junctions[rowIndex];
           row.forEach((branch) => {
-            const control = Math.max(14, Math.min(36, Math.abs(branch.endX - startX) * 0.18));
+            const control = Math.max(10, Math.min(22, Math.abs(branch.endX - startX) * 0.18, (branch.endY - junctionY) * 0.45));
             paths.push({ d: `M ${startX} ${junctionY} C ${startX} ${junctionY + control}, ${branch.endX} ${branch.endY - control}, ${branch.endX} ${branch.endY}`, arrow: true });
           });
         });
