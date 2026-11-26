@@ -398,7 +398,9 @@ export const action = async ({ request }) => {
     userCreatedAt = new Date().toISOString();
     identity = { name: typeof customerName === "string" ? customerName : "", email: typeof customerEmail === "string" ? customerEmail : "" };
     settings = { aiProvider: "gemini", recommendations: true, orderLookup: true, orderEmailRequired: true, humanHandoff: true, faqs: true, responseGuidelines: "", ticketPrefix: "SAC", ticketOptions: [], ...(await prisma.assistantSettings.findUnique({ where: { shop: normalizedShop } }) || {}) };
-    const productPurchaseIntent = /\b(?:i\s+)?(?:want|like|would like|would love|plan|planning)\s+to\s+(?:buy|purchase)|\b(?:buy|purchase)\s+(?:this|that|the|a|an)\s+product\b|\badd\s+.+\s+to\s+(?:my\s+)?cart\b/i.test(userMessage);
+    const purchasePhraseRequested = /\b(?:i\s+)?(?:want|like|would like|would love|plan|planning)\s+to\s+(?:buy|purchase)|\b(?:buy|purchase)\s+(?:this|that|the|a|an)\s+product\b|\badd\s+.+\s+to\s+(?:my\s+)?cart\b/i.test(userMessage);
+    const purchasePhraseCandidate = productSearchPhrase(userMessage).replace(/\b(?:i|me|my|to|the|a|an|product|item|one)\b/gi, " ").replace(/\s+/g, " ").trim();
+    const productPurchaseIntent = purchasePhraseRequested && purchasePhraseCandidate.length > 0;
     const explicitOrderReference = /#\s*\d{3,}\b|\b(?:order|tracking|shipment|delivery)\s*(?:number|no\.?|#|id)?\s*#?\d{3,}\b/i.test(userMessage);
     const policyIntent = /\b(policy|policies|shipping|delivery|return|returns|refund|exchange|cancel|cancellation|privacy|terms|warranty|guarantee|payment|dispatch)\b|নীতি|শিপিং|ডেলিভারি|ফেরত|রিটার্ন|রিফান্ড|বাতিল|গোপনীয়তা|পেমেন্ট|ওয়ারেন্টি/i.test(userMessage);
     const productCategoryIntent = /\b(products?|items?|catalog|collection|t-?shirts?|shirts?|tops?|dresses?|skirts?|pants?|trousers?|jeans?|jackets?|coats?|shoes?|sneakers?|boots?|bags?|backpacks?|hats?|jewelry|jewellery|skincare|makeup|cosmetics?|furniture|sofas?|chairs?|mugs?|toys?|gifts?|gift|books?|electronics?|phones?|laptops?|headphones?|bottles?|waterproof|cotton|menswear|womenswear|kidswear)\b|প্রোডাক্ট|পণ্য|জ্যাকেট|জুতা|জামা|শার্ট|ব্যাগ|উপহার/i.test(userMessage);
@@ -406,7 +408,7 @@ export const action = async ({ request }) => {
     const explicitProductIntent = productCategoryIntent && (productActionIntent || /\b(price|cost|in stock|available|size|colour|color|material|details|sku|compare|similar|alternative)\b/i.test(userMessage)) || /\b(?:show|find|search|recommend)\s+(?:me\s+)?(?:some|any|your|all)\s+(?:products?|catalog|collection)\b/i.test(userMessage);
     const bestProductIntent = /\b(best|top|popular|most (?:bought|ordered|popular)|bestseller|best selling|trending)\b|সেরা|সবচেয়ে ভালো|জনপ্রিয়/i.test(userMessage);
     const skuCandidate = !explicitOrderReference ? userMessage.match(/\bsku\s*[:#]?\s*([A-Z0-9][A-Z0-9._/-]{2,})\b/i)?.[1] || userMessage.match(/\b[A-Z0-9]{2,}(?:-[A-Z0-9]+)+\b/i)?.[0] : null;
-    const vagueProductRequest = !flowId && /\b(?:buy something|want to buy|see your products|show me your products|show your catalog|browse your products|where can i find products|looking for a product|help me find a product|find a product|recommend something)\b/i.test(userMessage);
+    const vagueProductRequest = !flowId && (/\b(?:buy something|want to buy|see your products|show me your products|show your catalog|browse your products|where can i find products|looking for a product|help me find a product|find a product|recommend something)\b/i.test(userMessage) || purchasePhraseRequested && !productPurchaseIntent);
     const smallTalk = /^(?:thanks?(?: so much)?|thank you(?: so much)?|okay|ok|got it|bye|goodbye|see you)$/i.test(userMessage.trim().replace(/[.!?]+$/, ""));
     const greetingIntent = /^(?:hi|hello|hey|hiya|howdy|good morning|good afternoon|good evening)$/i.test(userMessage.trim().replace(/[.!?,\s]+$/g, ""));
     const identityQuestion = /\b(?:who are you|what are you|what can you do|how can you help|what do you help with|are you (?:a )?human|are you real)\b/i.test(userMessage);
@@ -476,14 +478,14 @@ export const action = async ({ request }) => {
     }
     if (vagueProductRequest && settings.recommendations) {
       const flow = getConversationFlowStep(settings.flows, "product-discovery", "brief");
-      const answer = flow ? "Sure! I can help you find the right product. What type of product are you looking for? You can also share a color, size, material, or budget." : "Sure! What type of product are you looking for?";
+      const answer = flow ? "Sure! I can help you find the right product. Please enter the product name you’d like to buy. You can also share a color, size, material, or budget." : "Sure! Please enter the product name you’d like to buy.";
       await saveConversation(normalizedShop, sessionId, userMessage, answer, identity, userCreatedAt).catch((error) => console.error("Product clarification save failed", error));
       return Response.json({ answer, ...(flow ? { flow } : {}) }, { headers });
     }
     const productInformationIntent = Boolean((productCategoryIntent || skuCandidate || /\b(?:product|item|sku|variant)\b/i.test(userMessage)) && /\b(?:what|which|how|does|is|are|tell me|describe|explain|details?|specifications?|material|made of|care|wash|fabric|fit|color|colour|size|price|cost|stock|available|availability|ingredients?)\b/i.test(userMessage));
     const productSearchIntent = settings.recommendations && !policyIntent && !productInformationIntent && (productPurchaseIntent || explicitProductIntent || bestProductIntent || Boolean(skuCandidate) || flowId === "product-discovery");
     productSearchRequested = productSearchIntent;
-    purchaseRequested = productPurchaseIntent;
+    purchaseRequested = purchaseRequested || productPurchaseIntent;
     const hasInlineOrderDetails = settings.orderLookup && explicitOrderReference && !productPurchaseIntent && Boolean(identity.email || userMessage.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i));
     let flowData = submittedFlowData && typeof submittedFlowData === "object" && !Array.isArray(submittedFlowData) ? { ...submittedFlowData } : {};
     delete flowData.orderVerified;
@@ -738,7 +740,7 @@ export const action = async ({ request }) => {
       if (matchingFaq && (matchingFaq.score === 1 || (matchingFaq.overlap >= 2 && matchingFaq.score >= 0.8 && matchingFaq.coverage >= 0.65))) {
         const answer = await answerFaq(userMessage, matchingFaq.faq, settings);
         await saveConversation(normalizedShop, sessionId, userMessage, answer, identity, userCreatedAt);
-        return Response.json({ answer, products: [], ...(orderHelpIntent ? { openOrderTracking: true } : {}) }, { headers });
+        return Response.json({ answer, products: [], ...(orderHelpIntent ? { openOrderTracking: true } : {}), ...(continuationFlow ? { flow: continuationFlow } : {}) }, { headers });
       }
     }
     if (orderHelpIntent) {
@@ -775,7 +777,9 @@ export const action = async ({ request }) => {
       const fallbackProductIntent = fallbackRows.some((row) => ["product", "collection"].includes(row.source_type) && Number(row.similarity) >= 0.25);
       if (productSearchIntent) {
         const discovery = await discoverShopifyProducts(normalizedShop, userMessage, fallbackRows);
-        const answer = productSearchAnswer(discovery);
+        const answer = purchaseRequested && discovery.products.length
+          ? `I found ${discovery.products[0].title} in the store catalog. Review the details, choose an available option if needed, then select “Yes, buy this” to add it to your cart and go to checkout. You can also choose No thanks or Another product.`
+          : productSearchAnswer(discovery);
         const products = productCards(discovery.products);
         await saveConversation(normalizedShop, sessionId, userMessage, answer, identity, userCreatedAt).catch((error) => console.error("Fallback product conversation save failed", error));
         return Response.json({ answer, products, ...(productPurchaseIntent && products.length ? { purchaseIntent: true } : {}), ...(discovery.exact ? { exactProductMatch: true } : {}), showBrowseAll: true, ...(continuationFlow ? { flow: continuationFlow } : {}) }, { headers });
@@ -842,7 +846,9 @@ export const action = async ({ request }) => {
       if (discovery.products.length || productSearchIntent) {
         const products = productCards(discovery.products);
         const answer = discovery.products.length
-          ? productSearchAnswer(discovery)
+          ? productPurchaseIntent
+            ? `I found ${discovery.products[0].title} in the store catalog. Review the details, choose an available option if needed, then select “Yes, buy this” to add it to your cart and go to checkout. You can also choose No thanks or Another product.`
+            : productSearchAnswer(discovery)
           : `I couldn’t find a close match in the live catalog for “${discovery.phrase}”. Could you share another detail, such as the product type, size, color, or SKU?`;
         await saveConversation(normalizedShop, sessionId, userMessage, answer, identity, userCreatedAt);
         return Response.json({ answer, products, ...(productPurchaseIntent && products.length ? { purchaseIntent: true } : {}), ...(discovery.exact ? { exactProductMatch: true } : {}), ...(productSearchIntent ? { showBrowseAll: true } : {}), ...(continuationFlow ? { flow: continuationFlow } : {}) }, { headers });
@@ -903,7 +909,9 @@ export const action = async ({ request }) => {
       if (productSearchRequested) {
         const discovery = await discoverShopifyProducts(normalizedShop, userMessage, fallbackRows);
         if (discovery.products.length || productSearchRequested) {
-          const answer = productSearchAnswer(discovery);
+          const answer = purchaseRequested && discovery.products.length
+            ? `I found ${discovery.products[0].title} in the store catalog. Review the details, choose an available option if needed, then select “Yes, buy this” to add it to your cart and go to checkout.`
+            : productSearchAnswer(discovery);
           const products = productCards(discovery.products);
           await saveConversation(normalizedShop, sessionId, userMessage, answer, identity, userCreatedAt).catch((saveError) => console.error("Fallback product conversation save failed", saveError));
           return Response.json({ answer, products, ...(purchaseRequested && products.length ? { purchaseIntent: true } : {}), ...(discovery.exact ? { exactProductMatch: true } : {}), showBrowseAll: true, ...(continuationFlow ? { flow: continuationFlow } : {}) }, { headers });
