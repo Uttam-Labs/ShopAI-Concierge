@@ -12,6 +12,7 @@
     const fontSize = `${Number(root.dataset.fontSize) || 14}px`;
     const width = `${Number(root.dataset.width) || 380}px`;
     const shop = window.Shopify?.shop || location.hostname;
+    const storeName = String(root.dataset.storeName || shop.replace(/\.myshopify\.com$/i, "").replace(/[-_]+/g, " ")).trim();
     const apiEndpoint = `${window.Shopify?.routes?.root || "/"}apps/shopai-concierge`;
     const storageKey = `sac-chat:${shop}`;
     let storedChat = readStoredChat(storageKey);
@@ -30,7 +31,8 @@
     const supportButtonLabel = root.dataset.humanHelpLabel === "Human help" ? "Contact support" : (root.dataset.humanHelpLabel || "Contact support");
     const supportTitle = root.dataset.supportTitle === "Would you like a person to help?" ? "Submit a support request" : (root.dataset.supportTitle || "Submit a support request");
     const supportDetailsLabel = root.dataset.supportDetailsLabel === "Tell us about the issue" ? "Tell us more (optional)" : (root.dataset.supportDetailsLabel || "Tell us more (optional)");
-    panel.innerHTML = `<div class="sac-head"><div class="sac-brand"><span class="sac-brand-mark">✦</span><div class="sac-brand-copy"><strong>${escapeHtml(root.dataset.title || "How can we help?")}</strong><span class="sac-live">Here to help</span></div></div><button class="sac-close" type="button" aria-label="Close chat">×</button></div><div class="sac-welcome"><span>Product advice</span><i></i><span>Order updates</span><i></i><span>Store support</span><button type="button" class="sac-help-button" aria-label="Contact store support"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11.5a7.5 7.5 0 0 1-8 7.5 8 8 0 0 1-3.5-.8L4 20l1.2-3.7A7.4 7.4 0 0 1 4 12.5 7.5 7.5 0 0 1 12 5a7.5 7.5 0 0 1 8 6.5Z"/><path d="M12 9v4m0 3h.01"/></svg><span>${escapeHtml(supportButtonLabel)}</span></button></div><div class="sac-messages" aria-live="polite" aria-relevant="additions text"><div class="sac-message-row sac-assistant-row sac-initial-greeting"><span class="sac-avatar" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4.5" y="8" width="15" height="11" rx="4"/><path d="M12 4v4M9 13h.01M15 13h.01M9 16h6M3 12v3M21 12v3"/></svg></span><div class="sac-message-content"><div class="sac-msg sac-greeting">Hi there! 👋 Tell me what you’re shopping for, ask about our policies, or track an order.</div><time class="sac-message-time" data-time="${Date.now()}">just now</time></div></div><div class="sac-faqs" hidden><div class="sac-faq-heading"><span>POPULAR QUESTIONS</span><small>Choose a question</small></div><div class="sac-faq-list"></div></div></div><div class="sac-form-wrap"><form class="sac-form"><textarea class="sac-input" rows="1" maxlength="1000" autocomplete="off" placeholder="Ask us anything…" aria-label="Your message"></textarea><button class="sac-send" type="submit" aria-label="Send message"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 2 11 13"/><path d="m22 2-7 20-4-9-9-4Z"/></svg></button></form><div class="sac-footer">Powered by <span>ShopAI Concierge</span></div></div><div class="sac-support-backdrop" hidden><section class="sac-support-card" role="dialog" aria-modal="true" aria-labelledby="sac-support-title"><button type="button" class="sac-support-close" aria-label="Close support request">×</button><span class="sac-support-icon">✦</span><p class="sac-support-kicker">CUSTOMER SUPPORT</p><h3 id="sac-support-title">${escapeHtml(supportTitle)}</h3><p class="sac-support-copy">${escapeHtml(root.dataset.supportDescription || "Tell us what you need help with. Our team will follow up by email.")}</p><form class="sac-support-form"><label>${escapeHtml(root.dataset.supportNameLabel || "Your name")}<input name="customerName" autocomplete="name" maxlength="120" placeholder="${escapeHtml(root.dataset.supportNamePlaceholder || "Name")}" required></label><label>${escapeHtml(root.dataset.supportEmailLabel || "Email for follow-up")}<input name="customerEmail" type="email" autocomplete="email" maxlength="254" placeholder="${escapeHtml(root.dataset.supportEmailPlaceholder || "you@example.com")}" required></label><label>${escapeHtml(root.dataset.supportIssueTypeLabel || "Select a request type")}<select name="requestTypeId" class="sac-support-select" required><option value="" selected disabled>${escapeHtml(root.dataset.supportTypePlaceholder || "Choose a support topic")}</option><option value="other">${escapeHtml(root.dataset.supportOtherOption || "Other")}</option></select></label><div class="sac-support-guidance" hidden><strong class="sac-support-question"></strong><p class="sac-support-answer"></p></div><label class="sac-support-other-field">${escapeHtml(supportDetailsLabel)}<textarea name="requestDetails" rows="3" maxlength="2000" placeholder="${escapeHtml(root.dataset.supportDetailsPlaceholder || "Describe what you need help with…")}"></textarea></label><div class="sac-support-notice" aria-live="polite"></div><footer><button type="button" class="sac-support-cancel">${escapeHtml(root.dataset.supportCancelLabel || "Cancel")}</button><button type="submit" class="sac-support-submit">${escapeHtml(root.dataset.supportSubmitLabel || "Create support request")}</button></footer></form></section></div>`;
+    panel.innerHTML = `<div class="sac-head"><div class="sac-brand"><span class="sac-brand-mark">✦</span><div class="sac-brand-copy"><strong>${escapeHtml(root.dataset.title || "How can we help?")}</strong><span class="sac-live">Here to help</span></div></div><button class="sac-close" type="button" aria-label="Close chat">×</button></div><div class="sac-welcome"><span>Product advice</span><i></i><span>Order updates</span><i></i><span>Store support</span><button type="button" class="sac-help-button" aria-label="Contact store support"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11.5a7.5 7.5 0 0 1-8 7.5 8 8 0 0 1-3.5-.8L4 20l1.2-3.7A7.4 7.4 0 0 1 4 12.5 7.5 7.5 0 0 1 12 5a7.5 7.5 0 0 1 8 6.5Z"/><path d="M12 9v4m0 3h.01"/></svg><span>${escapeHtml(supportButtonLabel)}</span></button></div><div class="sac-messages" aria-live="polite" aria-relevant="additions text"><div class="sac-message-row sac-assistant-row sac-initial-greeting"><span class="sac-avatar" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4.5" y="8" width="15" height="11" rx="4"/><path d="M12 4v4M9 13h.01M15 13h.01M9 16h6M3 12v3M21 12v3"/></svg></span><div class="sac-message-content"><div class="sac-msg sac-greeting">Hi! 👋 I can help you find products, check or request a change to an order, ask about returns, or contact the store team. What can I help with?</div><time class="sac-message-time" data-time="${Date.now()}">just now</time></div></div><div class="sac-faqs" hidden><div class="sac-faq-heading"><span>POPULAR QUESTIONS</span><small>Choose a question</small></div><div class="sac-faq-list"></div></div></div><div class="sac-form-wrap"><form class="sac-form"><textarea class="sac-input" rows="1" maxlength="1000" autocomplete="off" placeholder="Ask us anything…" aria-label="Your message"></textarea><button class="sac-send" type="submit" aria-label="Send message"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 2 11 13"/><path d="m22 2-7 20-4-9-9-4Z"/></svg></button></form><div class="sac-footer">Powered by <span>ShopAI Concierge</span></div></div><div class="sac-support-backdrop" hidden><section class="sac-support-card" role="dialog" aria-modal="true" aria-labelledby="sac-support-title"><button type="button" class="sac-support-close" aria-label="Close support request">×</button><span class="sac-support-icon">✦</span><p class="sac-support-kicker">CUSTOMER SUPPORT</p><h3 id="sac-support-title">${escapeHtml(supportTitle)}</h3><p class="sac-support-copy">${escapeHtml(root.dataset.supportDescription || "Tell us what you need help with. Our team will follow up by email.")}</p><form class="sac-support-form"><label>${escapeHtml(root.dataset.supportNameLabel || "Your name")}<input name="customerName" autocomplete="name" maxlength="120" placeholder="${escapeHtml(root.dataset.supportNamePlaceholder || "Name")}" required></label><label>${escapeHtml(root.dataset.supportEmailLabel || "Email for follow-up")}<input name="customerEmail" type="email" autocomplete="email" maxlength="254" placeholder="${escapeHtml(root.dataset.supportEmailPlaceholder || "you@example.com")}" required></label><label>${escapeHtml(root.dataset.supportIssueTypeLabel || "Select a request type")}<select name="requestTypeId" class="sac-support-select" required><option value="" selected disabled>${escapeHtml(root.dataset.supportTypePlaceholder || "Choose a support topic")}</option><option value="other">${escapeHtml(root.dataset.supportOtherOption || "Other")}</option></select></label><div class="sac-support-guidance" hidden><strong class="sac-support-question"></strong><p class="sac-support-answer"></p></div><label class="sac-support-other-field">${escapeHtml(supportDetailsLabel)}<textarea name="requestDetails" rows="3" maxlength="2000" placeholder="${escapeHtml(root.dataset.supportDetailsPlaceholder || "Describe what you need help with…")}"></textarea></label><div class="sac-support-notice" aria-live="polite"></div><footer><button type="button" class="sac-support-cancel">${escapeHtml(root.dataset.supportCancelLabel || "Cancel")}</button><button type="submit" class="sac-support-submit">${escapeHtml(root.dataset.supportSubmitLabel || "Create support request")}</button></footer></form></section></div>`;
+    panel.querySelector(".sac-greeting").textContent = `Hi! 👋 Welcome to ${storeName}. I can help you find products, answer questions about ${storeName}’s products, pages, and policies, check an order, or contact the team. What can I help with?`;
     const welcome = panel.querySelector(".sac-welcome");
     Array.from(welcome.childNodes).forEach((node) => {
       if (!(node.nodeType === Node.ELEMENT_NODE && node.classList.contains("sac-help-button"))) node.remove();
@@ -68,7 +70,15 @@
     orderButton.innerHTML = '<span aria-hidden="true">↗</span><span>Track an order</span>';
     const welcomeActions = document.createElement("div");
     welcomeActions.className = "sac-welcome-actions";
-    welcomeActions.append(orderButton, panel.querySelector(".sac-help-button"));
+    const makeQuickAction = (label, message) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "sac-quick-action-button";
+      button.textContent = label;
+      button.addEventListener("click", () => sendMessage(message));
+      return button;
+    };
+    welcomeActions.append(makeQuickAction("Find products", "Help me find a product"), orderButton, makeQuickAction("Cancel an order", "I want to cancel my order"), makeQuickAction("Returns & refunds", "I want to return a product"), panel.querySelector(".sac-help-button"));
     panel.querySelector(".sac-welcome").append(welcomeActions);
     const orderBackdrop = panel.querySelector(".sac-order-backdrop");
     const orderForm = panel.querySelector(".sac-order-form");
@@ -215,6 +225,7 @@
         order.createdAt ? `Placed ${new Date(order.createdAt).toLocaleDateString()}` : "",
         order.financialStatus ? `Payment: ${String(order.financialStatus).replaceAll("_", " ")}` : "",
         order.total ? `Total: ${new Intl.NumberFormat(document.documentElement.lang || "en", { style: "currency", currency: order.currency || window.Shopify?.currency?.active || "USD" }).format(Number(order.total))}` : "",
+        order.fulfillments?.find((item) => item.estimatedDeliveryAt)?.estimatedDeliveryAt ? `Estimated delivery: ${new Date(order.fulfillments.find((item) => item.estimatedDeliveryAt).estimatedDeliveryAt).toLocaleDateString()}` : "",
       ].filter(Boolean);
       lines.forEach((line) => { const detail = document.createElement("p"); detail.textContent = line; orderDetails.append(detail); });
       if (order.items?.length) {
@@ -222,7 +233,15 @@
         const list = document.createElement("ul");
         order.items.forEach((item) => { const entry = document.createElement("li"); entry.textContent = `${item.title} × ${item.quantity}`; list.append(entry); });
         orderDetails.append(list);
+        if (order.itemsTruncated) { const note = document.createElement("p"); note.textContent = "Showing the first 50 order items."; orderDetails.append(note); }
       }
+      (order.fulfillments || []).forEach((fulfillment) => {
+        const detail = document.createElement("p");
+        const estimated = fulfillment.estimatedDeliveryAt ? ` · Estimated delivery ${new Date(fulfillment.estimatedDeliveryAt).toLocaleDateString()}` : "";
+        const delivered = fulfillment.deliveredAt ? ` · Delivered ${new Date(fulfillment.deliveredAt).toLocaleDateString()}` : "";
+        detail.textContent = `${fulfillment.status || "Fulfillment update"}${estimated}${delivered}`;
+        orderDetails.append(detail);
+      });
       (order.tracking || []).forEach((tracking) => {
         const row = document.createElement("p");
         const label = `${tracking.company || "Carrier"}: ${tracking.number}`;
@@ -282,7 +301,9 @@
         pending.row.remove();
         const reply = addMessage(messages, data.answer || "Your order status is ready.", "assistant");
         addOrderDetailsAction(reply.row, data.order, data.answer);
-        chatHistory.push({ role: "assistant", content: data.answer || "Your order status is ready.", createdAt: Date.now(), order: data.order });
+        activeFlow = data.flow || null;
+        if (activeFlow) renderFlowChoices(reply.row, activeFlow, sendMessage);
+        chatHistory.push({ role: "assistant", content: data.answer || "Your order status is ready.", createdAt: Date.now(), order: data.order, ...(activeFlow ? { flow: activeFlow } : {}) });
         setOrderResult(data.order, data.answer);
         persistChat();
       } catch (error) {
@@ -343,7 +364,7 @@
       pending.bubble.setAttribute("aria-label", "ShopAI is replying");
       pending.bubble.innerHTML = '<span class="sac-typing" aria-hidden="true"><i></i><i></i><i></i></span><span class="sac-sr-only">ShopAI is replying</span>';
       try {
-        const response = await postProxyData(apiEndpoint, { message, shop, sessionId, customerName: identity?.name || "", customerEmail: identity?.email || "", pageUrl: location.href, ...(faqId ? { faqId } : {}), ...(flowState ? { flowId: flowState.id, flowStepId: flowState.stepId, ...(options.flow?.choiceId ? { flowChoiceId: options.flow.choiceId } : {}) } : {}) });
+        const response = await postProxyData(apiEndpoint, { message, shop, storeName, sessionId, customerName: identity?.name || "", customerEmail: identity?.email || "", pageUrl: location.href, ...(faqId ? { faqId } : {}), ...(flowState ? { flowId: flowState.id, flowStepId: flowState.stepId, flowData: flowState.data || {}, ...(options.flow?.choiceId ? { flowChoiceId: options.flow.choiceId } : {}) } : {}) });
         const data = await readApiJson(response, "chat reply");
         if (!response.ok) throw new Error(data.error || "I couldn’t complete that request. Please try again.");
         pending.row.remove();
@@ -359,7 +380,7 @@
         const savedProducts = recommendedProducts.slice(0, 5);
         chatHistory.push({ role: "assistant", content: answer, createdAt: Date.now(), ...(activeFlow ? { flow: activeFlow } : {}), ...(data.openOrderTracking ? { openOrderTracking: true } : {}), ...(data.order ? { order: data.order } : {}), ...(data.purchaseIntent ? { purchaseIntent: true } : {}), ...(savedProducts.length ? { products: savedProducts } : {}) });
         persistChat();
-        if (recommendedProducts.length) renderProducts(messages, recommendedProducts, { purchaseIntent: data.purchaseIntent === true });
+        if (recommendedProducts.length || data.showBrowseAll) renderProducts(messages, recommendedProducts, { purchaseIntent: data.purchaseIntent === true, showBrowseAll: data.showBrowseAll === true });
       } catch (error) {
         pending.bubble.classList.remove("pending", "error");
         const isIdentityQuestion = /\b(who are you|what are you|what can you do|how can you help)\b/i.test(message);
@@ -369,7 +390,9 @@
           : isProductQuestion
             ? "I’d be happy to help find the right product. I can’t access the store’s live catalog right now, so I don’t want to guess. Please try again shortly, or use the order and support options above."
             : "I’m sorry, I can’t reach the store service right now. You can use the order or support options above, or try your question again in a moment.";
-        chatHistory.push({ role: "assistant", content: pending.bubble.textContent, createdAt: Date.now() });
+        activeFlow = flowState || null;
+        if (activeFlow) renderFlowChoices(pending.row, activeFlow, sendMessage);
+        chatHistory.push({ role: "assistant", content: pending.bubble.textContent, createdAt: Date.now(), ...(activeFlow ? { flow: activeFlow } : {}) });
         persistChat();
       } finally {
         form.dataset.sending = "false";
@@ -655,7 +678,7 @@
     group.className = "sac-flow-choices";
     group.setAttribute("role", "group");
     group.setAttribute("aria-label", "Choose a next step");
-    flow.choices.slice(0, 6).forEach((choice) => {
+    flow.choices.slice(0, 8).forEach((choice) => {
       if (!choice?.id || !choice?.label) return;
       const button = document.createElement("button");
       button.type = "button";
@@ -680,7 +703,7 @@
       if (!product.handle) return { ...product, url: product.url || "" };
       try {
         const response = await fetch(`${rootUrl}products/${encodeURIComponent(product.handle)}.js`, { headers: { accept: "application/json" }, cache: "no-store" });
-        if (!response.ok) return { ...product, url: product.url || `${rootUrl}products/${encodeURIComponent(product.handle)}` };
+        if (!response.ok) return response.status >= 400 && response.status < 500 ? null : { ...product, url: product.url || `${rootUrl}products/${encodeURIComponent(product.handle)}` };
         const current = await response.json();
         return {
           ...product,
@@ -689,7 +712,7 @@
           description: String(current.description || current.description_html || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim() || product.description || "",
           url: current.url || `${rootUrl}products/${encodeURIComponent(product.handle)}`,
           priceCents: Number(current.price_min ?? current.price ?? 0),
-          variants: (current.variants || []).map((variant) => ({ id: variant.id, title: variant.public_title || variant.title, priceCents: Number(variant.price || 0), availableForSale: variant.available !== false })),
+          variants: (current.variants || []).map((variant) => ({ id: variant.id, title: variant.public_title || variant.title, sku: variant.sku || "", priceCents: Number(variant.price || 0), availableForSale: variant.available !== false })),
         };
       } catch { return { ...product, url: product.url || `${rootUrl}products/${encodeURIComponent(product.handle)}` }; }
     }));
@@ -730,11 +753,16 @@
       const availableVariants = allVariants.filter((value) => value.availableForSale !== false);
       const outOfStock = allVariants.length > 0 && availableVariants.length === 0;
       info.append(titleRow, price);
+      const sku = document.createElement("small"); sku.className = "sac-card-sku";
+      const skuValue = product.sku || allVariants.find((value) => value.sku)?.sku || "";
+      sku.hidden = !skuValue;
+      sku.textContent = skuValue ? `SKU: ${skuValue}` : "";
+      if (skuValue || allVariants.some((value) => value.sku)) info.append(sku);
       if (product.description) { const description = document.createElement("p"); description.className = "sac-card-description"; description.textContent = product.description; info.append(description); }
       const variant = document.createElement("select"); variant.setAttribute("aria-label", `Choose ${product.title || "product"} variant`);
       availableVariants.forEach((value) => { const option = document.createElement("option"); option.value = String(value.id).split("/").pop(); option.textContent = `${value.title}${Number.isFinite(value.priceCents) ? ` · ${formatCents(value.priceCents)}` : ""}`; variant.append(option); });
       if (availableVariants.length > 1 || (availableVariants.length === 1 && !/^default title$/i.test(availableVariants[0].title || ""))) info.append(variant);
-      variant.addEventListener("change", () => { const selected = product.variants.find((value) => String(value.id).split("/").pop() === variant.value); if (selected && Number.isFinite(selected.priceCents)) price.textContent = formatCents(selected.priceCents); });
+      variant.addEventListener("change", () => { const selected = product.variants.find((value) => String(value.id).split("/").pop() === variant.value); if (selected && Number.isFinite(selected.priceCents)) price.textContent = formatCents(selected.priceCents); if (selected?.sku && sku.isConnected) { sku.textContent = `SKU: ${selected.sku}`; sku.hidden = false; } else if (sku.isConnected && allVariants.some((value) => value.sku)) { sku.textContent = ""; sku.hidden = true; } });
       if (outOfStock) { const stock = document.createElement("span"); stock.className = "sac-stock-badge is-out"; stock.textContent = "Out of stock"; info.append(stock); }
       const add = document.createElement("button"); add.type = "button"; add.textContent = outOfStock ? "Unavailable" : options.purchaseIntent ? "Yes — add to cart & checkout" : "Add to cart"; if (options.purchaseIntent) add.classList.add("sac-purchase-confirm"); add.disabled = outOfStock || !variant.value;
       add.addEventListener("click", async () => {
@@ -770,7 +798,7 @@
       if (product.url) { const details = document.createElement("a"); details.className = "sac-product-details-link"; details.href = product.url; details.target = "_blank"; details.rel = "noopener noreferrer"; details.textContent = "View product details ↗"; info.append(details); }
       card.append(media, info); wrap.append(card);
     });
-    if (wrap.querySelector(".sac-card")) {
+    if (wrap.querySelector(".sac-card") || options.showBrowseAll) {
       const allProducts = document.createElement("a");
       allProducts.className = "sac-view-all-products";
       allProducts.href = `${rootUrl.replace(/\/?$/, "/")}collections/all`;

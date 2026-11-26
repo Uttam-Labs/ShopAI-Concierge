@@ -5,16 +5,17 @@ export const DEFAULT_CONVERSATION_FLOWS = [
     description: "A friendly hello with shortcuts to shopping, order updates, and support.",
     enabled: true,
     priority: 10,
-    triggerTerms: ["hi", "hello", "hey", "hiya", "howdy", "good morning", "good afternoon", "good evening", "welcome", "start", "help me", "can you help me", "give me options", "show me options", "what can you help me with"],
+    triggerTerms: ["hi", "hello", "hey", "hiya", "howdy", "good morning", "good afternoon", "good evening", "welcome", "start", "help me", "i need help", "can you help me", "give me options", "show me options", "what can you help me with", "what can you do", "are you a human", "i want to buy something", "i want to see your products", "where can i find products", "i want to track my order", "i want to cancel my order", "i want to return a product", "i want a refund", "i want to talk to someone"],
     steps: [{
       id: "start",
       title: "Welcome",
-      prompt: "Hi there! 👋 Welcome to our store. I’m your AI shopping assistant. I can help you find products, track an order, manage a return, or contact our support team. How can I help you today?",
+      prompt: "Hi there! 👋 Welcome to our store. I’m your AI shopping assistant. I can help you find products, check or request a change to an order, ask about returns and refunds, or contact our support team. How can I help you today?",
       choices: [
         { id: "products", label: "Find a product", nextFlowId: "product-discovery", nextStepId: "brief" },
         { id: "orders", label: "Track my order", nextFlowId: "order-updates", nextStepId: "start" },
         { id: "returns", label: "Return or exchange", nextFlowId: "returns-support", nextStepId: "reason" },
         { id: "problem", label: "Report a problem", nextFlowId: "returns-support", nextStepId: "reason" },
+        { id: "cancel", label: "Cancel an order", nextFlowId: "order-cancellation", nextStepId: "start" },
         { id: "support", label: "Contact support", action: "openSupport", requestTypeId: "other", reply: "Of course. I’ll open a support request so our team can help." },
         { id: "other", label: "Something else", nextStepId: "general-inquiry" },
       ],
@@ -66,23 +67,23 @@ export const DEFAULT_CONVERSATION_FLOWS = [
     description: "Routes tracking and cancellation questions to the verified order lookup or support team.",
     enabled: true,
     priority: 70,
-    triggerTerms: ["track my order", "track order", "order tracking", "order status", "where is my order", "order update", "cancel my order", "cancel order", "order history", "my recent orders", "previous orders", "check my purchase", "shipment status", "delivery status", "tracking number", "change shipping address", "partial order", "order says delivered", "wrong email"],
+    triggerTerms: ["track my order", "track order", "order tracking", "order status", "where is my order", "order update", "has my order shipped", "when will my order arrive", "can you track my order", "update on my order", "order history", "my recent orders", "previous orders", "check my purchase", "shipment status", "delivery status", "tracking number", "change shipping address", "partial order", "order says delivered", "wrong email"],
     steps: [{
       id: "start",
       title: "Order help",
-      prompt: "I can help with your orders! What would you like to do today? For a secure order lookup, I’ll ask for the order number and the email used at checkout.",
+      prompt: "Sure! I’d be happy to help check your order. Choose a secure order lookup, or tell me what you need help with.",
       choices: [
         { id: "history", label: "View order history", action: "openSupport", requestTypeId: "order-delivery", details: "Customer asked to view recent orders. Please verify their checkout email and help locate their order history.", reply: "I can help the team locate your recent orders. I’ll open a support request so they can verify your account." },
         { id: "track", label: "Track my order", action: "openOrderTracking", reply: "I’d be happy to check that. Enter your order number and the email used at checkout in the secure lookup." },
         { id: "status", label: "Check order status", action: "openOrderTracking", reply: "I’ll check the latest order status. Please enter your order number and checkout email." },
-        { id: "cancel", label: "Ask to cancel an order", action: "openSupport", requestTypeId: "order-delivery", details: "Customer requests an order cancellation. Support team must verify ownership and actual cancellation eligibility before taking action.", reply: "I can help request a cancellation review. The store team will verify the order and confirm whether it can still be cancelled." },
+        { id: "cancel", label: "Cancel an order", nextFlowId: "order-cancellation", nextStepId: "start" },
         { id: "issue", label: "Report an order issue", nextFlowId: "returns-support", nextStepId: "reason" },
         { id: "other", label: "Other order question", nextStepId: "general-order-question" },
       ],
       routes: [
-        { id: "order-track", keywords: ["where is my order", "track my order", "tracking number", "has my order been shipped", "order status", "when will my order arrive", "late delivery", "order has not arrived", "wrong email", "change shipping address", "partial order", "delivered but not received"], reply: "I’d be happy to check that. Please use the secure lookup with your order number and checkout email.", action: "openOrderTracking" },
+        { id: "order-track", keywords: ["where is my order", "track my order", "tracking number", "has my order been shipped", "order status", "when will my order arrive", "late delivery", "order has not arrived", "wrong email", "change shipping address", "partial order", "delivered but not received", "any update on my recent purchase", "what is happening with my order"], reply: "I’d be happy to check that. Please enter your order number and the email used at checkout in the secure lookup.", action: "openOrderTracking" },
         { id: "order-history", keywords: ["previous orders", "order history", "recent orders", "past orders"], reply: "I can help the team locate your recent orders. I’ll open a support request so they can verify your account.", action: "openSupport", requestTypeId: "order-delivery", details: "Customer asked to view recent order history. Please verify their checkout email and help locate their orders." },
-        { id: "order-cancel", keywords: ["cancel my order", "cancel order", "cancellation"], reply: "I can help request a cancellation review. The store team will verify the order and confirm whether it can still be cancelled.", action: "openSupport", requestTypeId: "order-delivery", details: "Customer requests an order cancellation. Support team must verify ownership and actual cancellation eligibility before taking action." },
+        { id: "order-cancel", keywords: ["cancel my order", "cancel order", "cancellation", "please cancel my order", "changed my mind", "placed an order by mistake", "stop my order"], reply: "I can help you submit a cancellation request. The Support Team will review it; this will not cancel the order automatically.", nextFlowId: "order-cancellation", nextStepId: "start" },
         { id: "order-issue", keywords: ["order issue", "missing item", "order is damaged", "delivered but not received", "only part of my order"], reply: "I’m sorry about the trouble. I’ll help you report this order issue.", nextFlowId: "returns-support", nextStepId: "reason" },
         { id: "order-other", keywords: ["other order question", "question about my order"], reply: "Please tell me a little more, and I’ll check the store information or help you reach the team.", nextStepId: "general-order-question" },
       ],
@@ -92,6 +93,15 @@ export const DEFAULT_CONVERSATION_FLOWS = [
       prompt: "Please tell me what you’d like to know about the order. I’ll check the store information and help with the next step.",
       inputAction: "continueAI",
       routes: [{ id: "order-address-question", keywords: ["change address", "shipping address", "wrong address"], reply: "I’ll check whether the store information explains when a shipping address can be changed.", action: "continueAI" }],
+      }, {
+        id: "followup",
+        title: "Order follow-up",
+        prompt: "Is there anything else you’d like to know about your verified order? I can help with its tracking, status, payment, or connect you with the store team.",
+        routes: [
+      { id: "cancel-order", keywords: ["cancel my order", "cancel order", "cancellation", "stop my order"], reply: "I can help submit a cancellation request for this order. The Support Team will review it, and the order will remain active until they confirm any change.", nextFlowId: "order-cancellation", nextStepId: "reason" },
+          { id: "delivery-issue", keywords: ["delayed", "late", "not arrived", "missing item", "only one item", "tracking number is not working", "tracking isn't working", "shipping issue", "delivery problem"], reply: "I’m sorry about the trouble. I can send the verified order details and your concern to the Support Team.", action: "openSupport", requestTypeId: "order-delivery" },
+          { id: "order-followup-ai", keywords: ["where is my package", "why has not my order shipped", "why hasn't my order shipped", "when will my order arrive", "tracking link", "payment received", "has my payment been received", "order status", "shipment status", "delivery status", "follow up"], reply: "Answer only from the latest verified Shopify order facts included below. Do not estimate a delivery date unless Shopify provides one. If the order facts do not answer the question, say so and offer to contact support.", action: "continueAI" },
+        ],
     }],
   },
   {
@@ -120,6 +130,45 @@ export const DEFAULT_CONVERSATION_FLOWS = [
           { id: "unclear-issue", keywords: ["something else", "other issue", "not sure", "help", "it is bad", "bad experience"], reply: "I’m sorry you’re dealing with this. Could you share which product is involved and what happened? A few details will help me point you to the right next step.", action: "continueAI" },
         ],
       },
+  {
+    id: "order-cancellation",
+    name: "Order cancellation request",
+    description: "Collects and verifies order details, prepares a cancellation request, and gets customer confirmation before sending it to support. It never cancels a Shopify order.",
+    enabled: true,
+    priority: 110,
+    triggerTerms: ["cancel my order", "cancel order", "please cancel my order", "can you help me cancel", "order cancellation", "cancellation request", "i want to cancel", "i don't want my order anymore", "i changed my mind", "placed an order by mistake", "i want to stop my order", "cancel my recent purchase", "i no longer need this product", "don't want the package delivered", "request an order cancellation", "withdraw my purchase", "cancel my purchase urgently", "cancel duplicate order", "cancel second order", "cancel one item", "cancel part of my order", "cancel entire order", "cancel full order", "cancel before shipping", "cancel after shipping", "don't cancel my order", "withdraw cancellation request", "refund for cancellation", "cancellation policy", "modify my order", "change my order", "wrong size order"],
+    steps: [
+      {
+        id: "start",
+        title: "Cancellation request",
+        prompt: "I can help submit an order cancellation request. The Support Team will review it and contact you. Submitting a request does not cancel your order. Please share the order number so I can securely identify it.",
+        captureField: "orderNumber",
+        nextStepId: "order-email",
+        routes: [
+          { id: "modify-instead", keywords: ["change my order", "modify my order", "change size", "change color", "wrong address", "update shipping address", "change quantity", "replace one product"], reply: "I can include an order modification request for the Support Team to review. I won’t change the Shopify order. First, please share the order number and checkout email so I can verify it.", nextStepId: "order-number", setData: { requestMode: "modification" } },
+          { id: "duplicate-order", keywords: ["duplicate order", "ordered twice", "charged twice", "same order twice", "second order"], reply: "I can help request a review of a duplicate order. Please share both order numbers and tell me which order you want the team to review for cancellation.", nextStepId: "duplicate-orders" },
+        { id: "cancel-policy", keywords: ["cancellation policy", "cancellation fee", "can i cancel", "eligible for cancellation", "cancel after shipping", "cancel after dispatch", "refund for cancellation", "when will i receive my refund", "refund timeline", "full refund", "shipping fee refunded", "taxes refunded", "refund to another card", "gift card balance", "partial refund", "cod order", "already processed", "left the warehouse", "out for delivery", "stop the delivery", "how long does cancellation take", "still being packed", "cancellation rejected"], reply: "I can check the store’s published cancellation or refund policy. The Support Team must confirm eligibility, fees, and timing for your specific order; I can’t promise that an order can be cancelled or refunded.", action: "continueAI" },
+          { id: "support-handoff", keywords: ["speak to a human", "talk to customer support", "human assistance", "contact support", "cancellation team", "speak to your manager"], reply: "I can forward your cancellation question to the Support Team. Please add any order or request reference you have.", action: "openSupport", requestTypeId: "order-delivery" },
+        ],
+      },
+      { id: "order-number", title: "Identify the order", prompt: "Please enter the order number. You can find it in your order confirmation email. I’ll also need the email address used at checkout to verify it.", captureField: "orderNumber", nextStepId: "order-email", routes: [{ id: "no-order-number", keywords: ["i don't know my order number", "i do not know my order number", "can't find my order number", "only have payment reference", "guest checkout", "find order using my email", "can you check my recent order", "multiple orders", "which order details", "cannot find my order confirmation", "different email", "find my purchase details", "don't have my order id", "order history", "phone number instead"], reply: "For privacy, I need the order number and checkout email to verify the order here. If you can’t find the number, please use the order confirmation email or contact the store team. A phone number or payment reference alone isn’t enough for this secure lookup.", nextStepId: "order-number" }] },
+      { id: "order-email", title: "Verify checkout email", prompt: "What email address did you use when placing the order? I’ll check that it matches before showing order details or preparing the request.", captureField: "orderEmail", nextStepId: "verify-order" },
+      { id: "verify-order", title: "Verify order", prompt: "Thank you. I’m securely checking the order number and checkout email.", inputAction: "verifyCancellationOrder" },
+      { id: "duplicate-orders", title: "Identify the duplicate order", prompt: "Please provide both order numbers, then tell me which one you want the Support Team to review for cancellation.", captureField: "duplicateOrderNumbers", nextStepId: "duplicate-selected" },
+      { id: "duplicate-selected", title: "Select the order", prompt: "Which specific order number should the Support Team review for cancellation?", captureField: "orderNumber", nextStepId: "order-email" },
+      { id: "reason", title: "Cancellation reason", prompt: "May I know why you’d like to cancel? This helps the Support Team review your request. You can also skip this question.", captureField: "reason", nextStepId: "scope", choices: [{ id: "skip-reason", label: "Skip reason", captureField: "reason", captureValue: "Not provided", nextStepId: "scope" }], routes: [{ id: "skip-reason-text", keywords: ["skip", "prefer not to say", "don't want to explain", "do not want to explain"], reply: "That’s okay. You don’t have to share a reason.", nextStepId: "scope" }] },
+      { id: "scope", title: "Choose cancellation scope", prompt: "Would you like the Support Team to review cancellation of the entire order or only specific item(s)?", choices: [{ id: "full-order", label: "Entire order", captureField: "scope", captureValue: "Full order", nextStepId: "shipping-status" }, { id: "partial-order", label: "Specific item(s)", captureField: "scope", captureValue: "Partial order", nextStepId: "partial-items" }, { id: "modify-order", label: "Request a change instead", captureField: "scope", captureValue: "Order modification", nextStepId: "modification-details" }] },
+      { id: "partial-items", title: "Items to review", prompt: "Which product(s) and quantities would you like the Support Team to review? Partial cancellation depends on the team’s review.", captureField: "items", nextStepId: "shipping-status" },
+      { id: "shipping-status", title: "Shipping status", prompt: "Do you know whether the order has shipped or whether you’ve received it? This helps the Support Team review available options.", choices: [{ id: "not-shipped", label: "Not shipped yet", captureField: "shippingStatus", captureValue: "Customer says not shipped", nextStepId: "review" }, { id: "shipped", label: "Already shipped", captureField: "shippingStatus", captureValue: "Customer says shipped", nextStepId: "review" }, { id: "received", label: "I received it", captureField: "shippingStatus", captureValue: "Customer says received", nextStepId: "received-support" }, { id: "unsure", label: "I’m not sure", captureField: "shippingStatus", captureValue: "Customer is unsure", nextStepId: "review" }], routes: [{ id: "shipped-question", keywords: ["shipped", "dispatched", "out for delivery", "in transit", "already received", "not received", "refuse the package", "return the product", "contact the courier", "intercept my shipment"], reply: "Thanks. If an order has shipped, cancellation may have additional restrictions. The Support Team will review the order status and available options; I can’t promise a shipment can be stopped or intercepted.", nextStepId: "review" }] },
+      { id: "review", title: "Review request summary", prompt: "Please review your request before I send it to the Support Team.", choices: [{ id: "submit-cancellation", label: "Yes, continue to submit", action: "openSupport", requestTypeId: "order-delivery", reply: "Your cancellation request details are ready. Review them in the form and submit it to the Support Team. Your order has not been cancelled.", followupStepId: "after-ticket" }, { id: "decline-cancellation", label: "No, don’t submit", nextStepId: "cancelled" }] },
+      { id: "modification-details", title: "Order change details", prompt: "What would you like to change? I’ll send the request to the Support Team; I won’t modify the Shopify order.", captureField: "modification", nextStepId: "modification-review" },
+      { id: "modification-review", title: "Review order change request", prompt: "Please confirm that you want me to send this order change request to the Support Team.", choices: [{ id: "submit-modification", label: "Continue to submit change request", action: "openSupport", requestTypeId: "order-delivery", followupStepId: "after-ticket", reply: "Your order change request details are ready. Review them in the form and submit them to the Support Team. The order has not been modified." }, { id: "decline-modification", label: "Don’t submit", nextStepId: "cancelled" }] },
+      { id: "cancelled", title: "Request not submitted", prompt: "Okay, I haven’t submitted a cancellation request. Your order hasn’t been changed. You can contact the store team if you need help later." },
+      { id: "after-ticket", title: "Request submitted", prompt: "Your request has been sent to the Support Team. The order remains active until the team reviews and confirms any cancellation. You can ask to submit a withdrawal request if you change your mind.", choices: [{ id: "withdraw", label: "Ask to withdraw request", nextStepId: "withdraw-confirm" }, { id: "finish", label: "I’m done", nextStepId: "done" }], routes: [{ id: "withdraw-request", keywords: ["don't cancel", "do not cancel", "withdraw cancellation", "keep my order", "changed my mind", "stop cancellation request", "no longer want to cancel"], reply: "I can forward a withdrawal request to the Support Team. They may already be reviewing or processing the original request.", nextStepId: "withdraw-confirm" }] },
+      { id: "withdraw-confirm", title: "Confirm withdrawal request", prompt: "Would you like me to send the Support Team a request to withdraw the cancellation request? The team’s current review status may affect whether it can be stopped.", choices: [{ id: "submit-withdrawal", label: "Continue to submit withdrawal request", action: "openSupport", requestTypeId: "order-delivery", reply: "Your withdrawal request details are ready. Review them in the form and submit them to the Support Team. They’ll confirm whether the original request can still be stopped.", details: "Customer asks to withdraw the cancellation request. Do not cancel, modify, or promise to stop the order." }, { id: "decline-withdrawal", label: "Keep cancellation request", nextStepId: "done" }] },
+      { id: "done", title: "Finish", prompt: "Thanks for contacting us. Is there anything else I can help with?" },
+    ],
+  },
       {
         id: "quality",
         title: "Quality concern",
@@ -204,7 +253,7 @@ export function normalizeConversationFlows(value) {
     const saved = savedFlows.find((flow) => flow?.id === defaults.id) || {};
     const savedSteps = Array.isArray(saved.steps) ? saved.steps : [];
     const allowedTriggers = Array.isArray(saved.triggerTerms) ? saved.triggerTerms : typeof saved.triggerTerms === "string" ? saved.triggerTerms.split(",") : defaults.triggerTerms;
-    const triggerTerms = [...new Set(allowedTriggers.map((term) => String(term || "").trim().slice(0, 80)).filter(Boolean))].slice(0, 30);
+    const triggerTerms = [...new Set([...allowedTriggers, ...defaults.triggerTerms].map((term) => String(term || "").trim().slice(0, 80)).filter(Boolean))];
     return {
       ...defaults,
       name: cleanText(saved.name, defaults.name, 80),
@@ -217,7 +266,7 @@ export function normalizeConversationFlows(value) {
         const savedRoutes = Array.isArray(savedStep.routes) ? savedStep.routes : [];
         const defaultRoutes = step.routes || [];
         const sourceRoutes = [
-          ...defaultRoutes.map((defaultRoute, index) => savedRoutes.find((candidate) => candidate?.id === defaultRoute.id) || (savedRoutes[index] && !savedRoutes[index].id ? savedRoutes[index] : defaultRoute)),
+          ...defaultRoutes.map((defaultRoute, index) => savedRoutes.find((candidate) => candidate?.id === defaultRoute.id) || (savedRoutes[index] && !savedRoutes[index].id ? { ...defaultRoute, ...savedRoutes[index] } : defaultRoute)),
           ...savedRoutes.filter((candidate) => candidate?.id && !defaultRoutes.some((defaultRoute) => defaultRoute.id === candidate.id)),
         ];
         return {
@@ -229,7 +278,7 @@ export function normalizeConversationFlows(value) {
             const defaultRoute = (step.routes || []).find((candidate) => candidate.id && candidate.id === route?.id) || (step.routes || [])[index] || {};
             const keywords = Array.isArray(route?.keywords) ? route.keywords : defaultRoute.keywords || [];
             const action = ["continueAI", "openOrderTracking", "openSupport"].includes(route?.action) ? route.action : route?.action === "" ? "" : defaultRoute.action;
-            const nextFlowId = route?.nextFlowId === "" ? "" : ["welcome", "product-discovery", "order-updates", "returns-support"].includes(route?.nextFlowId) ? route.nextFlowId : defaultRoute.nextFlowId;
+            const nextFlowId = route?.nextFlowId === "" ? "" : ["welcome", "product-discovery", "order-updates", "order-cancellation", "returns-support"].includes(route?.nextFlowId) ? route.nextFlowId : defaultRoute.nextFlowId;
             const targetFlow = DEFAULT_CONVERSATION_FLOWS.find((candidate) => candidate.id === (nextFlowId || defaults.id));
             const nextStepId = route?.nextStepId === "" ? "" : typeof route?.nextStepId === "string" && targetFlow?.steps.some((candidate) => candidate.id === route.nextStepId) ? route.nextStepId : defaultRoute.nextStepId;
             return {
@@ -248,11 +297,11 @@ export function normalizeConversationFlows(value) {
           choices: step.choices?.map((choice) => {
             const savedChoice = savedChoices.find((candidate) => candidate?.id === choice.id) || {};
             const action = ["continueAI", "openOrderTracking", "openSupport"].includes(savedChoice.action) ? savedChoice.action : savedChoice.action === "" ? "" : choice.action;
-            const nextFlowId = savedChoice.nextFlowId === "" ? "" : ["welcome", "product-discovery", "order-updates", "returns-support"].includes(savedChoice.nextFlowId) ? savedChoice.nextFlowId : choice.nextFlowId;
+            const nextFlowId = savedChoice.nextFlowId === "" ? "" : ["welcome", "product-discovery", "order-updates", "order-cancellation", "returns-support"].includes(savedChoice.nextFlowId) ? savedChoice.nextFlowId : choice.nextFlowId;
             const targetFlow = DEFAULT_CONVERSATION_FLOWS.find((candidate) => candidate.id === (nextFlowId || defaults.id));
             const nextStepId = savedChoice.nextStepId === "" ? "" : typeof savedChoice.nextStepId === "string" && targetFlow?.steps.some((candidate) => candidate.id === savedChoice.nextStepId) ? savedChoice.nextStepId : choice.nextStepId;
             return { ...choice, ...savedChoice, label: cleanText(savedChoice.label, choice.label, 100), ...(typeof savedChoice.reply === "string" ? { reply: savedChoice.reply.trim().slice(0, 500) } : choice.reply ? { reply: choice.reply } : {}), ...(action ? { action } : {}), ...(nextFlowId ? { nextFlowId } : {}), ...(nextStepId ? { nextStepId } : {}), ...(savedChoice.requestTypeId || choice.requestTypeId ? { requestTypeId: String(savedChoice.requestTypeId || choice.requestTypeId).slice(0, 80) } : {}), ...(savedChoice.details || choice.details ? { details: String(savedChoice.details || choice.details).slice(0, 500) } : {}) };
-          }),
+          }).concat(savedChoices.filter((choice) => choice?.id && !step.choices?.some((candidate) => candidate.id === choice.id))),
         };
       }),
     };
@@ -269,41 +318,109 @@ function includesTerm(message, term) {
   return normalizedTerm.length >= 2 && normalizedMessage.includes(` ${normalizedTerm} `);
 }
 
-export function resolveConversationFlow(flows, { message, flowId, stepId, choiceId }) {
+function cancellationRequestDetails(data = {}) {
+  const order = data.verifiedOrder || {};
+  return [
+    "Cancellation request — review only; do not automatically cancel or modify the Shopify order.",
+    `Verified order: ${order.name || data.orderNumber || "Not verified"}`,
+    `Checkout email: ${data.orderEmail || "Not provided"}`,
+    `Request scope: ${data.scope || "Not selected"}`,
+    data.items ? `Items and quantities: ${data.items}` : "",
+    `Customer reason: ${data.reason || "Not provided"}`,
+    `Shipping situation: ${data.shippingStatus || "Not provided"}`,
+    data.modification ? `Requested change instead: ${data.modification}` : "",
+    data.duplicateOrderNumbers ? `Related duplicate order numbers: ${data.duplicateOrderNumbers}` : "",
+    order.fulfillmentStatus ? `Verified fulfillment status: ${order.fulfillmentStatus}` : "",
+    order.tracking?.length ? `Verified tracking: ${order.tracking.map((item) => [item.company, item.number, item.url].filter(Boolean).join(" ")).join("; ")}` : "",
+  ].filter(Boolean).join("\n");
+}
+
+function promptForFlowStep(flow, step, data = {}) {
+  if (flow.id === "order-cancellation" && step.id === "after-ticket") {
+    return `Your request has been sent to the Support Team${data.requestReference ? ` (reference ${data.requestReference})` : ""}. The order remains active until the team reviews and confirms any cancellation. You can ask to submit a withdrawal request if you change your mind.`;
+  }
+  if (flow.id === "order-cancellation" && step.id === "review") {
+    const order = data.verifiedOrder || {};
+    return [
+      "Please review your cancellation request before I send it to the Support Team:",
+      `Order: ${order.name || data.orderNumber || "Not verified"}`,
+      order.createdAt ? `Order date: ${new Date(order.createdAt).toLocaleDateString("en", { dateStyle: "medium" })}` : "",
+      order.fulfillmentStatus ? `Fulfillment status: ${order.fulfillmentStatus}` : "",
+      `Request: ${data.scope || "Not selected"}`,
+      data.items ? `Items and quantities: ${data.items}` : "",
+      `Reason: ${data.reason || "Not provided"}`,
+      `Shipping situation: ${data.shippingStatus || "Not provided"}`,
+      "Submitting sends a request for review; it does not cancel the order.",
+      "Would you like me to submit this request?",
+    ].filter(Boolean).join("\n");
+  }
+  if (flow.id === "order-cancellation" && step.id === "modification-review") {
+    return [`Order: ${data.verifiedOrder?.name || data.orderNumber || "Not verified"}`, `Requested change: ${data.modification || "Not provided"}`, "Would you like me to send this change request to the Support Team?"].join("\n");
+  }
+  return step.prompt;
+}
+
+export function resolveConversationFlow(flows, { message, flowId, stepId, choiceId, flowData: rawFlowData }) {
   const enabledFlows = normalizeConversationFlows(flows).filter((flow) => flow.enabled);
-  const flowState = (flow, step, answer = step.prompt) => ({
+  const allowedDataFields = ["orderNumber", "orderEmail", "reason", "scope", "items", "shippingStatus", "modification", "duplicateOrderNumbers", "requestReference", "requestMode", "orderVerified", "verifiedOrder"];
+  const flowData = rawFlowData && typeof rawFlowData === "object" && !Array.isArray(rawFlowData)
+    ? Object.fromEntries(allowedDataFields.filter((field) => Object.hasOwn(rawFlowData, field)).map((field) => [field, rawFlowData[field]]))
+    : {};
+  const flowState = (flow, step, answer = promptForFlowStep(flow, step, flowData), data = flowData) => ({
     answer,
-    flow: step.choices?.length || step.inputAction ? { id: flow.id, stepId: step.id, choices: (step.choices || []).map(({ id, label }) => ({ id, label })) } : null,
+    flow: step.choices?.length || step.routes?.length || step.inputAction || step.captureField ? { id: flow.id, stepId: step.id, choices: (step.choices || []).map(({ id, label }) => ({ id, label })), data } : null,
   });
   const matchingFlow = (excludedId) => enabledFlows.map((candidate) => ({
     candidate,
     matchLength: Math.max(0, ...candidate.triggerTerms.filter((term) => includesTerm(message, term)).map((term) => normalizeForMatch(term).length)),
   })).filter(({ candidate, matchLength }) => matchLength > 0 && candidate.id !== excludedId)
     .sort((left, right) => right.matchLength - left.matchLength || right.candidate.priority - left.candidate.priority)[0]?.candidate;
-  const transition = (sourceFlow, sourceStep, targetFlowId, targetStepId, reply = "") => {
+  const transition = (sourceFlow, sourceStep, targetFlowId, targetStepId, reply = "", data = flowData) => {
     const targetFlow = enabledFlows.find((candidate) => candidate.id === (targetFlowId || sourceFlow.id));
     const targetStep = targetFlow?.steps.find((candidate) => candidate.id === targetStepId);
     if (!targetFlow || !targetStep) return null;
-    return flowState(targetFlow, targetStep, [reply, targetStep.prompt].filter(Boolean).join("\n\n"));
+    const targetPrompt = promptForFlowStep(targetFlow, targetStep, data);
+    return flowState(targetFlow, targetStep, [reply, targetPrompt].filter(Boolean).join("\n\n"), data);
   };
   const runAction = (flow, step, action, reply, config = {}) => ({
     answer: reply || step.prompt,
     action,
+    flow: action === "continueAI" && config.keepFlow !== false ? flowState(flow, step).flow : null,
+    flowData: config.flowData || flowData,
     requestTypeId: config.requestTypeId,
-    details: config.details,
+    details: config.details || (flow.id === "order-updates" && action === "openSupport" ? [
+      `Customer follow-up for verified Shopify order ${flowData.verifiedOrder?.name || flowData.orderNumber || ""}.`,
+      flowData.verifiedOrder?.fulfillmentStatus ? `Fulfillment status: ${flowData.verifiedOrder.fulfillmentStatus}.` : "",
+      flowData.verifiedOrder?.tracking?.length ? `Tracking: ${flowData.verifiedOrder.tracking.map((item) => [item.company, item.number, item.url].filter(Boolean).join(" ")).join("; ")}.` : "",
+      `Customer message: ${config.customerMessage || ""}`,
+    ].filter(Boolean).join("\n") : undefined),
     followupStepId: config.followupStepId || step.followupStepId,
     flowId: config.flowId || flow.id,
+    requiresVerifiedOrder: flow.id === "order-cancellation" && ["submit-cancellation", "submit-modification", "submit-withdrawal"].includes(config.id),
     clearFlow: action !== "continueAI",
   });
   const runRoute = (flow, step, route) => {
     const selected = route.choiceId ? step.choices?.find((choice) => choice.id === route.choiceId) : null;
     const action = route.action || selected?.action;
-    const reply = route.reply || selected?.reply || "";
-    const config = { ...selected, ...route, flowId: flow.id };
+    let reply = route.reply || selected?.reply || "";
+    if (flow.id === "order-updates" && flowData.verifiedOrder && action === "continueAI") {
+      const order = flowData.verifiedOrder;
+      const verifiedFacts = [
+        `Verified Shopify order: ${order.name || ""}`,
+        order.createdAt ? `Order date: ${order.createdAt}` : "",
+        order.financialStatus ? `Payment status: ${order.financialStatus}` : "",
+        order.fulfillmentStatus ? `Fulfillment status: ${order.fulfillmentStatus}` : "",
+        order.tracking?.length ? `Tracking: ${order.tracking.map((item) => [item.company, item.number, item.url].filter(Boolean).join(" ")).join("; ")}` : "No tracking details are currently available in Shopify.",
+        order.fulfillments?.some((item) => item.estimatedDeliveryAt) ? `Estimated delivery: ${order.fulfillments.filter((item) => item.estimatedDeliveryAt).map((item) => item.estimatedDeliveryAt).join(", ")}` : "Shopify has not provided an estimated delivery date.",
+      ].filter(Boolean).join("\n");
+      reply = `${reply}\n${verifiedFacts}`;
+    }
+    const nextData = { ...flowData, ...(route.setData && typeof route.setData === "object" ? route.setData : {}) };
+    const config = { ...selected, ...route, flowId: flow.id, flowData: nextData, customerMessage: message };
     if (action) return runAction(flow, step, action, reply, config);
     const targetStepId = route.nextStepId || selected?.nextStepId;
     const targetFlowId = route.nextFlowId || selected?.nextFlowId;
-    if (targetStepId) return transition(flow, step, targetFlowId, targetStepId, reply);
+    if (targetStepId) return transition(flow, step, targetFlowId, targetStepId, reply, nextData);
     return reply ? { answer: reply, flow: null, clearFlow: true } : null;
   };
 
@@ -326,31 +443,55 @@ export function resolveConversationFlow(flows, { message, flowId, stepId, choice
     step = flow.steps[0];
     const initialRoute = step.routes?.find((route) => route.keywords.some((keyword) => includesTerm(message, keyword)));
     if (initialRoute) return runRoute(flow, step, initialRoute);
+    if (flow.id === "order-cancellation") {
+      const number = message.match(/#\s*([A-Za-z0-9-]{1,30})/)?.[1] || message.match(/\border\s*(?:number|no\.?|#)\s*([A-Za-z0-9-]{1,30})/i)?.[1];
+      const email = message.match(/[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?(?:\.[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?)+/i)?.[0]?.toLowerCase();
+      if (number && email) return { answer: flow.steps.find((candidate) => candidate.id === "verify-order")?.prompt || "I’m securely checking the order details.", action: "verifyCancellationOrder", flowId: flow.id, flowData: { orderNumber: number, orderEmail: email } };
+      if (number) return transition(flow, step, flow.id, "order-email", "", { orderNumber: number });
+    }
     return flowState(flow, step);
   }
 
   const selected = step.choices?.find((choice) => choice.id === choiceId);
   if (selected) {
-    if (selected.action) return runAction(flow, step, selected.action, selected.reply, selected);
-    if (selected.nextStepId) return transition(flow, step, selected.nextFlowId, selected.nextStepId, selected.reply || "");
+    const selectedData = selected.captureField ? { ...flowData, [selected.captureField]: String(selected.captureValue || "").slice(0, 500) } : flowData;
+    if (selected.action) {
+      const details = flow.id === "order-cancellation" && selected.id === "submit-cancellation" ? cancellationRequestDetails(selectedData)
+        : flow.id === "order-cancellation" && selected.id === "submit-modification" ? `Order modification request for ${selectedData.verifiedOrder?.name || selectedData.orderNumber || "unverified order"}. Requested change: ${selectedData.modification || "Not provided"}. Do not modify the Shopify order.`
+          : flow.id === "order-cancellation" && selected.id === "submit-withdrawal" ? `Withdrawal request for cancellation ticket ${selectedData.requestReference || "reference unavailable"}, order ${selectedData.verifiedOrder?.name || selectedData.orderNumber || "not verified"}. Do not cancel or modify the Shopify order.`
+            : selected.details;
+      return runAction(flow, step, selected.action, selected.reply, { ...selected, details, flowData: selectedData, keepFlow: false });
+    }
+    if (selected.nextStepId) return transition(flow, step, selected.nextFlowId, selected.nextStepId, selected.reply || "", selectedData);
   }
   const route = step.routes?.find((candidate) => candidate.keywords.some((keyword) => includesTerm(message, keyword)));
   if (route) return runRoute(flow, step, route);
+  if (step.captureField) {
+    let captured = String(message || "").trim().slice(0, 500);
+    if (step.captureField === "orderNumber") captured = captured.match(/#\s*([A-Za-z0-9-]{1,30})/)?.[1] || captured.replace(/^order\s*(?:number|no\.?|#)?\s*/i, "").replace(/^#/, "").slice(0, 30);
+    if (step.captureField === "orderEmail") captured = captured.match(/[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?(?:\.[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?)+/i)?.[0]?.toLowerCase() || captured;
+    const nextData = { ...flowData, [step.captureField]: captured };
+    const nextStep = flow.steps.find((candidate) => candidate.id === step.nextStepId);
+    if (nextStep?.inputAction === "verifyCancellationOrder") return { answer: nextStep.prompt, action: "verifyCancellationOrder", flowId: flow.id, flowData: nextData };
+    return transition(flow, step, flow.id, step.nextStepId, "", nextData);
+  }
   if (step.inputAction) {
-    if (step.inputAction === "continueAI") return null;
+    if (step.inputAction === "continueAI") return runAction(flow, step, "continueAI", `Continue helping the shopper with their latest message. Use this guided step as context: ${step.prompt}`, { flowData });
+    if (step.inputAction === "verifyCancellationOrder") return { answer: step.prompt, action: "verifyCancellationOrder", flowId: flow.id, flowData };
     return runAction(flow, step, step.inputAction, step.inputReply || "Thanks for sharing that. I’ll use those details to help you find the right next step.", {
       requestTypeId: step.requestTypeId,
       details: `${step.detailsPrefix || ""}${String(message || "").trim().slice(0, 1500)}`,
       followupStepId: step.followupStepId,
+      flowData,
     });
   }
   const handoff = matchingFlow(flow.id);
-  return handoff ? flowState(handoff, handoff.steps[0]) : null;
+  return handoff ? flowState(handoff, handoff.steps[0]) : runAction(flow, step, "continueAI", `The shopper’s reply did not match a listed option. Respond helpfully and keep this guided step available: ${promptForFlowStep(flow, step, flowData)}`, { flowData });
 }
 
-export function getConversationFlowStep(flows, flowId, stepId) {
+export function getConversationFlowStep(flows, flowId, stepId, data = {}) {
   const flow = normalizeConversationFlows(flows).find((candidate) => candidate.enabled && candidate.id === flowId);
   const step = flow?.steps.find((candidate) => candidate.id === stepId);
   if (!step) return null;
-  return { id: flow.id, stepId: step.id, choices: (step.choices || []).map(({ id, label }) => ({ id, label })) };
+  return { id: flow.id, stepId: step.id, choices: (step.choices || []).map(({ id, label }) => ({ id, label })), data };
 }

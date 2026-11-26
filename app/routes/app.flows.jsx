@@ -186,7 +186,7 @@ export default function Flows({ loaderData }) {
   }, [selectedNode]);
 
   return <s-page heading="Flows" inlineSize="large">
-    <AdminPageHeader title="Conversation flows" description="Follow each path from the assistant’s question to the shopper’s reply and the action that follows." metrics={[{ label: "Built-in flows", value: flows.length }, { label: "Enabled", value: flows.filter((flow) => flow.enabled).length }, { label: "Vector context", value: "Synced on save" }]}/>
+    <AdminPageHeader title="Conversation flows" description="Follow each path from the assistant’s question to the shopper’s reply and the action that follows." metrics={[{ label: "Built-in flows", value: flows.length }, { label: "Enabled", value: flows.filter((flow) => flow.enabled).length }, { label: "Flow knowledge", value: fetcher.data?.indexed === true ? "Synced" : fetcher.data?.indexed === false ? "Needs setup" : "Check on save" }]}/>
     <section className="flow-studio">
       <aside className="flow-studio-library" aria-label="Flow library">
         <div className="flow-studio-library-heading"><span className="rag-eyebrow">FLOW LIBRARY</span><h2>Choose a flow</h2><p>Built-in flows can be customized and switched on or off.</p></div>

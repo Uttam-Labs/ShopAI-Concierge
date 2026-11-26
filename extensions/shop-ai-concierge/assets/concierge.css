@@ -109,6 +109,7 @@
 .sac-card button.is-added { color: #fff; background: #15803d; }
 .sac-product-details-link { color: #a64a17; font-size: 9px; font-weight: 700; line-height: 1.35; text-decoration: none; }
 .sac-product-details-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+.sac-card-sku { display: block; color: #736a63; font-size: 9px; }
 .sac-cart-bird { position: fixed; z-index: 2147483647; display: grid; width: 34px; height: 34px; place-items: center; color: #f97316; filter: drop-shadow(0 4px 5px #51280b30); pointer-events: none; }
 .sac-cart-bird svg { width: 100%; height: 100%; overflow: visible; fill: currentColor; }
 .sac-cart-bird .sac-bird-wing { fill: #ffb05f; transform-box: fill-box; transform-origin: 50% 50%; }
@@ -182,8 +183,10 @@
 .sac-help-button { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; padding: 5px 8px; border: 1px solid #f1dfd1; border-radius: 999px; color: #9e4718; background: #fff8f2; font: inherit; font-size: 10px; font-weight: 700; white-space: nowrap; cursor: pointer; transition: background .16s, border-color .16s, transform .16s; }
 .sac-help-button:hover { transform: translateY(-1px); border-color: #eeb58f; background: #fff0e4; }
 .sac-help-button svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-.sac-welcome-actions { display: flex; align-items: center; justify-content: flex-end; gap: 7px; margin-left: auto; }
+.sac-welcome-actions { display: flex; align-items: center; justify-content: flex-start; flex-wrap: wrap; gap: 7px; margin-left: 0; }
 .sac-welcome-actions .sac-help-button { margin-left: 0; }
+.sac-quick-action-button { display: inline-flex; min-height: 28px; align-items: center; padding: 5px 9px; border: 1px solid #f1dfd1; border-radius: 999px; color: #9e4718; background: #fff8f2; font: inherit; font-size: 10px; font-weight: 700; white-space: nowrap; cursor: pointer; transition: background .16s, border-color .16s, transform .16s; }
+.sac-quick-action-button:hover { transform: translateY(-1px); border-color: #eeb58f; background: #fff0e4; }
 .sac-help-button[hidden] { display: none !important; }
 .sac-support-backdrop[hidden] { display: none !important; }
 .sac-support-icon { display: grid; width: 38px; height: 38px; place-items: center; margin: 0 auto 10px; border-radius: 13px; color: #fff; background: var(--sac-accent, #f97316); font-size: 18px; box-shadow: 0 5px 13px color-mix(in srgb, var(--sac-accent, #f97316) 24%, transparent); }
@@ -204,7 +207,7 @@
 .sac-support-cancel { min-height: 38px; padding: 0 13px; border: 1px solid #e5dfd9; border-radius: 9px; color: #4e4944; background: #fff; font: inherit; font-size: 10px; font-weight: 650; cursor: pointer; }
 .sac-support-submit { padding: 0 14px; font-size: 10px; }
 .sac-support-submit:disabled { opacity: .6; cursor: wait; }
-@media (max-width: 520px) { .sac-welcome-actions { width: 100%; } .sac-support-card { padding: 19px; } }
+@media (max-width: 520px) { .sac-welcome-actions { width: 100%; } .sac-quick-action-button { font-size: 9px; padding-inline: 7px; } .sac-support-card { padding: 19px; } }
 
 /* Isolate the support request form from storefront theme form defaults. */
 .sac-panel .sac-support-card,
