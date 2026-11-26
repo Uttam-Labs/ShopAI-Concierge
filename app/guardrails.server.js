@@ -10,7 +10,7 @@ export const DEFAULT_GUARDRAILS = [
   {
     id: "standard-harmful-requests",
     title: "Decline harmful or illegal requests",
-    phrases: ["how to hack", "steal", "make a weapon", "build a bomb", "bypass security", "commit fraud"],
+    phrases: ["how to hack", "hack a competitor", "hack an account", "hack someone's account", "break into an account", "steal", "make a weapon", "build a bomb", "bypass security", "commit fraud"],
     response: "I can help with products, orders, and store support, but I can’t assist with harmful or illegal activities.",
     enabled: true,
     standard: true,

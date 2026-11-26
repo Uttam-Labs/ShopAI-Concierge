@@ -471,7 +471,7 @@ export const action = async ({ request }) => {
     verifiedShop = proxyContext.session?.shop?.toLowerCase();
     if (!verifiedShop) return proxyJson({ error: "Shopify could not identify this store. Verify the active app proxy configuration." }, headers, 401);
     if (allowed.length && origin && !allowed.includes(origin)) return proxyJson({ error: "This storefront is not allowed." }, headers, 403);
-    const { message, shop: bodyShop, storeName: bodyStoreName, sessionId: requestSessionId, customerName, customerEmail, faqId, flowId, flowStepId, flowChoiceId, flowData: submittedFlowData, orderLookupRequest, orderNumber, supportRequest, supportSuccessMessage, requestTypeId, requestDetails, supportContext, supportFollowup } = await readChatPayload(request);
+    const { message, shop: bodyShop, storeName: bodyStoreName, sessionId: requestSessionId, customerName, customerEmail, faqId, flowId: requestedFlowId, flowStepId: requestedFlowStepId, flowChoiceId: requestedFlowChoiceId, flowData: submittedFlowData, orderLookupRequest, orderNumber, supportRequest, supportSuccessMessage, requestTypeId, requestDetails, supportContext, supportFollowup } = await readChatPayload(request);
     supportSubmission = supportRequest === true;
     const shop = verifiedShop;
     if (typeof message !== "string" || !message.trim() || message.length > 1000) return proxyJson({ error: "Please enter a message up to 1,000 characters." }, headers, 400);
@@ -479,11 +479,15 @@ export const action = async ({ request }) => {
     normalizedShop = shop.toLowerCase();
     sessionId = typeof requestSessionId === "string" ? requestSessionId : "";
     userMessage = message.trim();
+    let flowId = requestedFlowId;
+    let flowStepId = requestedFlowStepId;
+    let flowChoiceId = requestedFlowChoiceId;
+    let submittedFlowDataForRequest = submittedFlowData;
     const requestedStoreName = typeof bodyStoreName === "string" ? bodyStoreName.replace(/[^\p{L}\p{N}\s&'’.-]/gu, "").replace(/\s+/g, " ").trim().slice(0, 100) : "";
     const storeDisplayName = requestedStoreName || normalizedShop.replace(/\.myshopify\.com$/i, "").replace(/[-_]+/g, " ");
     userCreatedAt = new Date().toISOString();
     identity = { name: typeof customerName === "string" ? customerName : "", email: typeof customerEmail === "string" ? customerEmail : "" };
-    const shouldLoadConversationContext = !flowId && !faqId && !supportRequest && !orderLookupRequest && sessionId && sessionId.length <= 120;
+    const shouldLoadConversationContext = !faqId && !supportRequest && !orderLookupRequest && sessionId && sessionId.length <= 120;
     const conversationContextPromise = shouldLoadConversationContext
       ? prisma.conversation.findUnique({ where: { shop_session: { shop: normalizedShop, session: sessionId } }, select: { messages: true } }).catch((error) => {
         console.warn("Could not load recent shopper context", error?.message);
@@ -501,6 +505,23 @@ export const action = async ({ request }) => {
       if (matchedGuardrail) {
         await saveConversation(normalizedShop, sessionId, userMessage, matchedGuardrail.response, identity, userCreatedAt).catch((error) => console.error("Guardrail conversation save failed", error));
         return Response.json({ answer: matchedGuardrail.response, guardrailId: matchedGuardrail.id }, { headers });
+      }
+    }
+    // A guided flow is only context for its next step. When the shopper changes
+    // topics, let the new request reach its own FAQ, order, or catalog handler.
+    if (flowId && !faqId && !supportRequest && !orderLookupRequest) {
+      const orderIntent = resolveOrderQuestionIntent(userMessage);
+      const explicitReturn = isReturnRequestIntent(userMessage);
+      const productTopic = /\b(?:product|products|item|items|shirt|t-?shirt|tee|pants|sku|catalog|collection|compare|similar|material|fabric|color|colour|size|price|cost|payment methods|payment options|shipping policy|return policy|refund policy|warranty|discount|coupon|invoice|receipt|confirmation email|charged twice|double charge)\b/i.test(userMessage);
+      const flowIsOrder = ["order-updates", "order-cancellation"].includes(flowId);
+      const flowIsReturn = flowId === "returns-support";
+      const isFlowReply = Boolean(flowChoiceId) || /^(?:yes|yeah|yep|no|no thanks|sure|please|go ahead|that one|skip|next|\d{1,6}|[^\s@]+@[^\s@]+\.[^\s@]+)$/i.test(userMessage.trim());
+      const unrelatedIntent = !isFlowReply && Boolean(orderIntent || productTopic || isSupportRequestIntent(userMessage) || (flowIsReturn && !explicitReturn && !/\b(?:damaged|broken|wrong item|missing item|complaint|not satisfied|disappointed|return request|exchange request|refund request)\b/i.test(userMessage)) || (flowIsOrder && isPolicyIntent(userMessage) && !orderIntent));
+      if (unrelatedIntent) {
+        flowId = null;
+        flowStepId = null;
+        flowChoiceId = null;
+        submittedFlowDataForRequest = {};
       }
     }
     const activeFaqs = settings.faqs ? loadedFaqs : [];
@@ -566,6 +587,11 @@ export const action = async ({ request }) => {
           : "Please check your inbox and spam folder for an order confirmation. I can’t confirm payment or order acceptance from this chat. Contact the store team before placing the order again so they can check whether it went through.";
         if (settings.orderLookup) response.openOrderTracking = true;
         else if (canContactTeam) response.openSupport = contactDetails;
+      } else if (orderQuestionIntent === "duplicate_charge") {
+        answer = canContactTeam
+          ? "I’m sorry about the duplicate charge. Please don’t place the order again yet. I can ask the store team to review the payment records; include the charge dates and amounts, but never send full card details. I’ll open a request form, and nothing is sent until you submit it."
+          : "I’m sorry about the duplicate charge. Please don’t place the order again yet. Contact the store team with the charge dates and amounts; never send full card details. They can check the payment records.";
+        if (canContactTeam) response.openSupport = { requestTypeId: "order-delivery", details: userMessage };
       } else if (orderQuestionIntent === "invoice") {
         answer = canContactTeam
           ? "I can’t create or retrieve an invoice in this chat. I can ask the store team whether they can provide one for your order. I’ll open a request form; nothing is sent until you review and submit it."
@@ -710,7 +736,7 @@ export const action = async ({ request }) => {
     const productSearchIntent = settings.recommendations && !policyIntent && !productInformationIntent && (productPurchaseIntent || explicitProductIntent || bestProductIntent || Boolean(skuCandidate) || hasProductFilters || productCategoryIntent || flowId === "product-discovery" || hasProductSearchLanguage(userMessage));
     productSearchRequested = productSearchIntent;
     purchaseRequested = purchaseRequested || productPurchaseIntent;
-    let flowData = submittedFlowData && typeof submittedFlowData === "object" && !Array.isArray(submittedFlowData) ? { ...submittedFlowData } : {};
+    let flowData = submittedFlowDataForRequest && typeof submittedFlowDataForRequest === "object" && !Array.isArray(submittedFlowDataForRequest) ? { ...submittedFlowDataForRequest } : {};
     delete flowData.orderVerified;
     delete flowData.verifiedOrder;
     if (["order-updates", "order-cancellation"].includes(flowId) && flowData.orderNumber && flowData.orderEmail) {
@@ -734,7 +760,7 @@ export const action = async ({ request }) => {
       }
     }
     const useCatalogSearch = productSearchIntent && !flowChoiceId && (!flowId || flowId === "product-discovery");
-    const resolvedFlow = useCatalogSearch || orderLookupRequest || supportRequest || (faqId && !flowId) || (hasInlineOrderDetails && !flowId) || (!flowId && (productPurchaseIntent || Boolean(skuCandidate)))
+    const resolvedFlow = !flowId || useCatalogSearch || orderLookupRequest || supportRequest || (faqId && !flowId) || (hasInlineOrderDetails && !flowId)
       ? null
       : resolveConversationFlow(settings.flows, { message: userMessage, flowId, stepId: flowStepId, choiceId: flowChoiceId, flowData });
     let flowGuidance = "";
@@ -984,7 +1010,7 @@ export const action = async ({ request }) => {
       const answerFallbackRows = filterKnowledgeForIntent(fallbackRows, policyIntent);
       if (providerKey && answerFallbackRows.length && !productSearchIntent && !orderHelpIntent) {
         try {
-          const fallbackFlow = fallbackRows.filter((row) => row.source_type === "flow").map((row) => normalizeConversationFlows(settings.flows).find((flow) => flow.enabled && flow.id === (row.metadata?.flow_id || row.source_id))).find(Boolean);
+          const fallbackFlow = !policyIntent && fallbackRows.filter((row) => row.source_type === "flow").map((row) => normalizeConversationFlows(settings.flows).find((flow) => flow.enabled && flow.id === (row.metadata?.flow_id || row.source_id))).find(Boolean);
           if (fallbackFlow) {
             const firstStep = fallbackFlow.steps[0];
             const flow = firstStep ? getConversationFlowStep(settings.flows, fallbackFlow.id, firstStep.id, flowData) : null;
@@ -1035,7 +1061,7 @@ export const action = async ({ request }) => {
     const enabledFlows = normalizeConversationFlows(settings.flows).filter((flow) => flow.enabled);
     const flowKnowledgeMatches = matches.filter((row) => row.source_type === "flow" && Number(row.similarity) >= 0.28 && enabledFlows.some((flow) => flow.id === (row.metadata?.flow_id || row.source_id)));
     let semanticFlow = null;
-    if (!flowId && !resolvedFlow && providerKey && flowKnowledgeMatches.length) {
+    if (!flowId && !resolvedFlow && !policyIntent && !productSearchIntent && !productInformationIntent && !orderQuestionIntent && providerKey && flowKnowledgeMatches.length) {
       try {
         const candidateFlows = flowKnowledgeMatches.map((row) => ({
           id: row.metadata?.flow_id || row.source_id,
