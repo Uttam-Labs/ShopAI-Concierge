@@ -347,7 +347,7 @@
       chatHistory.push({ role: "user", content: customerText, createdAt: Date.now() });
       persistChat();
       const pending = addMessage(messages, "", "assistant pending");
-      pending.bubble.innerHTML = '<span class="sac-typing" aria-hidden="true"><i></i><i></i><i></i></span><span class="sac-sr-only">Checking your order</span>';
+      pending.bubble.innerHTML = '<span class="sac-typing-spinner" aria-hidden="true"></span><span class="sac-sr-only">Checking your order</span>';
       try {
         const response = await postProxyData(apiEndpoint, { message: customerText, shop, sessionId, customerName: identity?.name || "", customerEmail: emailValue, orderNumber: orderNumberValue, orderLookupRequest: true });
         const data = await readApiJson(response, "order lookup");
@@ -436,7 +436,7 @@
       persistChat();
       const pending = addMessage(messages, "", "assistant pending");
       pending.bubble.setAttribute("aria-label", "ShopAI is replying");
-      pending.bubble.innerHTML = '<span class="sac-typing" aria-hidden="true"><i></i><i></i><i></i></span><span class="sac-typing-status" aria-hidden="true">Typing…</span><span class="sac-sr-only">ShopAI is replying</span>';
+      pending.bubble.innerHTML = '<span class="sac-typing-spinner" aria-hidden="true"></span><span class="sac-typing-status" aria-hidden="true">Typing…</span><span class="sac-sr-only">ShopAI is replying</span>';
       const pendingStatus = pending.bubble.querySelector(".sac-typing-status");
       const questionText = message.toLowerCase();
       const progressMessages = /\b(?:order|tracking|shipment|delivery|parcel)\b/.test(questionText)
@@ -561,7 +561,7 @@
       persistChat();
       const pending = addMessage(messages, "", "assistant pending");
       pending.bubble.setAttribute("aria-label", "Creating your support ticket");
-      pending.bubble.innerHTML = '<span class="sac-typing" aria-hidden="true"><i></i><i></i><i></i></span><span class="sac-sr-only">Creating your support ticket</span>';
+      pending.bubble.innerHTML = '<span class="sac-typing-spinner" aria-hidden="true"></span><span class="sac-sr-only">Creating your support ticket</span>';
       try {
         const supportContext = chatHistory.slice(0, -1).slice(-12).map(({ role, content }) => ({ role, content }));
         const response = await postProxyData(apiEndpoint, { message: ticketMessage, shop, sessionId, customerName: name, customerEmail: email, supportRequest: true, requestTypeId, requestDetails, supportContext, ...(supportFollowup ? { supportFollowup } : {}), supportSuccessMessage: root.dataset.supportSuccessMessage || "" });
