@@ -59,13 +59,12 @@
     const form = panel.querySelector(".sac-form");
     const input = panel.querySelector(".sac-input");
     const productExamples = [
-      "Try: black shoes under $50",
-      "Search by product name, SKU, or handle",
-      "Show me new arrivals or best sellers",
-      "Find affordable products on sale",
-      "Show Titan products in black",
-      "Compare two products or find similar items",
-      "Try: cheap shoes / black tshrt",
+      "Ask about shipping, returns, or store policies",
+      "Find a product by name, SKU, color, or budget",
+      "Track an order or ask about delivery",
+      "Ask us anything about the store",
+      "Compare products or find similar items",
+      "Ask about payments, returns, or support",
     ];
     let productExampleIndex = 0;
     input.placeholder = productExamples[0];
@@ -74,7 +73,7 @@
       productExampleIndex = (productExampleIndex + 1) % productExamples.length;
       input.placeholder = productExamples[productExampleIndex];
     }, 4200);
-    input.addEventListener("focus", () => { window.clearInterval(productExampleTimer); input.placeholder = "Enter a product name, SKU, or what you’re looking for…"; });
+    input.addEventListener("focus", () => { window.clearInterval(productExampleTimer); input.placeholder = "Ask us anything…"; });
     const faqSection = panel.querySelector(".sac-faqs");
     const faqList = panel.querySelector(".sac-faq-list");
     const enableOrderLookup = root.dataset.enableOrderLookup !== "false";
