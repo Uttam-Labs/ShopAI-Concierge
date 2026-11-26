@@ -345,9 +345,14 @@
         persistChat();
         if (recommendedProducts.length) renderProducts(messages, recommendedProducts);
       } catch (error) {
-        pending.bubble.classList.remove("pending");
-        pending.bubble.classList.add("error");
-        pending.bubble.textContent = error.message || "Something went wrong. Please try again.";
+        pending.bubble.classList.remove("pending", "error");
+        const isIdentityQuestion = /\b(who are you|what are you|what can you do|how can you help)\b/i.test(message);
+        const isProductQuestion = /\b(product|products|item|buy|shop|recommend|price|size|available|in stock|best)\b/i.test(message);
+        pending.bubble.textContent = isIdentityQuestion
+          ? "I’m ShopAI Concierge, your store’s virtual shopping assistant. I can help find products, answer store questions, check an order, or help you contact the store team. I can’t reach the store service right now, so please try again shortly."
+          : isProductQuestion
+            ? "I’d be happy to help find the right product. I can’t access the store’s live catalog right now, so I don’t want to guess. Please try again shortly, or use the order and support options above."
+            : "I’m sorry, I can’t reach the store service right now. You can use the order or support options above, or try your question again in a moment.";
         chatHistory.push({ role: "assistant", content: pending.bubble.textContent, createdAt: Date.now() });
         persistChat();
       } finally {
@@ -358,7 +363,9 @@
     }
 
     const closeSupport = () => { supportBackdrop.hidden = true; };
+    let supportFollowup = null;
     const openSupportRequest = (prefill = {}) => {
+      supportFollowup = prefill.followup && typeof prefill.followup === "object" ? prefill.followup : null;
       const supportValues = supportForm.elements;
       supportValues.customerName.value = identity?.name === "Anonymous shopper" ? "" : identity?.name || "";
       supportValues.customerEmail.value = identity?.email || "";
@@ -414,7 +421,7 @@
       pending.bubble.innerHTML = '<span class="sac-typing" aria-hidden="true"><i></i><i></i><i></i></span><span class="sac-sr-only">Creating your support ticket</span>';
       try {
         const supportContext = chatHistory.slice(0, -1).slice(-12).map(({ role, content }) => ({ role, content }));
-        const response = await postProxyData(apiEndpoint, { message: ticketMessage, shop, sessionId, customerName: name, customerEmail: email, supportRequest: true, requestTypeId, requestDetails, supportContext, supportSuccessMessage: root.dataset.supportSuccessMessage || "" });
+        const response = await postProxyData(apiEndpoint, { message: ticketMessage, shop, sessionId, customerName: name, customerEmail: email, supportRequest: true, requestTypeId, requestDetails, supportContext, ...(supportFollowup ? { supportFollowup } : {}), supportSuccessMessage: root.dataset.supportSuccessMessage || "" });
         const data = await readApiJson(response, "support ticket");
         if (!response.ok) throw new Error(data.error || "We couldn’t create your ticket. Please try again.");
         identity = { name, email };
@@ -424,8 +431,11 @@
         pending.row.remove();
         const reply = addMessage(messages, confirmedReply, "assistant");
         addTicketReference(reply.row, ticketReference);
-        chatHistory.push({ role: "assistant", content: confirmedReply, createdAt: Date.now(), ticketReference });
+        activeFlow = data.flow || null;
+        if (activeFlow) renderFlowChoices(reply.row, activeFlow, sendMessage);
+        chatHistory.push({ role: "assistant", content: confirmedReply, createdAt: Date.now(), ticketReference, ...(activeFlow ? { flow: activeFlow } : {}) });
         persistChat();
+        supportFollowup = null;
       } catch (error) {
         const errorMessage = error.message || "We couldn’t create your ticket. Please try again.";
         pending.row.remove();
