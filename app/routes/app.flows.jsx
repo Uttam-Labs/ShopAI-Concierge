@@ -1,6 +1,6 @@
 /* eslint-disable react/prop-types */
 /* eslint-env node */
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useFetcher } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
@@ -96,6 +96,8 @@ export default function Flows({ loaderData }) {
   const [flows, setFlows] = useState(loaderData.flows);
   const [selectedFlowId, setSelectedFlowId] = useState(loaderData.flows[0]?.id || "welcome");
   const [selectedNode, setSelectedNode] = useState({ kind: "start" });
+  const [connections, setConnections] = useState({});
+  const canvasRef = useRef(null);
   useEffect(() => { if (fetcher.data?.saved) setFlows(fetcher.data.flows); }, [fetcher.data]);
   const selectedFlow = flows.find((flow) => flow.id === selectedFlowId) || flows[0];
   const updateFlow = (updater) => setFlows((current) => current.map((flow) => flow.id === selectedFlow.id ? updater(flow) : flow));
@@ -124,6 +126,36 @@ export default function Flows({ loaderData }) {
   };
   const triggerText = selectedFlow.triggerTerms.join(", ");
   const saveButton = <button className="admin-cta" type="submit" disabled={isSaving}><AdminIcon name="save"/>{isSaving ? "Saving and indexing…" : "Save changes"}</button>;
+  useLayoutEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return undefined;
+    const measure = () => {
+      const next = {};
+      canvas.querySelectorAll(".flow-canvas-step-group").forEach((group) => {
+        const groupRect = group.getBoundingClientRect();
+        const source = group.querySelector(".flow-canvas-step");
+        if (!source) return;
+        const sourceRect = source.getBoundingClientRect();
+        const startX = sourceRect.left + sourceRect.width / 2 - groupRect.left;
+        const startY = sourceRect.bottom - groupRect.top;
+        const paths = [...group.querySelectorAll(".flow-canvas-branch-node")].map((branch) => {
+          const target = branch.getBoundingClientRect();
+          const endX = target.left + target.width / 2 - groupRect.left;
+          const endY = target.top - groupRect.top + 1;
+          const bend = Math.max(22, Math.min(52, (endY - startY) * 0.52));
+          return `M ${startX} ${startY} C ${startX} ${startY + bend}, ${endX} ${endY - bend}, ${endX} ${endY}`;
+        });
+        next[group.dataset.stepId] = { width: group.clientWidth, height: group.clientHeight, paths };
+      });
+      setConnections((current) => JSON.stringify(current) === JSON.stringify(next) ? current : next);
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(canvas);
+    canvas.querySelectorAll(".flow-canvas-step-group, .flow-canvas-step, .flow-canvas-branch-node").forEach((node) => observer.observe(node));
+    window.addEventListener("resize", measure);
+    const frame = requestAnimationFrame(measure);
+    return () => { cancelAnimationFrame(frame); observer.disconnect(); window.removeEventListener("resize", measure); };
+  }, [selectedFlowId, selectedFlow, selectedNode]);
 
   return <s-page heading="Flows" inlineSize="large">
     <AdminPageHeader title="Conversation flows" description="Map customer messages to helpful replies and actions. Click any node to edit it in the side panel." metrics={[{ label: "Built-in flows", value: flows.length }, { label: "Enabled", value: flows.filter((flow) => flow.enabled).length }, { label: "Vector context", value: "Synced on save" }]}/>
@@ -136,20 +168,24 @@ export default function Flows({ loaderData }) {
       <section className={`flow-studio-main ${selectedNode ? "has-inspector" : ""}`}>
         <header className="flow-studio-toolbar"><div><span className="rag-eyebrow">VISUAL FLOW BUILDER</span><h2>{selectedFlow.name}</h2><p>Choose a node to edit its message, matching phrases, and next action.</p></div><label className="flow-toggle" aria-label="Enable this flow"><input type="checkbox" checked={selectedFlow.enabled} onChange={(event) => updateFlow((flow) => ({ ...flow, enabled: event.target.checked }))}/><span className="flow-toggle-track"/><span><strong>{selectedFlow.enabled ? "Enabled" : "Disabled"}</strong><small>{selectedFlow.enabled ? "Available in storefront chat" : "Hidden from shoppers"}</small></span></label></header>
         <div className="flow-studio-body">
-          <div className="flow-canvas-wrap">
+          <div className="flow-canvas-wrap" ref={canvasRef}>
             <div className="flow-canvas-help"><span>START</span><p>Customer messages matching one of these phrases enter this flow.</p></div>
             <button type="button" className={`flow-canvas-node flow-canvas-start ${selectedNode.kind === "start" ? "active" : ""}`} onClick={() => setSelectedNode({ kind: "start" })}><span className="flow-node-icon"><AdminIcon name="bolt"/></span><span><small>FLOW ENTRY</small><strong>{selectedFlow.name}</strong><em>{selectedFlow.triggerTerms.slice(0, 5).join(", ")}{selectedFlow.triggerTerms.length > 5 ? ` +${selectedFlow.triggerTerms.length - 5} more` : ""}</em></span><span className="flow-node-edit">Edit</span></button>
             <div className="flow-canvas-flowline" aria-hidden="true"/>
             <div className="flow-canvas-steps">{selectedFlow.steps.map((step, stepIndex) => {
               const branches = [...(step.choices || []).map((item) => ({ ...item, kind: "choice" })), ...(step.routes || []).map((item) => ({ ...item, kind: "route" }))];
               const isStepActive = selectedNode.kind === "step" && selectedNode.stepId === step.id;
-              return <section className="flow-canvas-step-group" key={step.id}>
+              return <section className="flow-canvas-step-group" data-step-id={step.id} key={step.id}>
+                {connections[step.id]?.paths?.length > 0 && <svg className="flow-canvas-connectors" viewBox={`0 0 ${connections[step.id].width} ${connections[step.id].height}`} preserveAspectRatio="none" aria-hidden="true"><defs><marker id={`flow-arrow-${step.id}`} viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 8 4 L 0 8"/></marker></defs>{connections[step.id].paths.map((path, index) => <path key={`${step.id}-connector-${index}`} d={path} markerEnd={`url(#flow-arrow-${step.id})`}/>)}</svg>}
                 <button type="button" className={`flow-canvas-node flow-canvas-step ${isStepActive ? "active" : ""}`} onClick={() => setSelectedNode({ kind: "step", stepId: step.id })}><span className="flow-node-index">{String(stepIndex + 1).padStart(2, "0")}</span><span><small>{step.inputAction ? "ASSISTANT STEP" : "CONVERSATION STEP"}</small><strong>{step.title}</strong><em>{step.prompt}</em></span><span className="flow-node-edit">Edit</span></button>
                 {branches.length > 0 && <><div className="flow-canvas-branch-stem" aria-hidden="true"/><div className="flow-canvas-branches">{branches.map((branch) => {
                   const active = selectedNode.kind === branch.kind && selectedNode.stepId === step.id && selectedNode.itemId === branch.id;
                   const phraseList = branch.kind === "choice" ? [branch.label] : branch.keywords;
-                  const event = branch.action === "openSupport" ? "Open support request" : branch.action === "openOrderTracking" ? "Open order lookup" : branch.action === "continueAI" ? "Search store knowledge" : branch.nextFlowId ? `Continue to ${flows.find((flow) => flow.id === branch.nextFlowId)?.name || "another flow"}` : branch.nextStepId ? `Continue to ${selectedFlow.steps.find((item) => item.id === branch.nextStepId)?.title || "next step"}` : "Continue conversation";
-                  return <button key={`${branch.kind}-${branch.id}`} type="button" className={`flow-canvas-branch-node ${active ? "active" : ""}`} onClick={() => setSelectedNode({ kind: branch.kind, stepId: step.id, itemId: branch.id })}><span className="flow-branch-type">{branch.kind === "choice" ? "CHOICE" : "WHEN CUSTOMER SAYS"}</span><strong>{phraseList.slice(0, 3).join(", ") || "Add matching phrase"}{phraseList.length > 3 ? ` +${phraseList.length - 3}` : ""}</strong><small>{branch.reply || (branch.kind === "choice" ? "Show next guided step" : "Use the selected action")}</small><span className="flow-branch-event">→ {event}</span></button>;
+                  const targetFlow = branch.nextFlowId ? flows.find((flow) => flow.id === branch.nextFlowId) : selectedFlow;
+                  const targetStep = branch.nextStepId ? targetFlow?.steps.find((item) => item.id === branch.nextStepId) : null;
+                  const event = branch.action === "openSupport" ? "Open the support request form" : branch.action === "openOrderTracking" ? "Open secure order lookup" : branch.action === "continueAI" ? "Search store info and catalog" : targetStep ? `Show next question: ${targetStep.title}` : "Continue the conversation";
+                  const assistantText = branch.reply || targetStep?.prompt || "The assistant continues with the next available step.";
+                  return <button key={`${branch.kind}-${branch.id}`} type="button" className={`flow-canvas-branch-node ${active ? "active" : ""}`} onClick={() => setSelectedNode({ kind: branch.kind, stepId: step.id, itemId: branch.id })}><span className="flow-branch-type">{branch.kind === "choice" ? "SHOPPER SELECTS" : "SHOPPER SAYS"}</span><strong>{phraseList.slice(0, 3).join(", ") || "Add matching phrase"}{phraseList.length > 3 ? ` +${phraseList.length - 3}` : ""}</strong><small><b>Assistant says</b> {assistantText}</small><span className="flow-branch-event">Next: {event}</span></button>;
                 })}</div></>}
                 {stepIndex < selectedFlow.steps.length - 1 && <div className="flow-canvas-nextline" aria-hidden="true"/>}
               </section>;
@@ -157,12 +193,12 @@ export default function Flows({ loaderData }) {
           </div>
 
           {selectedNode && <aside className="flow-inspector" aria-label="Selected flow node settings">
-            <header className="flow-inspector-header"><div><span className="rag-eyebrow">EDIT SELECTED NODE</span><h3>{selectedNode.kind === "start" ? "Flow entry" : selectedNode.kind === "step" ? selectedStep?.title : selectedNode.kind === "choice" ? "Customer choice" : "Customer message rule"}</h3><p>{selectedNode.kind === "start" ? "Set the flow name and matching customer phrases." : selectedNode.kind === "step" ? "Edit what the assistant says at this step." : "Set the matching customer phrase, reply, and next action."}</p></div><button type="button" className="flow-inspector-close" aria-label="Close editor" onClick={() => setSelectedNode(null)}>×</button></header>
+            <header className="flow-inspector-header"><div><span className="rag-eyebrow">EDIT SELECTED NODE</span><h3>{selectedNode.kind === "start" ? "Flow entry" : selectedNode.kind === "step" ? selectedStep?.title : selectedNode.kind === "choice" ? "Shopper button" : "Typed reply rule"}</h3><p>{selectedNode.kind === "start" ? "Set the flow name and the messages that start it." : selectedNode.kind === "step" ? "Edit the message the shopper sees at this step." : selectedNode.kind === "choice" ? "Edit the button, optional reply, and what happens after the click." : "Edit matching shopper phrases, the reply, and what happens next."}</p></div><button type="button" className="flow-inspector-close" aria-label="Close editor" onClick={() => setSelectedNode(null)}>×</button></header>
             <fetcher.Form method="post" className="flow-inspector-form"><input type="hidden" name="intent" value="saveFlows"/><input type="hidden" name="flows" value={JSON.stringify(flows)}/>
               {selectedNode.kind === "start" && <><label className="admin-field">Flow name<input className="admin-text-input" maxLength={80} value={selectedFlow.name} onChange={(event) => updateFlow((flow) => ({ ...flow, name: event.target.value }))}/></label><label className="admin-field">Purpose<input className="admin-text-input" maxLength={220} value={selectedFlow.description} onChange={(event) => updateFlow((flow) => ({ ...flow, description: event.target.value }))}/></label><label className="admin-field">Customer messages that start this flow<textarea className="admin-text-input admin-textarea" rows={4} value={triggerText} onChange={(event) => updateFlow((flow) => ({ ...flow, triggerTerms: event.target.value.split(",").map((value) => value.trim()).filter(Boolean).slice(0, 30) }))}/><small>Separate phrases with commas. Matching ignores case and punctuation.</small></label><div className="flow-inspector-tip">This flow’s prompts, phrases, replies, and actions are saved to the vector library when you save.</div></>}
-              {selectedNode.kind === "step" && selectedStep && <><label className="admin-field">Step name<input className="admin-text-input" maxLength={80} value={selectedStep.title} onChange={(event) => updateStep(selectedStep.id, (step) => ({ ...step, title: event.target.value }))}/></label><label className="admin-field">Assistant message<textarea className="admin-text-input admin-textarea" rows={5} maxLength={1000} value={selectedStep.prompt} onChange={(event) => updateStep(selectedStep.id, (step) => ({ ...step, prompt: event.target.value }))}/></label><div className="flow-inspector-summary"><strong>Branches from this step</strong><span>{(selectedStep.choices || []).length} choices · {(selectedStep.routes || []).length} typed message rules</span><small>Click a branch card in the canvas to edit its exact phrase, reply, or action.</small></div>{selectedStep.inputReply && <label className="admin-field">Reply after the customer responds<textarea className="admin-text-input admin-textarea" rows={3} value={selectedStep.inputReply} onChange={(event) => updateStep(selectedStep.id, (step) => ({ ...step, inputReply: event.target.value }))}/></label>}</>}
-              {selectedNode.kind === "choice" && selectedChoice && <><label className="admin-field">Button text shown to customer<input className="admin-text-input" maxLength={100} value={selectedChoice.label} onChange={(event) => setChoice(selectedStep.id, selectedChoice.id, (choice) => ({ ...choice, label: event.target.value }))}/></label><label className="admin-field">Assistant reply<textarea className="admin-text-input admin-textarea" rows={4} maxLength={500} value={selectedChoice.reply || ""} onChange={(event) => setChoice(selectedStep.id, selectedChoice.id, (choice) => ({ ...choice, reply: event.target.value }))}/></label><BranchActionEditor branch={selectedChoice} flow={selectedFlow} flows={flows} action={branchAction(selectedChoice)} onActionChange={(action) => setChoice(selectedStep.id, selectedChoice.id, (choice) => ({ ...choice, ...branchActionUpdate(action) }))} onFlowChange={(flowId) => updateBranchTargetFlow("choice", selectedStep.id, selectedChoice.id, flowId)} onStepChange={(stepId) => updateBranchTargetStep("choice", selectedStep.id, selectedChoice.id, stepId)}/></>}
-              {selectedNode.kind === "route" && selectedRoute && <><label className="admin-field">Customer phrases<textarea className="admin-text-input admin-textarea" rows={3} value={(selectedRoute.keywords || []).join(", ")} onChange={(event) => setRoute(selectedStep.id, selectedRoute.id, (route) => ({ ...route, keywords: event.target.value.split(",").map((value) => value.trim()).filter(Boolean).slice(0, 30) }))}/><small>Use comma-separated ways a customer might say the same thing.</small></label><label className="admin-field">Assistant reply<textarea className="admin-text-input admin-textarea" rows={5} maxLength={500} value={selectedRoute.reply || ""} onChange={(event) => setRoute(selectedStep.id, selectedRoute.id, (route) => ({ ...route, reply: event.target.value }))}/></label><BranchActionEditor branch={selectedRoute} flow={selectedFlow} flows={flows} action={branchAction(selectedRoute)} onActionChange={(action) => setRoute(selectedStep.id, selectedRoute.id, (route) => ({ ...route, ...branchActionUpdate(action) }))} onFlowChange={(flowId) => updateBranchTargetFlow("route", selectedStep.id, selectedRoute.id, flowId)} onStepChange={(stepId) => updateBranchTargetStep("route", selectedStep.id, selectedRoute.id, stepId)}/></>}
+              {selectedNode.kind === "step" && selectedStep && <><label className="admin-field">Internal step name<input className="admin-text-input" maxLength={80} value={selectedStep.title} onChange={(event) => updateStep(selectedStep.id, (step) => ({ ...step, title: event.target.value }))}/><small>For your flow map; shoppers see the assistant message below.</small></label><label className="admin-field">Message shown to the shopper<textarea className="admin-text-input admin-textarea" rows={5} maxLength={1000} value={selectedStep.prompt} onChange={(event) => updateStep(selectedStep.id, (step) => ({ ...step, prompt: event.target.value }))}/></label><div className="flow-inspector-summary"><strong>What can happen next?</strong><span>{(selectedStep.choices || []).length} buttons shoppers can choose · {(selectedStep.routes || []).length} typed reply rules</span><small>Select any branch card to edit its matching words, assistant message, or next action.</small></div>{selectedStep.inputReply && <label className="admin-field">Reply after shopper types a response<textarea className="admin-text-input admin-textarea" rows={3} value={selectedStep.inputReply} onChange={(event) => updateStep(selectedStep.id, (step) => ({ ...step, inputReply: event.target.value }))}/></label>}</>}
+              {selectedNode.kind === "choice" && selectedChoice && <><label className="admin-field">Button text shown to the shopper<input className="admin-text-input" maxLength={100} value={selectedChoice.label} onChange={(event) => setChoice(selectedStep.id, selectedChoice.id, (choice) => ({ ...choice, label: event.target.value }))}/></label><label className="admin-field">Optional reply before the next step<textarea className="admin-text-input admin-textarea" placeholder="Leave blank to show the next step’s message directly." rows={3} maxLength={500} value={selectedChoice.reply || ""} onChange={(event) => setChoice(selectedStep.id, selectedChoice.id, (choice) => ({ ...choice, reply: event.target.value }))}/><small>{selectedChoice.reply ? "This reply appears before the next step." : "No extra reply is set. The next step’s message appears after the shopper clicks."}</small></label><BranchActionEditor branch={selectedChoice} flow={selectedFlow} flows={flows} action={branchAction(selectedChoice)} onActionChange={(action) => setChoice(selectedStep.id, selectedChoice.id, (choice) => ({ ...choice, ...branchActionUpdate(action) }))} onFlowChange={(flowId) => updateBranchTargetFlow("choice", selectedStep.id, selectedChoice.id, flowId)} onStepChange={(stepId) => updateBranchTargetStep("choice", selectedStep.id, selectedChoice.id, stepId)}/><BranchPreview branch={selectedChoice} flow={selectedFlow} flows={flows}/></>}
+              {selectedNode.kind === "route" && selectedRoute && <><label className="admin-field">Customer phrases that match<textarea className="admin-text-input admin-textarea" rows={3} value={(selectedRoute.keywords || []).join(", ")} onChange={(event) => setRoute(selectedStep.id, selectedRoute.id, (route) => ({ ...route, keywords: event.target.value.split(",").map((value) => value.trim()).filter(Boolean).slice(0, 30) }))}/><small>Enter common ways a shopper might say this, separated by commas.</small></label><label className="admin-field">Assistant reply<textarea className="admin-text-input admin-textarea" placeholder="Optional. Leave blank to continue with the next step or store search." rows={4} maxLength={500} value={selectedRoute.reply || ""} onChange={(event) => setRoute(selectedStep.id, selectedRoute.id, (route) => ({ ...route, reply: event.target.value }))}/></label><BranchActionEditor branch={selectedRoute} flow={selectedFlow} flows={flows} action={branchAction(selectedRoute)} onActionChange={(action) => setRoute(selectedStep.id, selectedRoute.id, (route) => ({ ...route, ...branchActionUpdate(action) }))} onFlowChange={(flowId) => updateBranchTargetFlow("route", selectedStep.id, selectedRoute.id, flowId)} onStepChange={(stepId) => updateBranchTargetStep("route", selectedStep.id, selectedRoute.id, stepId)}/><BranchPreview branch={selectedRoute} flow={selectedFlow} flows={flows}/></>}
               <footer className="flow-inspector-footer"><span><AdminIcon name="info"/> Changes apply to new shopper messages.</span>{saveButton}</footer>
             </fetcher.Form>
           </aside>}
@@ -176,10 +212,17 @@ function BranchActionEditor({ branch, flow, flows, action, onActionChange, onFlo
   const targetFlow = flows.find((item) => item.id === branch.nextFlowId) || flow;
   const steps = targetFlow.steps;
   return <>
-    <label className="admin-field">Next action<select className="admin-text-input" value={action} onChange={(event) => onActionChange(event.target.value)}><option value="continueAI">Search store knowledge and catalog</option><option value="openOrderTracking">Open secure order lookup</option><option value="openSupport">Open support request</option><option value="nextStep">Continue to a step in this flow</option><option value="nextFlow">Continue to another flow</option></select></label>
-    {action === "nextFlow" && <label className="admin-field">Next flow<select className="admin-text-input" value={targetFlow.id} onChange={(event) => onFlowChange(event.target.value)}>{flows.filter((item) => item.id !== flow.id).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}
-    {(action === "nextStep" || action === "nextFlow") && <label className="admin-field">Next step<select className="admin-text-input" value={branch.nextStepId || steps[0]?.id || ""} onChange={(event) => onStepChange(event.target.value)}>{steps.map((step) => <option key={step.id} value={step.id}>{step.title}</option>)}</select></label>}
+    <label className="admin-field">What should happen after the click or reply?<select className="admin-text-input" value={action} onChange={(event) => onActionChange(event.target.value)}><option value="continueAI">Search store information and products</option><option value="openOrderTracking">Open secure order lookup</option><option value="openSupport">Open support request form</option><option value="nextStep">Ask another question in this flow</option><option value="nextFlow">Switch to a different flow</option></select></label>
+    {action === "nextFlow" && <label className="admin-field">Which flow should start next?<select className="admin-text-input" value={targetFlow.id} onChange={(event) => onFlowChange(event.target.value)}>{flows.filter((item) => item.id !== flow.id).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><small>The shopper will see that flow’s first question.</small></label>}
+    {(action === "nextStep" || action === "nextFlow") && <label className="admin-field">Next question<select className="admin-text-input" value={branch.nextStepId || steps[0]?.id || ""} onChange={(event) => onStepChange(event.target.value)}>{steps.map((step) => <option key={step.id} value={step.id}>{step.title}</option>)}</select></label>}
   </>;
+}
+
+function BranchPreview({ branch, flow, flows }) {
+  const targetFlow = flows.find((item) => item.id === branch.nextFlowId) || flow;
+  const targetStep = targetFlow.steps.find((step) => step.id === branch.nextStepId);
+  if (!targetStep || branch.action === "continueAI" || branch.action === "openOrderTracking" || branch.action === "openSupport") return null;
+  return <div className="flow-branch-preview"><strong>Next message shown to the shopper</strong><p>{targetStep.prompt}</p></div>;
 }
 
 export const headers = (args) => boundary.headers(args);
