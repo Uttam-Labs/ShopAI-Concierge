@@ -804,3 +804,24 @@ button:disabled, s-button[disabled] { cursor: not-allowed; }
 .request-type-modal .admin-modal-actions { margin-top: 2px; }
 .faq-page-list-heading .admin-secondary:disabled { opacity: .45; cursor: not-allowed; }
 @media (max-width: 640px) { .faq-list { gap: 11px; padding: 10px; } .faq-list-item { gap: 15px; padding: 16px; } .faq-list-actions { max-width: none; justify-content: flex-start; } .faq-visibility-note { margin-top: -18px; padding: 14px; } }
+/* Flow editor: keep the map unobstructed until a node is selected; edit in a full-height right drawer. */
+.flow-studio-body, .flow-studio-body:has(.flow-inspector) { display: block; }
+.flow-canvas-empty { display: grid; min-height: 600px; align-content: center; justify-items: center; gap: 10px; padding: 32px; color: #3b342e; text-align: center; background: radial-gradient(#e4ded8 1px, transparent 1px) 0 0 / 19px 19px, #fbfaf8; }
+.flow-canvas-empty .flow-studio-flow-icon { width: 48px; height: 48px; }
+.flow-canvas-empty strong { font-size: 15px; }
+.flow-canvas-empty p { max-width: 360px; margin: 0; color: #7b7168; font-size: 11px; line-height: 1.6; }
+.flow-inspector-backdrop { position: fixed; z-index: 10040; inset: 0; width: 100%; height: 100%; border: 0; background: #17141155; cursor: default; animation: admin-fade .18s ease both; }
+.flow-inspector { position: fixed; z-index: 10041; top: 0; right: 0; bottom: 0; display: flex; width: min(440px, 100vw); min-width: 0; flex-direction: column; border: 0; border-left: 1px solid #e6e0d9; border-radius: 16px 0 0 16px; background: #fff; box-shadow: -16px 0 50px #17141124; animation: flow-drawer-in .24s cubic-bezier(.2,.8,.2,1) both; }
+.flow-inspector-header { flex: 0 0 auto; padding: 22px 20px 16px; }
+.flow-inspector-header h3 { font-size: 17px; }
+.flow-inspector-header p { font-size: 11px; }
+.flow-inspector-close { width: 34px; height: 34px; flex-basis: 34px; font-size: 22px; }
+.flow-inspector-form { min-height: 0; max-height: none; flex: 1; overflow-y: auto; padding: 18px 20px 22px; }
+.flow-inspector-form .admin-field { font-size: 12px; }
+.flow-inspector-form .admin-text-input { font-size: 12px; }
+.flow-inspector-form .admin-field small { font-size: 10px; }
+.flow-inspector-footer > span { font-size: 10px; }
+.flow-canvas-connectors > path { stroke: #aeb8c4; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.flow-canvas-connectors marker path { fill: #aeb8c4; }
+@keyframes flow-drawer-in { from { transform: translateX(24px); opacity: .75; } to { transform: translateX(0); opacity: 1; } }
+@media (max-width: 600px) { .flow-inspector { width: min(100vw, 440px); border-radius: 0; } .flow-inspector-header { padding: 18px 16px 14px; } .flow-inspector-form { padding: 15px 16px 20px; } .flow-canvas-empty { min-height: 520px; } }

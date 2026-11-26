@@ -41,6 +41,10 @@ export function resolveProviderKey(settings) {
 }
 
 export function resolveEmbeddingKey(settings) {
+  // Allow retrieval to keep working when the chat provider's quota is exhausted.
+  // Configure a dedicated key for embeddings when the chat key and embedding key
+  // should have independent quota and billing.
+  if (process.env.GEMINI_EMBEDDING_API_KEY) return process.env.GEMINI_EMBEDDING_API_KEY;
   if (settings?.aiProvider === "gemini") return resolveProviderKey(settings);
   return process.env.GEMINI_API_KEY || "";
 }
