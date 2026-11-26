@@ -203,6 +203,8 @@ async function discoverShopifyProducts(shop, question, knowledgeRows = []) {
   const filterOnlyQuery = !normalizeProductLookup(phrase) || /^(?:show|find|search|recommend|browse|me|some|any|products?|items?|catalog|collection|the|for|please|in|with|under|below|less than|over|above|more than|greater than|at least|at most|between|price|cost|budget|size|small|medium|large|available|stock|color|colour|red|black|white|blue|green|pink|yellow|orange|purple|grey|brown|silver|gold|beige|navy|company|brand|from|by|and|or|a|an|to|buy|purchase|best|selling|popular|trending|latest|new|arrival|sale|discount|cheap|affordable|premium|recommendations?|similar|compare|t shirt|shirt|tee|hoodie|pants|oversized|crew neck|pocket|stripe)$/i.test(normalizeProductLookup(phrase));
   const catalogQuery = filterOnlyQuery ? [filters.brand, ...filters.colors, filters.productType === "shirt" ? "t shirt" : filters.productType, ...filters.features, ...filters.excludeFeatures].filter(Boolean).join(" ") : phrase;
   const sku = String(question || "").match(/\bsku\s*[:#]?\s*([A-Z0-9][A-Z0-9._/-]{2,})\b/i)?.[1] || String(question || "").match(/\b[A-Z0-9]{2,}(?:-[A-Z0-9]+)+\b/i)?.[0] || "";
+  const exactNameTerms = normalizeProductLookup(phrase).split(/\s+/).filter((term) => term && !["red", "black", "white", "blue", "green", "pink", "yellow", "orange", "purple", "grey", "gray", "brown", "silver", "gold", "beige", "navy", "t", "tee", "shirt", "shirts", "sizes", "size", "small", "medium", "large", "hoodie", "hoodies", "pants"].includes(term));
+  const likelyExactProductQuery = exactNameTerms.length > 0 && exactNameTerms.length <= 5;
   const productsFromKnowledge = knowledgeRows.flatMap((row) => {
     if (row.source_type === "product" && row.metadata?.handle) return [knowledgeProduct(row)];
     if (row.source_type === "collection" && Array.isArray(row.metadata?.products)) return row.metadata.products.filter((product) => product?.handle).map((product) => ({ ...product, _similarity: Number(row.similarity || 0) }));
@@ -215,9 +217,14 @@ async function discoverShopifyProducts(shop, question, knowledgeRows = []) {
   };
   let exactProduct = sku ? (await safeSearch(`sku:${sku}`, 1)).find((product) => exactProductMatch(product, phrase, sku)) : null;
   const handleQuery = normalizeProductLookup(phrase).replace(/\s+/g, "-");
-  if (!filterOnlyQuery && !exactProduct && handleQuery) exactProduct = (await safeSearch(`handle:${handleQuery}`, 1)).find((product) => exactProductMatch(product, phrase, sku));
-  if (!filterOnlyQuery && !exactProduct && phrase) exactProduct = (await safeSearch(`title:${JSON.stringify(phrase)}`, 1)).find((product) => exactProductMatch(product, phrase, sku));
-  if (!exactProduct && exactFromKnowledge?.handle) exactProduct = (await safeSearch(`handle:${exactFromKnowledge.handle}`, 1)).find((product) => product.handle === exactFromKnowledge.handle) || null;
+  if (!filterOnlyQuery && likelyExactProductQuery && !exactProduct && handleQuery) {
+    const [handleMatches, titleMatches] = await Promise.all([
+      safeSearch(`handle:${handleQuery}`, 1),
+      phrase ? safeSearch(`title:${JSON.stringify(phrase)}`, 1) : Promise.resolve([]),
+    ]);
+    exactProduct = [...handleMatches, ...titleMatches].find((product) => exactProductMatch(product, phrase, sku)) || null;
+  }
+  if (!exactProduct && likelyExactProductQuery && exactFromKnowledge?.handle) exactProduct = (await safeSearch(`handle:${exactFromKnowledge.handle}`, 1)).find((product) => product.handle === exactFromKnowledge.handle) || null;
   if (exactProduct && productMatchesFilters(exactProduct, filters)) {
     if (!exactProduct.image || !exactProduct.variants?.length) {
       const handle = exactProduct.handle;
@@ -233,11 +240,11 @@ async function discoverShopifyProducts(shop, question, knowledgeRows = []) {
       .map((product) => ({ product, score: productRelevance(product, relatedQuery) })).sort((left, right) => right.score - left.score).map(({ product }) => product).slice(0, 4);
     return { exact: true, products: [{ ...exactProduct, exactMatch: true }, ...alternatives.map((product) => ({ ...product, exactMatch: false }))].slice(0, 5), phrase, filters };
   }
-  const queryTerms = [...new Set(normalizeProductLookup(catalogQuery).split(/\s+/).filter(Boolean))].slice(0, 6);
+  const queryTerms = [...new Set(normalizeProductLookup(catalogQuery).split(/\s+/).filter((term) => term && !["t", "tee", "shirt", "shirts", "size", "sizes", "product", "products", "under"].includes(term)))].slice(0, 6);
   const liveMatches = filterOnlyQuery
-    ? (await safeSearch("", 100))
+    ? (await safeSearch(catalogQuery, 20))
     : (await Promise.all(queryTerms.map(async (term) => safeSearch(`"${term.replace(/"/g, "")}"`, 20)))).flat();
-  const verifiedKnowledgeProducts = (await Promise.all(productsFromKnowledge.filter((product) => product.handle).slice(0, 30).map(async (product) => (await safeSearch(`handle:${product.handle}`, 1)).find((candidate) => candidate.handle === product.handle)))).filter(Boolean);
+  const verifiedKnowledgeProducts = (await Promise.all(productsFromKnowledge.filter((product) => product.handle).sort((left, right) => Number(right._similarity || 0) - Number(left._similarity || 0)).slice(0, 5).map(async (product) => (await safeSearch(`handle:${product.handle}`, 1)).find((candidate) => candidate.handle === product.handle)))).filter(Boolean);
   const rankedByHandle = new Map(verifiedKnowledgeProducts.map((product) => [product.handle, product]));
   const merged = new Map();
   [...verifiedKnowledgeProducts, ...liveMatches].forEach((product) => {

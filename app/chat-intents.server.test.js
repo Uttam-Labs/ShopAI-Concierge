@@ -66,7 +66,7 @@ test("common order questions with varied customer wording route to safe, specifi
     ["Is my order still processing?", "order_status"],
     ["Is my order on the way?", "order_status"],
     ["When will my package arrive?", "order_status"],
-    ["It was supposed to arrive yesterday", "order_status"],
+    ["It was supposed to arrive yesterday", "order_delivery_issue"],
     ["The courier tried delivery at the wrong address", "order_delivery_issue"],
     ["Tracking says returned to sender", "order_delivery_issue"],
     ["Can you find my tracking number?", "order_status"],

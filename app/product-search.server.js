@@ -26,7 +26,7 @@ export function productSearchPhrase(value) {
     .replace(/^\s*(?:the|a|an)\s+/i, "")
     .replace(/^\s*(?:please\s+)?(?:can you|could you)\s+/i, "").replace(/^(?:do you have|have you got|is there|can i (?:get|see)|where can i (?:find|buy)|where is)\s+/i, "")
     .replace(/^(?:i(?:'m|’m| am)?\s+)?(?:want(?:\s+to\s+(?:buy|purchase|find))?|would like(?:\s+to\s+(?:buy|purchase|find))?|would love(?:\s+to\s+(?:buy|purchase|find))?|plan(?:ning)?(?:\s+to\s+(?:buy|purchase|find))?|need|looking for|searching for|show me|find me|find|search for|search|look for|buy|purchase|recommend)\s+/i, "")
-    .replace(/\b(?:can you|could you|please|product|products|item|items|sku|any|show|me|in|color|colour|colored|coloured|model|brand|company|under|below|less than|over|above|more than|greater than|at least|at most|between|price|cost|budget|cheap|cheapest|affordable|discounted|sale|premium|for|with|size|small|medium|large|available|in stock|showing|new|latest|arrival|arrivals|best|selling|popular|trending|similar|recommendations|compare|most|expensive|priciest|highest|costliest|the|a|an|do|you|have|does|is|are|what|much|how|see|it|its|not|without|other|all|men|women|kids|summer|casual|everyday|around|about|approximately|store|in|of|my|your|we|got|any|does|come)\b/gi, " ")
+    .replace(/\b(?:can you|could you|please|product|products|item|items|sku|any|show|me|in|color|colour|colored|coloured|model|brand|company|under|below|less than|over|above|more than|greater than|at least|at most|between|price|cost|budget|cheap|cheapest|affordable|discounted|sale|premium|for|with|size|sizes|small|medium|large|available|in stock|showing|new|latest|arrival|arrivals|best|selling|popular|trending|similar|recommendations|compare|most|expensive|priciest|highest|costliest|the|a|an|do|you|have|does|is|are|what|much|how|see|it|its|not|without|other|all|men|women|kids|summer|casual|around|about|approximately|store|in|of|my|your|we|got|any|does|come)\b/gi, " ")
     .replace(/\s+/g, " ").trim();
 }
 
@@ -46,7 +46,8 @@ export function extractProductFilters(question) {
   const excludedColors = COLOR_WORDS.filter((color) => new RegExp(`\\b${color}\\b`, "i").test(negativeClause));
   const colors = COLOR_WORDS.filter((color) => new RegExp(`\\b${color}\\b`, "i").test(text) && !excludedColors.includes(color));
   if (colors.includes("blue") && !colors.includes("navy")) colors.push("navy");
-  const namedSize = new RegExp(`\\b(?:size|in|available in|comes in)\\s*(${SIZE_WORDS.join("|")})\\b|\\b(${SIZE_WORDS.join("|")})\\s+(?:size|t shirt|shirt|tee|hoodie|pants)\\b`, "i").exec(text);
+  const sizeAlternatives = [...SIZE_WORDS].sort((left, right) => right.length - left.length).join("|");
+  const namedSize = new RegExp(`\\b(?:size|in|available in|comes in)\\s+(${sizeAlternatives})\\b|\\b(${sizeAlternatives})\\s+(?:size|t shirt|shirt|tee|hoodie|pants)\\b`, "i").exec(text);
   const rawSize = (namedSize?.[1] || namedSize?.[2] || "").toLowerCase();
   const size = rawSize === "small" ? "s" : rawSize === "medium" ? "m" : rawSize === "large" ? "l" : rawSize === "extra large" ? "xl" : rawSize;
   const numericSize = /\bsize\s*(\d{1,2})\b/i.exec(text)?.[1] || "";

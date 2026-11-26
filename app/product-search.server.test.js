@@ -44,6 +44,8 @@ test("under, approximate price, and requested size are applied to variants", () 
   assert.equal(productMatchesFilters(catalog[2], extractProductFilters("blue tee in size L")), true);
   assert.equal(productMatchesFilters(catalog[2], extractProductFilters("blue tee, size large")), true);
   assert.equal(productMatchesFilters(catalog[0], extractProductFilters("blue tee in size L")), false);
+  assert.equal(extractProductFilters("What sizes does the navy tee come in?").size, "");
+  assert.equal(extractProductFilters("Show the navy tee in size small").size, "s");
 });
 
 test("filters the requested apparel type and descriptive attributes", () => {
