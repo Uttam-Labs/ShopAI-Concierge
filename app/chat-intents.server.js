@@ -96,3 +96,11 @@ export function filterKnowledgeForIntent(rows = [], policyIntent = false) {
 export function isOrderDeliveryQuestion(message = "") {
   return /\b(?:order|ordered|tracking|track|shipment|delivery|delivered|arrive|arrival|parcel|package|courier|carrier|shipped|dispatch)\b|\bonly\s+(?:one|part|some)\s+(?:of\s+)?(?:the\s+)?(?:items?|products?).{0,35}\b(?:arrived|came|received)\b|অর্ডার|ট্র্যাক|পার্সেল|ডেলিভারি/i.test(String(message || ""));
 }
+
+export function isProductContextFollowup(message = "") {
+  const text = String(message || "").trim().toLocaleLowerCase();
+  return /\b(?:it|that|that one|those|them|same|another one|this one)\b|^(?:what about|how about|and in|in size|in medium|in large|under \d|over \d)\b/i.test(text)
+    || /^(?:any\s+)?(?:in\s+)?(?:size\s+)?(?:xs|xxs|xxl|xxxl|small|medium|large|extra large|s|m|l|xl|red|black|white|blue|green|pink|yellow|orange|purple|grey|gray|brown|silver|gold|beige|navy)(?:\s+(?:one|ones|color|colour|size))?[?.!]*$/i.test(text)
+    || /^(?:any|and|what about|how about|do they have|does it come in)\s+(?:(?:size|color|colour)\s+)?(?:xs|xxs|xxl|xxxl|small|medium|large|extra large|s|m|l|xl|red|black|white|blue|green|pink|yellow|orange|purple|grey|gray|brown|silver|gold|beige|navy)\b/i.test(text)
+    || /^(?:another|different|other)\s+(?:color|colour|size)[?.!]*$/i.test(text);
+}

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { DEFAULT_CONVERSATION_FLOWS, resolveConversationFlow } from "./flows.server.js";
 import { findMatchingGuardrail, normalizeGuardrails } from "./guardrails.server.js";
-import { filterKnowledgeForIntent, findMatchingFaq, isPolicyIntent, isReturnRequestIntent, isSupportEscalationIntent, isSupportRequestIntent, resolveOrderQuestionIntent, resolveRetrievalQuestion } from "./chat-intents.server.js";
+import { filterKnowledgeForIntent, findMatchingFaq, isOrderDeliveryQuestion, isPolicyIntent, isProductContextFollowup, isReturnRequestIntent, isSupportEscalationIntent, isSupportRequestIntent, resolveOrderQuestionIntent, resolveRetrievalQuestion } from "./chat-intents.server.js";
 
 test("customer wording keeps policy questions separate from previous product searches", () => {
   const question = "if it doesn't fit can i send it back?";
@@ -63,6 +63,24 @@ test("order and delivery follow-ups never inherit unrelated previous product sea
   for (const previous of previousProductQuestions) {
     for (const latest of orderFollowups) {
       assert.equal(resolveRetrievalQuestion(latest, previous, true), latest, `${previous} → ${latest}`);
+      tested += 1;
+    }
+  }
+  assert.equal(tested, 100);
+});
+
+test("product color and size follow-ups retain product context across 100 question pairs", () => {
+  const previousProductQuestions = [
+    "Show me black t-shirts under 500", "Find an olive oversized tee", "I need a lightweight jacket", "Compare navy shirts", "Recommend a gift for my brother",
+    "Do you have white crew necks?", "Looking for something in grey", "Find me an affordable sweatshirt", "Search for cotton tops", "I want to see best sellers",
+  ];
+  const productFollowups = ["Any in medium?", "What about blue?", "In large?", "Any in navy?", "Do they have small?", "Does it come in XL?", "Another color?", "Can I get it in red?", "Medium one", "And black?"];
+  let tested = 0;
+  for (const previous of previousProductQuestions) {
+    for (const latest of productFollowups) {
+      assert.equal(isProductContextFollowup(latest), true, latest);
+      assert.equal(isOrderDeliveryQuestion(latest), false, latest);
+      assert.equal(resolveRetrievalQuestion(latest, previous, true), `${previous}\n${latest}`, `${previous} → ${latest}`);
       tested += 1;
     }
   }
