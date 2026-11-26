@@ -41,7 +41,7 @@ export function resolveOrderQuestionIntent(message = "") {
   if (/ট্র্যাকিং.*(?:আপডেট|নড়ছে|নড়ছে).*(?:না|নেই)|ট্র্যাকিং আপডেট হচ্ছে না/.test(rawText)) return "tracking_delay";
   if (/পার্সেল.*(?:আসেনি|পাইনি|পৌঁছায়নি|পৌঁছায়নি)|ডেলিভারি.*(?:হয়েছে|হয়েছে).*(?:পাইনি|পাইনি)|অর্ডার.*(?:আসেনি|পাইনি)/.test(rawText)) return "order_delivery_issue";
   if (/অর্ডার.*(?:শিপ|পাঠানো|হয়েছে|হয়েছে)|শিপ.*অর্ডার/.test(rawText)) return "order_status";
-  const hasOrderContext = ORDER_REFERENCE_INTENT.test(text) || /\bafter\s+(?:i\s+)?ordering\b|\b(?:wrong|incorrect)\s+(?:delivery\s+)?(?:address|phone|email)\b|\b(?:paid|payment went through|charged)\b.{0,55}\b(?:confirmation|email|order)\b|\b(?:confirmation|order)\b.{0,55}\b(?:paid|payment|charged)\b|\bcharged\s+(?:me\s+)?(?:twice|two times|again)\b|\b(?:double|duplicate|second)\s+(?:charge|payment)\b|\bordered\b.{0,70}\b(?:late|delayed|not here|not arrived|hasn\W?t arrived|still waiting|still isn\W?t here|still is not here)\b|\b(?:supposed|expected)\s+to\s+(?:arrive|be delivered)\b|\b(?:wrong|missing|damaged|broken|faulty)\s+(?:item|product|size|colour|color)\b|\b(?:my|the|this) item\b.{0,25}\b(?:faulty|damaged|broken)\b/i.test(text);
+  const hasOrderContext = ORDER_REFERENCE_INTENT.test(text) || /\bafter\s+(?:i\s+)?ordering\b|\b(?:wrong|incorrect)\s+(?:delivery\s+)?(?:address|phone|email)\b|\b(?:paid|payment went through|charged)\b.{0,55}\b(?:confirmation|email|order)\b|\b(?:confirmation|order)\b.{0,55}\b(?:paid|payment|charged)\b|\bcharged\s+(?:me\s+)?(?:twice|two times|again)\b|\b(?:double|duplicate|second)\s+(?:charge|payment)\b|\bordered\b.{0,70}\b(?:late|delayed|not here|not arrived|hasn\W?t arrived|still waiting|still isn\W?t here|still is not here)\b|\b(?:supposed|expected)\s+to\s+(?:arrive|be delivered)\b|\b(?:wrong|missing|damaged|broken|faulty)\s+(?:item|product|size|colour|color)\b|\b(?:my|the|this) item\b.{0,25}\b(?:faulty|damaged|broken)\b|\bonly\s+(?:one|part|some)\s+(?:of\s+)?(?:the\s+)?(?:items?|products?)\b.{0,35}\b(?:arrived|came|received)\b/i.test(text);
   if (!hasOrderContext) return null;
   if (ORDER_CANCEL_INTENT.test(text)) return "cancellation";
   if (/\bcourier\s+(?:tried|attempted)\s+(?:a\s+)?delivery\b|\bdelivery\s+(?:was\s+)?attempted\s+(?:at|to)\s+(?:the\s+)?wrong\s+address\b/i.test(text)) return "order_delivery_issue";
@@ -81,7 +81,7 @@ export function findMatchingFaq(faqs = [], message = "") {
 
 export function resolveRetrievalQuestion(message, previousUserMessage = "", isConversationalFollowup = false) {
   const latest = String(message || "").trim();
-  if (isPolicyIntent(latest)) return latest;
+  if (isPolicyIntent(latest) || isOrderDeliveryQuestion(latest)) return latest;
   return isConversationalFollowup && previousUserMessage
     ? `${previousUserMessage}\n${latest}`.slice(0, 1000)
     : latest;
@@ -91,4 +91,8 @@ export function filterKnowledgeForIntent(rows = [], policyIntent = false) {
   return policyIntent
     ? rows.filter((row) => ["policy", "page", "faq", "custom"].includes(row.source_type))
     : rows;
+}
+
+export function isOrderDeliveryQuestion(message = "") {
+  return /\b(?:order|ordered|tracking|track|shipment|delivery|delivered|arrive|arrival|parcel|package|courier|carrier|shipped|dispatch)\b|\bonly\s+(?:one|part|some)\s+(?:of\s+)?(?:the\s+)?(?:items?|products?).{0,35}\b(?:arrived|came|received)\b|অর্ডার|ট্র্যাক|পার্সেল|ডেলিভারি/i.test(String(message || ""));
 }

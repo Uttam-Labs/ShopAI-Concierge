@@ -31,6 +31,42 @@ test("natural requests to talk to a person open support without submitting a tic
 
 test("ordinary follow-up questions retain the preceding customer context", () => {
   assert.equal(resolveRetrievalQuestion("what about in navy?", "show me casual tees", true), "show me casual tees\nwhat about in navy?");
+  assert.equal(resolveRetrievalQuestion("medium?", "show me the Everyday Navy T-Shirt", true), "show me the Everyday Navy T-Shirt\nmedium?");
+});
+
+test("order and delivery follow-ups never inherit unrelated previous product searches", () => {
+  const previousProductQuestions = [
+    "Show me black t-shirts under 500",
+    "Find an olive oversized tee",
+    "I need a lightweight jacket",
+    "Compare navy shirts",
+    "Recommend a gift for my brother",
+    "Do you have white crew necks?",
+    "Looking for something in grey",
+    "Find me an affordable sweatshirt",
+    "Search for cotton tops",
+    "I want to see the best sellers",
+  ];
+  const orderFollowups = [
+    "Where is my order?",
+    "Has it shipped yet?",
+    "My parcel is late",
+    "Tracking has not updated",
+    "It says delivered but I never got it",
+    "Can I change the delivery address?",
+    "Please cancel my order",
+    "Only one item arrived",
+    "অর্ডারটা কোথায় আছে?",
+    "আমার পার্সেল এখনও আসেনি",
+  ];
+  let tested = 0;
+  for (const previous of previousProductQuestions) {
+    for (const latest of orderFollowups) {
+      assert.equal(resolveRetrievalQuestion(latest, previous, true), latest, `${previous} → ${latest}`);
+      tested += 1;
+    }
+  }
+  assert.equal(tested, 100);
 });
 
 test("prepared FAQ answers match natural customer phrasing", () => {
