@@ -127,6 +127,7 @@
     const supportQuestion = panel.querySelector(".sac-support-question");
     const supportAnswer = panel.querySelector(".sac-support-answer");
     let supportTypes = defaultSupportTypes;
+    let openSupportRequest = () => {};
     const populateSupportTypes = (types) => {
       const currentValue = supportIssueType.value;
       supportTypes = types;
@@ -441,7 +442,7 @@
 
     const closeSupport = () => { supportBackdrop.hidden = true; };
     let supportFollowup = null;
-    const openSupportRequest = (prefill = {}) => {
+    openSupportRequest = (prefill = {}) => {
       supportFollowup = prefill.followup && typeof prefill.followup === "object" ? prefill.followup : null;
       const supportValues = supportForm.elements;
       supportValues.customerName.value = identity?.name === "Anonymous shopper" ? "" : identity?.name || "";
