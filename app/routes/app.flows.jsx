@@ -153,8 +153,13 @@ export default function Flows({ loaderData }) {
         sortedRows.forEach((row, rowIndex) => {
           const junctionY = junctions[rowIndex];
           row.forEach((branch) => {
-            const control = Math.max(10, Math.min(22, Math.abs(branch.endX - startX) * 0.18, (branch.endY - junctionY) * 0.45));
-            paths.push({ d: `M ${startX} ${junctionY} C ${startX} ${junctionY + control}, ${branch.endX} ${branch.endY - control}, ${branch.endX} ${branch.endY}`, arrow: true });
+            const direction = Math.sign(branch.endX - startX);
+            const radius = Math.min(12, Math.abs(branch.endX - startX) / 2, (branch.endY - junctionY) / 3);
+            const bendStartX = branch.endX - direction * radius;
+            const route = radius > 1
+              ? `M ${startX} ${junctionY} L ${bendStartX} ${junctionY} Q ${branch.endX} ${junctionY} ${branch.endX} ${junctionY + radius} L ${branch.endX} ${branch.endY}`
+              : `M ${startX} ${junctionY} L ${branch.endX} ${junctionY} L ${branch.endX} ${branch.endY}`;
+            paths.push({ d: route, arrow: true });
           });
         });
         next[group.dataset.stepId] = { width: groupRect.width, height: groupRect.height, paths };
