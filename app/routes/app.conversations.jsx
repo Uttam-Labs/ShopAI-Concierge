@@ -1,46 +1,77 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import AdminPageHeader, { AdminIcon } from "../components/AdminPageHeader";
 import ListPagination from "../components/ListPagination";
+import { Prisma } from "@prisma/client";
 
 export const loader = async ({ request }) => {
   const { session } = await authenticate.admin(request);
   const prisma = (await import("../db.server.js")).default;
-  return { conversations: await prisma.conversation.findMany({ where: { shop: session.shop }, orderBy: { updatedAt: "desc" } }) };
+  const url = new URL(request.url);
+  const pageSize = 25;
+  const page = Math.max(1, Math.min(100000, Number.parseInt(url.searchParams.get("page") || "1", 10) || 1));
+  const search = String(url.searchParams.get("q") || "").trim().slice(0, 160);
+  const searchFilter = search
+    ? Prisma.sql`AND ("customerName" ILIKE ${`%${search}%`} OR "customerEmail" ILIKE ${`%${search}%`} OR "session" ILIKE ${`%${search}%`} OR "messages"::text ILIKE ${`%${search}%`})`
+    : Prisma.empty;
+  const [conversations, countRows, messageRows, recentCount, totalConversations] = await Promise.all([
+    prisma.$queryRaw(Prisma.sql`SELECT * FROM "Conversation" WHERE "shop" = ${session.shop} ${searchFilter} ORDER BY "updatedAt" DESC LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}`),
+    prisma.$queryRaw(Prisma.sql`SELECT COUNT(*)::int AS "count" FROM "Conversation" WHERE "shop" = ${session.shop} ${searchFilter}`),
+    prisma.$queryRaw`SELECT COALESCE(SUM(jsonb_array_length("messages")), 0)::int AS "totalMessages" FROM "Conversation" WHERE "shop" = ${session.shop}`,
+    prisma.conversation.count({ where: { shop: session.shop, updatedAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } } }),
+    prisma.conversation.count({ where: { shop: session.shop } }),
+  ]);
+  return { conversations, total: Number(countRows[0]?.count || 0), page, pageSize, search, totalConversations, totalMessages: Number(messageRows[0]?.totalMessages || 0), recentCount };
 };
 
 export default function Conversations({ loaderData }) {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [now, setNow] = useState(Date.now());
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 15000); return () => clearInterval(timer); }, []);
   const [active, setActive] = useState(null);
-  const [query, setQuery] = useState("");
-  const [page, setPage] = useState(1);
-  const pageSize = 25;
+  const [query, setQuery] = useState(loaderData.search);
+  useEffect(() => { setQuery(loaderData.search); }, [loaderData.search]);
+  useEffect(() => {
+    if (query.trim() === loaderData.search) return;
+    const timer = window.setTimeout(() => {
+      setSearchParams((current) => {
+        const next = new URLSearchParams(current);
+        if (query.trim()) next.set("q", query.trim()); else next.delete("q");
+        next.delete("page");
+        return next;
+      });
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [query, loaderData.search, setSearchParams]);
   const conversations = loaderData.conversations;
-  const filteredConversations = conversations.filter((item) => {
-    const messages = Array.isArray(item.messages) ? item.messages : [];
-    return `shopper ${item.customerName || ""} ${item.customerEmail || ""} ${item.session} ${messages.map((message) => message.content).join(" ")}`.toLowerCase().includes(query.toLowerCase());
-  });
-  const pageCount = Math.max(1, Math.ceil(filteredConversations.length / pageSize));
-  const currentPage = Math.min(page, pageCount);
-  const pageItems = filteredConversations.slice((currentPage - 1) * pageSize, currentPage * pageSize);
-  const selected = filteredConversations.find((item) => item.id === active) || pageItems[0] || null;
+  const pageCount = Math.max(1, Math.ceil(loaderData.total / loaderData.pageSize));
+  const currentPage = Math.min(loaderData.page, pageCount);
+  const pageItems = conversations;
+  const selected = pageItems.find((item) => item.id === active) || pageItems[0] || null;
   const transcript = Array.isArray(selected?.messages) ? selected.messages : [];
-  const totalMessages = conversations.reduce((total, item) => total + (Array.isArray(item.messages) ? item.messages.length : 0), 0);
-  const recentCount = conversations.filter((item) => Date.now() - new Date(item.updatedAt).getTime() < 7 * 24 * 60 * 60 * 1000).length;
+  const changePage = (nextPage) => {
+    const next = new URLSearchParams(searchParams);
+    if (nextPage > 1) next.set("page", String(nextPage)); else next.delete("page");
+    setSearchParams(next);
+    setActive(null);
+  };
+  const changeSearch = (value) => {
+    setQuery(value);
+    setActive(null);
+  };
 
   return <s-page heading="Live concierge" inlineSize="large">
     <s-button slot="primary-action" href="/app/tickets" onClick={(event) => { event.preventDefault(); navigate("/app/tickets"); }} variant="secondary"><AdminIcon name="ticket"/> View tickets</s-button>
-    <AdminPageHeader title="Customer conversations" description="A live view of shopper questions and concierge replies. Open a conversation to review the full chat and customer request." metrics={[{ label: "Conversations", value: conversations.length }, { label: "Messages", value: totalMessages }, { label: "Last 7 days", value: recentCount }]} />
+    <AdminPageHeader title="Customer conversations" description="A live view of shopper questions and concierge replies. Open a conversation to review the full chat and customer request." metrics={[{ label: "Conversations", value: loaderData.totalConversations }, { label: "Messages", value: loaderData.totalMessages }, { label: "Last 7 days", value: loaderData.recentCount }]} />
 
     <div className="conversation-workspace">
       <section className="conversation-list-panel" aria-label="Conversation inbox">
-        <header className="conversation-panel-heading"><div><span className="rag-eyebrow">SHOPPER INBOX</span><h2>Conversations</h2><p>Newest activity first</p></div><span className="conversation-count">{conversations.length}</span></header>
-        {conversations.length > 0 && <label className="admin-search-field conversation-search"><AdminIcon name="search"/><input aria-label="Search conversations" placeholder="Search messages…" value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); setActive(null); }}/></label>}
-        {conversations.length ? pageItems.length ? <div className="conversation-list">{pageItems.map((conversation) => {
+        <header className="conversation-panel-heading"><div><span className="rag-eyebrow">SHOPPER INBOX</span><h2>Conversations</h2><p>Newest activity first · 25 per page</p></div><span className="conversation-count">{loaderData.total}</span></header>
+        {loaderData.totalConversations > 0 && <label className="admin-search-field conversation-search"><AdminIcon name="search"/><input aria-label="Search conversations" placeholder="Search messages…" value={query} onChange={(event) => changeSearch(event.target.value)}/></label>}
+        {loaderData.totalConversations ? pageItems.length ? <div className="conversation-list">{pageItems.map((conversation) => {
           const messages = Array.isArray(conversation.messages) ? conversation.messages : [];
           const latest = messages[messages.length - 1];
           const isSelected = selected?.id === conversation.id;
@@ -49,7 +80,7 @@ export default function Conversations({ loaderData }) {
             <span className="conversation-list-copy"><span className="conversation-list-top"><strong>{conversation.customerName || `Shopper ${conversation.session.slice(0, 8)}`}</strong><time>{new Date(conversation.updatedAt).toLocaleDateString()}</time></span>{conversation.customerEmail && <span className="conversation-list-email">{conversation.customerEmail}</span>}<span className="conversation-list-preview">{latest?.content || "Conversation started"}</span><span className="conversation-list-foot"><span>{messages.length} {messages.length === 1 ? "message" : "messages"}</span><span>{new Date(conversation.updatedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span></span></span>
           </button>;
         })}</div> : <div className="conversation-list-empty"><span className="conversation-empty-icon"><AdminIcon name="search" size={21}/></span><strong>No conversations match</strong><p>Try another customer or message keyword.</p></div> : <div className="conversation-list-empty"><span className="conversation-empty-icon"><AdminIcon name="chat" size={21}/></span><strong>No conversations yet</strong><p>When a shopper starts a chat, it will appear here.</p></div>}
-        {filteredConversations.length > 25 && <ListPagination label="conversations" page={currentPage} pageCount={pageCount} total={filteredConversations.length} onPageChange={(nextPage) => { setPage(nextPage); setActive(filteredConversations[(nextPage - 1) * pageSize]?.id || null); }}/ >}
+        {loaderData.total > 0 && <ListPagination label={loaderData.search ? "matching conversations" : "conversations"} page={currentPage} pageCount={pageCount} total={loaderData.total} onPageChange={changePage}/>}
       </section>
 
       <section className="conversation-detail-panel" aria-label="Conversation details">

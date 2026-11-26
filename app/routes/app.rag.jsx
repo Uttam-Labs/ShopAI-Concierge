@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useFetcher } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
@@ -84,6 +84,7 @@ export const action = async ({ request }) => {
   try {
     const supabase = createSupabaseServerClient();
     const docs = [];
+    const resolvedShopifyIds = new Set();
     const idsToFetch = [...productIds, ...collectionIds, ...pageIds];
     for (let offset = 0; offset < idsToFetch.length; offset += 50) {
       const ids = idsToFetch.slice(offset, offset + 50);
@@ -97,7 +98,7 @@ export const action = async ({ request }) => {
             }
             ... on Collection {
               id title handle description image { url }
-              products(first: 100) { edges { node { title } } }
+              products(first: 30) { edges { node { id title handle descriptionHtml vendor productType tags featuredImage { url } variants(first: 20) { edges { node { id title price availableForSale } } } } } }
             }
             ... on Page { id title body handle }
           }
@@ -108,8 +109,27 @@ export const action = async ({ request }) => {
       const nodes = payload.data?.nodes ?? [];
       for (const node of nodes) {
         if (!node) continue;
-        if (node.variants) docs.push({ source_type: "product", source_id: node.id, title: node.title, content: [node.title, node.descriptionHtml?.replace(/<[^>]+>/g, " "), node.vendor, node.productType, node.tags?.join(", "), ...(node.variants.edges ?? []).map(({ node: variant }) => `${variant.title} $${variant.price} ${variant.availableForSale ? "in stock" : "out of stock"}`)].filter(Boolean).join("\n"), metadata: { handle: node.handle, image: node.featuredImage?.url, variants: node.variants.edges?.map(({ node: variant }) => variant) } });
-        else if (node.products) docs.push({ source_type: "collection", source_id: node.id, title: node.title, content: [node.title, node.description, ...(node.products.edges ?? []).map(({ node: product }) => product.title)].filter(Boolean).join("\n"), metadata: { handle: node.handle, image: node.image?.url } });
+        resolvedShopifyIds.add(node.id);
+        if (node.variants) docs.push({ source_type: "product", source_id: node.id, title: node.title, content: [node.title, node.descriptionHtml?.replace(/<[^>]+>/g, " "), node.vendor, node.productType, node.tags?.join(", "), ...(node.variants.edges ?? []).map(({ node: variant }) => `${variant.title} $${variant.price} ${variant.availableForSale ? "in stock" : "out of stock"}`)].filter(Boolean).join("\n"), metadata: { handle: node.handle, image: node.featuredImage?.url, tags: node.tags || [], variants: node.variants.edges?.map(({ node: variant }) => variant) } });
+        else if (node.products) {
+          const collectionProducts = (node.products.edges ?? []).map(({ node: product }) => ({
+            title: product.title,
+            handle: product.handle,
+            image: product.featuredImage?.url || "",
+            vendor: product.vendor || "",
+            productType: product.productType || "",
+            description: product.descriptionHtml?.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() || "",
+            tags: product.tags || [],
+            variants: (product.variants?.edges ?? []).map(({ node: variant }) => ({ id: variant.id, title: variant.title, price: variant.price, availableForSale: variant.availableForSale })),
+          }));
+          docs.push({
+            source_type: "collection",
+            source_id: node.id,
+            title: node.title,
+            content: [node.title, node.description, ...collectionProducts.map((product) => [product.title, product.vendor, product.productType, product.description, product.tags.join(", "), ...product.variants.map((variant) => `${variant.title} $${variant.price} ${variant.availableForSale ? "in stock" : "out of stock"}`)].filter(Boolean).join("\n"))].filter(Boolean).join("\n"),
+            metadata: { handle: node.handle, image: node.image?.url, products: collectionProducts },
+          });
+        }
         else docs.push({ source_type: policyIds.includes(node.id) ? "policy" : "page", source_id: node.id, title: node.title, content: `${node.title}\n${node.body?.replace(/<[^>]+>/g, " ") || ""}`, metadata: { handle: node.handle } });
       }
     }
@@ -123,6 +143,7 @@ export const action = async ({ request }) => {
     const policyResult = policyResponse ? await policyResponse.json() : null;
     if (policyResult?.errors?.length) throw new Error(`Shopify policy lookup failed: ${policyResult.errors.map((error) => error.message).join("; ")}`);
     const selectedPolicies = (policyResult?.data?.shop?.shopPolicies ?? []).filter((policy) => selectedPolicyIds.has(policy.id));
+    selectedPolicies.forEach((policy) => resolvedShopifyIds.add(policy.id));
     for (const policy of selectedPolicies) {
       const policyText = policy.body?.replace(/<[^>]+>/g, " ").replace(/&nbsp;|&#160;/gi, " ").replace(/&amp;/gi, "&").replace(/&lt;/gi, "<").replace(/&gt;/gi, "> ").replace(/&quot;/gi, '"').trim() || "";
       if (policyText) docs.push({ source_type: "policy", source_id: policy.id, title: policy.title || policy.type?.replaceAll("_", " ") || "Store policy", content: `${policy.title || "Store policy"}\n${policyText}`, metadata: { url: policy.url, policy_type: policy.type } });
@@ -148,7 +169,12 @@ export const action = async ({ request }) => {
       const { error } = await supabase.from("shopai_knowledge").delete().eq("shop_domain", session.shop).in("id", staleIds.slice(offset, offset + 500));
       if (error) throw error;
     }
-    return { saved: true, indexed: true, indexedCount: rows.length };
+    const validProductIds = productIds.filter((id) => resolvedShopifyIds.has(id));
+    const validCollectionIds = collectionIds.filter((id) => resolvedShopifyIds.has(id));
+    const validPageIds = pageIds.filter((id) => resolvedShopifyIds.has(id));
+    const validPolicyIds = policyIds.filter((id) => resolvedShopifyIds.has(id));
+    await prisma.knowledgeConfig.update({ where: { shop: session.shop }, data: { productIds: validProductIds, collectionIds: validCollectionIds, pageIds: validPageIds, policyIds: validPolicyIds } });
+    return { saved: true, indexed: true, indexedCount: rows.length, removedCount: staleIds.length, selectedCount: validProductIds.length + validCollectionIds.length + validPageIds.length + validPolicyIds.length + customSources.length };
   } catch (error) {
     console.error("Knowledge indexing failed", error);
     const detail = String(error?.message || "");
@@ -176,7 +202,6 @@ const tabs = [
 export default function RagSettings({ loaderData }) {
   const fetcher = useFetcher();
   useActionToast(fetcher);
-  useEffect(() => { if (fetcher.data?.saved) setConfirmSave(false); }, [fetcher.data]);
   const [activeTab, setActiveTab] = useState("products");
   const [modal, setModal] = useState(null);
   const [draftIds, setDraftIds] = useState({ products: loaderData.productIds, collections: loaderData.collectionIds, pages: loaderData.pageIds, policies: loaderData.policyIds });
@@ -185,7 +210,6 @@ export default function RagSettings({ loaderData }) {
   const [pageNumber, setPageNumber] = useState(1);
   const [selectedPage, setSelectedPage] = useState(1);
   const [customDraft, setCustomDraft] = useState({ title: "", content: "" });
-  const [confirmSave, setConfirmSave] = useState(false);
 
   const currentItems = useMemo(() => ({ products: loaderData.products, collections: loaderData.collections, pages: loaderData.pages, policies: loaderData.policies, custom: customSources }[activeTab] || []), [activeTab, loaderData, customSources]);
   const selectedCount = draftIds.products.length + draftIds.collections.length + draftIds.pages.length + draftIds.policies.length + customSources.length;
@@ -228,8 +252,15 @@ export default function RagSettings({ loaderData }) {
     else setDraftIds((current) => ({ ...current, [item.sourceType === "policy" ? "policies" : `${item.sourceType}s`]: current[item.sourceType === "policy" ? "policies" : `${item.sourceType}s`].filter((id) => id !== item.id) }));
   };
 
+  const syncing = fetcher.state !== "idle";
+  const syncLatest = () => {
+    const form = document.getElementById("rag-save-form");
+    if (form instanceof HTMLFormElement && !syncing) form.requestSubmit();
+  };
+
   return <s-page heading="Knowledge library" inlineSize="large">
-    <s-button slot="primary-action" variant="primary" disabled={fetcher.state === "submitting"} onClick={() => setConfirmSave(true)}><AdminIcon name="save"/>{fetcher.state === "submitting" ? "Saving…" : "Save and index"}</s-button><AdminPageHeader title="RAG knowledge library" description="Choose trusted Shopify content and support notes for your concierge. Save to refresh the searchable knowledge base." metrics={[{ label: "Selected sources", value: selectedCount }, { label: "Products", value: draftIds.products.length }, { label: "Policies & pages", value: draftIds.policies.length + draftIds.pages.length }, { label: "Custom notes", value: customSources.length }]} />
+    <s-button slot="primary-action" variant="primary" disabled={syncing} onClick={syncLatest}><AdminIcon name="save"/>{syncing ? "Syncing latest data…" : "Sync latest data"}</s-button><AdminPageHeader title="RAG knowledge library" description="Sync selected Shopify products, collections, pages, policies, and notes to keep concierge answers current." metrics={[{ label: "Selected sources", value: selectedCount }, { label: "Products", value: draftIds.products.length }, { label: "Policies & pages", value: draftIds.policies.length + draftIds.pages.length }, { label: "Custom notes", value: customSources.length }]} />
+    {syncing && <section className="rag-sync-progress" role="status" aria-live="polite"><span className="rag-sync-spinner" aria-hidden="true"/><div className="rag-sync-copy"><strong>Refreshing your knowledge library</strong><p>Loading the latest selected Shopify data, rebuilding search vectors, and removing outdated entries.</p><div className="rag-sync-track" role="progressbar" aria-label="Knowledge library sync in progress"><span/></div></div></section>}
     <fetcher.Form id="rag-save-form" method="post"><input type="hidden" name="productIds" value={JSON.stringify(draftIds.products)}/><input type="hidden" name="collectionIds" value={JSON.stringify(draftIds.collections)}/><input type="hidden" name="pageIds" value={JSON.stringify(draftIds.pages)}/><input type="hidden" name="policyIds" value={JSON.stringify(draftIds.policies)}/><input type="hidden" name="customSources" value={JSON.stringify(customSources)}/></fetcher.Form>
     <div className="rag-workspace">
       <aside className="rag-library-panel"><div className="rag-panel-heading"><div><span className="rag-eyebrow">YOUR KNOWLEDGE BASE</span><h2>Selected sources</h2><p>{selectedCount} {selectedCount === 1 ? "source" : "sources"} ready for indexing</p></div><span className="rag-count">{selectedCount}</span></div>
@@ -244,7 +275,6 @@ export default function RagSettings({ loaderData }) {
       </section>
     </div>
     {modal === "custom" && <div className="admin-modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setModal(null)}><section className="admin-modal" role="dialog" aria-modal="true" aria-labelledby="rag-custom-title"><header className="admin-modal-header"><div><span className="admin-modal-kicker">CUSTOM STORE KNOWLEDGE</span><h2 id="rag-custom-title">Add custom content</h2><p>Write guidance your concierge can use when helping shoppers.</p></div><button className="admin-modal-x" type="button" onClick={() => setModal(null)} aria-label="Close">×</button></header><form onSubmit={addCustom}><label className="admin-field">Content title<input className="admin-text-input" value={customDraft.title} onChange={(event) => setCustomDraft((current) => ({ ...current, title: event.target.value }))} placeholder="e.g. Jacket sizing advice" required/></label><label className="admin-field">Content<textarea className="admin-text-input admin-textarea" value={customDraft.content} onChange={(event) => setCustomDraft((current) => ({ ...current, content: event.target.value }))} placeholder="Add helpful details, instructions, or answers…" required/></label><footer className="admin-modal-actions"><button className="admin-secondary" type="button" onClick={() => setModal(null)}><AdminIcon name="close"/> Cancel</button><button className="admin-cta" type="submit"><AdminIcon name="plus"/> Add to library</button></footer></form></section></div>}
-    {confirmSave && <div className="admin-modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setConfirmSave(false)}><section className="admin-modal admin-confirm-modal rag-save-modal" role="dialog" aria-modal="true" aria-labelledby="rag-save-title"><div className="admin-confirm-icon"><AdminIcon name="save" size={21}/></div><span className="admin-modal-kicker">KNOWLEDGE LIBRARY</span><h2 id="rag-save-title">Save these sources?</h2><p>Your concierge will use the selected Shopify content and custom notes when answering customer questions.</p><div className="rag-save-summary"><span><strong>{selectedCount}</strong> total sources</span><span><strong>{draftIds.products.length}</strong> products</span><span><strong>{draftIds.collections.length}</strong> collections</span><span><strong>{draftIds.pages.length + draftIds.policies.length}</strong> pages &amp; policies</span><span><strong>{customSources.length}</strong> custom notes</span></div><footer className="admin-modal-actions"><button className="admin-secondary" type="button" onClick={() => setConfirmSave(false)}><AdminIcon name="close"/> Cancel</button><button className="admin-cta" type="submit" form="rag-save-form" disabled={fetcher.state === "submitting"}><AdminIcon name="save"/>{fetcher.state === "submitting" ? "Saving…" : "Confirm and save"}</button></footer></section></div>}
   </s-page>;
 }
 export const headers = (args) => boundary.headers(args);

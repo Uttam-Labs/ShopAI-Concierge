@@ -17,11 +17,10 @@
     let storedChat = readStoredChat(storageKey);
     const sessionId = storedChat?.sessionId || crypto.randomUUID();
     let identity = storedChat?.identity || { name: "", email: "" };
+    let activeFlow = storedChat?.activeFlow || null;
     let chatHistory = Array.isArray(storedChat?.messages)
       ? storedChat.messages.filter((item) => !(item?.role === "assistant" && /Unexpected token|not valid JSON|returned a web page instead of chat data|apiEndpoint is not defined|ReferenceError/i.test(String(item.content || "")))).slice(-40)
       : [];
-    const botAvatar = '<span class="sac-avatar" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4.5" y="8" width="15" height="11" rx="4"/><path d="M12 4v4M9 13h.01M15 13h.01M9 16h6M3 12v3M21 12v3"/></svg></span>';
-
     const panel = document.createElement("section");
     panel.className = "sac-panel";
     panel.setAttribute("role", "dialog");
@@ -36,7 +35,7 @@
     Array.from(welcome.childNodes).forEach((node) => {
       if (!(node.nodeType === Node.ELEMENT_NODE && node.classList.contains("sac-help-button"))) node.remove();
     });
-    panel.insertAdjacentHTML("beforeend", `<div class="sac-order-backdrop" hidden><section class="sac-order-card" role="dialog" aria-modal="true" aria-labelledby="sac-order-title"><button type="button" class="sac-order-close" aria-label="Close order tracking">×</button><span class="sac-order-icon" aria-hidden="true">↗</span><p class="sac-order-kicker">ORDER UPDATES</p><h3 id="sac-order-title">Track your order</h3><p class="sac-order-copy">Enter your order number to see its latest status and total.</p><form class="sac-order-form"><label>Order number<input name="orderNumber" autocomplete="off" maxlength="31" placeholder="e.g. #1001 or 1001" required></label><label class="sac-order-email-label">Email used at checkout<input name="customerEmail" type="email" autocomplete="email" maxlength="254" placeholder="you@example.com"></label><div class="sac-order-notice" aria-live="polite"></div><footer><button type="button" class="sac-order-cancel">Cancel</button><button type="submit" class="sac-order-submit">Find my order</button></footer></form><section class="sac-order-result" hidden><div class="sac-order-result-title"></div><p class="sac-order-result-copy"></p><button type="button" class="sac-order-view">View order details</button><div class="sac-order-details" hidden></div></section></section></div>`);
+    panel.insertAdjacentHTML("beforeend", `<div class="sac-order-backdrop" hidden><section class="sac-order-card" role="dialog" aria-modal="true" aria-labelledby="sac-order-title"><button type="button" class="sac-order-close" aria-label="Close order tracking">×</button><span class="sac-order-icon" aria-hidden="true">↗</span><p class="sac-order-kicker">ORDER UPDATES</p><h3 id="sac-order-title">Track your order</h3><p class="sac-order-copy">Enter your order number and the email used at checkout to see its latest status and total.</p><form class="sac-order-form"><label>Order number<input name="orderNumber" autocomplete="off" maxlength="31" placeholder="e.g. #1001 or 1001" required></label><label class="sac-order-email-label">Email used at checkout<input name="customerEmail" type="email" autocomplete="email" maxlength="254" placeholder="you@example.com"></label><div class="sac-order-notice" aria-live="polite"></div><footer><button type="button" class="sac-order-cancel">Cancel</button><button type="submit" class="sac-order-submit">Find my order</button></footer></form><section class="sac-order-result" hidden><div class="sac-order-result-title"></div><p class="sac-order-result-copy"></p><div class="sac-order-details" hidden></div><button type="button" class="sac-order-view">View order details</button></section></section></div>`);
 
     const launcher = document.createElement("button");
     launcher.type = "button";
@@ -47,6 +46,12 @@
     const icon = root.dataset.icon || "chat";
     launcher.innerHTML = icon === "help" ? "<span class=\"sac-help-icon\">?</span>" : icon === "spark" ? "<span class=\"sac-spark-icon\">✦</span>" : "<svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8Z\"/></svg>";
     document.body.append(panel, launcher);
+    const confirmLeavingOpenChat = (event) => {
+      if (!panel.classList.contains("is-open")) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", confirmLeavingOpenChat);
 
     const messages = panel.querySelector(".sac-messages");
     const form = panel.querySelector(".sac-form");
@@ -86,7 +91,6 @@
     const orderResultTitle = panel.querySelector(".sac-order-result-title");
     const orderResultCopy = panel.querySelector(".sac-order-result-copy");
     const orderDetails = panel.querySelector(".sac-order-details");
-    let lastOrder = null;
     const initialGreeting = panel.querySelector(".sac-initial-greeting");
     const supportBackdrop = panel.querySelector(".sac-support-backdrop");
     const supportForm = panel.querySelector(".sac-support-form");
@@ -117,9 +121,8 @@
     populateSupportTypes(defaultSupportTypes);
     const enableFaqs = root.dataset.enableFaq !== "false";
     const enableRecommendations = root.dataset.enableRecommendations !== "false";
-    const formWrap = panel.querySelector(".sac-form-wrap");
     const persistChat = () => {
-      try { sessionStorage.setItem(storageKey, JSON.stringify({ sessionId, identity, messages: chatHistory.slice(-40) })); } catch { /* Session storage can be disabled by the browser. */ }
+      try { sessionStorage.setItem(storageKey, JSON.stringify({ sessionId, identity, activeFlow, messages: chatHistory.slice(-40) })); } catch { /* Session storage can be disabled by the browser. */ }
     };
     const openOrderTracking = () => {
       orderNotice.textContent = "";
@@ -144,7 +147,9 @@
         const restored = addMessage(messages, item.content, item.role === "user" ? "user" : "assistant", item.createdAt);
         if (item.ticketReference && item.role === "assistant") addTicketReference(restored.row, item.ticketReference);
         if (item.openOrderTracking && item.role === "assistant") addOrderTrackingAction(restored.row);
+        if (item.flow && item.role === "assistant" && activeFlow?.id === item.flow.id && activeFlow?.stepId === item.flow.stepId) renderFlowChoices(restored.row, item.flow, sendMessage);
         if (item.order && item.role === "assistant") restoredOrderRows.push({ row: restored.row, order: item.order, answer: item.content });
+        if (item.products?.length && item.role === "assistant") renderProducts(messages, item.products, { persist: false });
       });
       messages.append(faqSection);
     } else {
@@ -202,7 +207,6 @@
     });
     const closeOrderLookup = () => { orderBackdrop.hidden = true; };
     const setOrderResult = (order, answer) => {
-      lastOrder = order;
       orderResult.hidden = false;
       orderResultTitle.textContent = `${order.name} · ${String(order.fulfillmentStatus || "Status unavailable").replaceAll("_", " ")}`;
       orderResultCopy.textContent = answer;
@@ -306,6 +310,10 @@
       const message = String(rawMessage || "").trim();
       const faqId = typeof options.faqId === "string" ? options.faqId : "";
       if (!message || form.dataset.sending === "true") return;
+      const flowState = options.flow || (faqId ? null : activeFlow);
+      activeFlow = null;
+      chatHistory.forEach((item) => { delete item.flow; });
+      panel.querySelectorAll(".sac-flow-choices").forEach((choices) => choices.remove());
       const emailFromMessage = message.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0];
       if (emailFromMessage && !identity?.email) identity = { ...(identity || {}), name: identity?.name || "Anonymous shopper", email: emailFromMessage.toLowerCase() };
       addMessage(messages, message, "user");
@@ -319,17 +327,23 @@
       pending.bubble.setAttribute("aria-label", "ShopAI is replying");
       pending.bubble.innerHTML = '<span class="sac-typing" aria-hidden="true"><i></i><i></i><i></i></span><span class="sac-sr-only">ShopAI is replying</span>';
       try {
-        const response = await postProxyData(apiEndpoint, { message, shop, sessionId, customerName: identity?.name || "", customerEmail: identity?.email || "", pageUrl: location.href, ...(faqId ? { faqId } : {}) });
+        const response = await postProxyData(apiEndpoint, { message, shop, sessionId, customerName: identity?.name || "", customerEmail: identity?.email || "", pageUrl: location.href, ...(faqId ? { faqId } : {}), ...(flowState ? { flowId: flowState.id, flowStepId: flowState.stepId, ...(options.flow?.choiceId ? { flowChoiceId: options.flow.choiceId } : {}) } : {}) });
         const data = await readApiJson(response, "chat reply");
         if (!response.ok) throw new Error(data.error || "I couldn’t complete that request. Please try again.");
         pending.row.remove();
         const answer = data.answer || "I’m sorry, I couldn’t find an answer to that just yet.";
         const reply = addMessage(messages, answer, "assistant");
         if (data.openOrderTracking) addOrderTrackingAction(reply.row);
+        if (data.openOrderTrackingNow) openOrderTracking();
         if (data.order) addOrderDetailsAction(reply.row, data.order, answer);
-        chatHistory.push({ role: "assistant", content: answer, createdAt: Date.now(), ...(data.openOrderTracking ? { openOrderTracking: true } : {}), ...(data.order ? { order: data.order } : {}) });
+        if (data.openSupport) openSupportRequest(data.openSupport);
+        activeFlow = data.flow || null;
+        if (activeFlow) renderFlowChoices(reply.row, activeFlow, sendMessage);
+        const recommendedProducts = enableRecommendations && Array.isArray(data.products) ? data.products.slice(0, 12) : [];
+        const savedProducts = recommendedProducts.slice(0, 4);
+        chatHistory.push({ role: "assistant", content: answer, createdAt: Date.now(), ...(activeFlow ? { flow: activeFlow } : {}), ...(data.openOrderTracking ? { openOrderTracking: true } : {}), ...(data.order ? { order: data.order } : {}), ...(savedProducts.length ? { products: savedProducts } : {}) });
         persistChat();
-        if (enableRecommendations && Array.isArray(data.products) && data.products.length) renderProducts(messages, data.products.slice(0, 4));
+        if (recommendedProducts.length) renderProducts(messages, recommendedProducts);
       } catch (error) {
         pending.bubble.classList.remove("pending");
         pending.bubble.classList.add("error");
@@ -344,22 +358,25 @@
     }
 
     const closeSupport = () => { supportBackdrop.hidden = true; };
-    panel.querySelector(".sac-help-button").addEventListener("click", () => {
+    const openSupportRequest = (prefill = {}) => {
       const supportValues = supportForm.elements;
       supportValues.customerName.value = identity?.name === "Anonymous shopper" ? "" : identity?.name || "";
       supportValues.customerEmail.value = identity?.email || "";
-      supportIssueType.value = "";
-      supportGuidance.hidden = true;
-      supportQuestion.textContent = "";
-      supportAnswer.textContent = "";
+      const requestTypeAvailable = supportTypes.some((item) => item.id === prefill.requestTypeId && item.active !== false);
+      supportIssueType.value = requestTypeAvailable ? prefill.requestTypeId : (prefill.requestTypeId ? "other" : "");
+      const selectedType = supportTypes.find((item) => item.id === supportIssueType.value);
+      supportGuidance.hidden = !selectedType;
+      supportQuestion.textContent = selectedType?.question || "";
+      supportAnswer.textContent = selectedType?.answer || "";
       supportIssueDetails.required = false;
-      supportIssueDetails.value = "";
+      supportIssueDetails.value = prefill.details || (!requestTypeAvailable && prefill.requestTypeId ? `Suggested request type: ${prefill.requestTypeId}` : "");
       panel.querySelector(".sac-support-notice").textContent = identity?.email
         ? (root.dataset.supportSavedEmailNotice || "Saved for this chat: {email}. Confirm it or enter a different email.").replace("{email}", identity.email)
         : (root.dataset.supportContactNotice || "Please add a name and email so the team can reply to your request.");
       supportBackdrop.hidden = false;
       (identity?.email ? supportValues.customerName : supportValues.customerEmail).focus();
-    });
+    };
+    panel.querySelector(".sac-help-button").addEventListener("click", () => openSupportRequest());
     supportIssueType.addEventListener("change", () => {
       const selected = supportTypes.find((item) => item.id === supportIssueType.value);
       supportGuidance.hidden = !selected;
@@ -421,12 +438,6 @@
         submit.textContent = root.dataset.supportSubmitLabel || "Create support ticket";
       }
     });
-    window.addEventListener("beforeunload", (event) => {
-      if (chatHistory.some((item) => item.role === "user") || input.value.trim()) {
-        event.preventDefault();
-        event.returnValue = "";
-      }
-    });
   });
 
   function setThemeVariables(element, values) {
@@ -475,7 +486,7 @@
     content.className = "sac-message-content";
     const bubble = document.createElement("div");
     bubble.className = `sac-msg ${who}`;
-    bubble.textContent = text;
+    renderRichMessage(bubble, text);
     content.append(bubble);
     const time = document.createElement("time");
     time.className = "sac-message-time";
@@ -488,6 +499,53 @@
     container.append(row);
     container.scrollTop = container.scrollHeight;
     return { row, bubble };
+  }
+  function renderRichMessage(container, value) {
+    const text = String(value || "").replace(/\*\*([^*\n]+)\*\*/g, "$1").trim();
+    const blocks = text.split(/\n\s*\n/).map((block) => block.trim()).filter(Boolean);
+    const linkPattern = /(https?:\/\/[^\s<>()]+|[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?(?:\.[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?)+)/gi;
+    const appendLinkedLine = (parent, line) => {
+      let last = 0;
+      linkPattern.lastIndex = 0;
+      for (const match of line.matchAll(linkPattern)) {
+        const index = match.index;
+        const fullMatch = match[0];
+        const urlValue = /^https?:\/\//i.test(fullMatch);
+        const trailing = urlValue ? (fullMatch.match(/[.,!?;:]+$/)?.[0] || "") : "";
+        const label = trailing ? fullMatch.slice(0, -trailing.length) : fullMatch;
+        if (index > last) parent.append(document.createTextNode(line.slice(last, index)));
+        const link = document.createElement("a");
+        link.textContent = label;
+        link.href = urlValue ? label : `mailto:${label}`;
+        if (urlValue) { link.target = "_blank"; link.rel = "noopener noreferrer"; }
+        parent.append(link);
+        if (trailing) parent.append(document.createTextNode(trailing));
+        last = index + fullMatch.length;
+      }
+      if (last < line.length) parent.append(document.createTextNode(line.slice(last)));
+    };
+    blocks.forEach((block) => {
+      const lines = block.split("\n");
+      const isList = lines.length > 1 && lines.every((line) => /^\s*(?:[-*•]|\d+[.)])\s+/.test(line));
+      if (isList) {
+        const ordered = /^\s*\d+[.)]/.test(lines[0]);
+        const list = document.createElement(ordered ? "ol" : "ul");
+        lines.forEach((line) => {
+          const item = document.createElement("li");
+          appendLinkedLine(item, line.replace(/^\s*(?:[-*•]|\d+[.)])\s+/, ""));
+          list.append(item);
+        });
+        container.append(list);
+        return;
+      }
+      const paragraph = document.createElement("p");
+      paragraph.className = "sac-rich-paragraph";
+      lines.forEach((line, index) => {
+        if (index) paragraph.append(document.createElement("br"));
+        appendLinkedLine(paragraph, line);
+      });
+      container.append(paragraph);
+    });
   }
   function relativeTime(timestamp) {
     if (!Number.isFinite(timestamp)) return "";
@@ -563,6 +621,27 @@
     });
     section.hidden = list.childElementCount === 0;
   }
+  function renderFlowChoices(row, flow, sendMessage) {
+    if (!flow || !Array.isArray(flow.choices) || !flow.choices.length) return;
+    const content = row.querySelector(".sac-message-content");
+    if (!content) return;
+    const group = document.createElement("div");
+    group.className = "sac-flow-choices";
+    group.setAttribute("role", "group");
+    group.setAttribute("aria-label", "Choose a next step");
+    flow.choices.slice(0, 6).forEach((choice) => {
+      if (!choice?.id || !choice?.label) return;
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "sac-flow-choice";
+      button.textContent = choice.label;
+      button.addEventListener("click", () => sendMessage(choice.label, { flow: { id: flow.id, stepId: flow.stepId, choiceId: choice.id } }));
+      group.append(button);
+    });
+    const time = content.querySelector(".sac-message-time");
+    if (time) content.insertBefore(group, time);
+    else content.append(group);
+  }
   function escapeHtml(text) {
     return String(text).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
   }
@@ -571,10 +650,10 @@
     wrap.className = "sac-products";
     const rootUrl = window.Shopify?.routes?.root || "/";
     const currentProducts = await Promise.all(products.map(async (product) => {
-      if (!product.handle) return product;
+      if (!product.handle) return { ...product, url: product.url || "" };
       try {
         const response = await fetch(`${rootUrl}products/${encodeURIComponent(product.handle)}.js`, { headers: { accept: "application/json" }, cache: "no-store" });
-        if (!response.ok) return null;
+        if (!response.ok) return { ...product, url: product.url || `${rootUrl}products/${encodeURIComponent(product.handle)}` };
         const current = await response.json();
         return {
           ...product,
@@ -582,37 +661,156 @@
           image: current.featured_image || current.images?.[0] || product.image,
           url: current.url || `${rootUrl}products/${encodeURIComponent(product.handle)}`,
           priceCents: Number(current.price_min ?? current.price ?? 0),
-          variants: (current.variants || []).map((variant) => ({ id: variant.id, title: variant.title, priceCents: Number(variant.price || 0), availableForSale: variant.available !== false })),
+          variants: (current.variants || []).map((variant) => ({ id: variant.id, title: variant.public_title || variant.title, priceCents: Number(variant.price || 0), availableForSale: variant.available !== false })),
         };
-      } catch { return null; }
+      } catch { return { ...product, url: product.url || `${rootUrl}products/${encodeURIComponent(product.handle)}` }; }
     }));
     const currency = window.Shopify?.currency?.active || "USD";
     const formatCents = (value) => {
       try { return new Intl.NumberFormat(document.documentElement.lang || "en", { style: "currency", currency }).format(Number(value) / 100); }
       catch { return `${currency} ${(Number(value) / 100).toFixed(2)}`; }
     };
-    currentProducts.filter(Boolean).forEach((product) => {
+    currentProducts.filter(Boolean).sort((left, right) => {
+      const leftAvailable = (left.variants || []).some((variant) => variant.availableForSale !== false);
+      const rightAvailable = (right.variants || []).some((variant) => variant.availableForSale !== false);
+      return Number(rightAvailable) - Number(leftAvailable);
+    }).slice(0, 4).forEach((product) => {
       const card = document.createElement("article");
-      card.className = product.image ? "sac-card has-image" : "sac-card";
+      card.className = "sac-card";
+      const mediaContent = product.image ? document.createElement("img") : createProductPlaceholder();
       if (product.image) {
-        const image = document.createElement("img"); image.src = product.image; image.alt = product.title || ""; image.loading = "lazy";
-        if (product.url) { const link = document.createElement("a"); link.href = product.url; link.target = "_blank"; link.rel = "noopener noreferrer"; link.setAttribute("aria-label", `View ${product.title}`); link.append(image); card.append(link); }
-        else card.append(image);
+        mediaContent.src = product.image;
+        mediaContent.alt = product.title || "";
+        mediaContent.loading = "lazy";
+        mediaContent.addEventListener("error", () => mediaContent.replaceWith(createProductPlaceholder()), { once: true });
       }
+      const media = product.url ? document.createElement("a") : document.createElement("div");
+      media.className = "sac-card-media";
+      if (product.url) { media.href = product.url; media.target = "_blank"; media.rel = "noopener noreferrer"; media.setAttribute("aria-label", `View ${product.title || "product"}`); }
+      media.append(mediaContent);
       const info = document.createElement("div");
       info.className = "sac-card-info";
+      const titleRow = document.createElement("div");
+      titleRow.className = "sac-card-title-row";
       const title = product.url ? document.createElement("a") : document.createElement("strong");
+      title.className = "sac-card-title";
       title.textContent = product.title || "Product";
-      if (product.url) { title.href = product.url; title.target = "_blank"; title.rel = "noopener noreferrer"; title.className = "sac-card-title"; }
+      if (product.url) { title.href = product.url; title.target = "_blank"; title.rel = "noopener noreferrer"; }
+      titleRow.append(title);
+      const productTags = Array.isArray(product.tags) ? product.tags : String(product.tags || "").split(",");
+      const isBestSeller = product.bestSeller === true || product.isBestSeller === true || productTags.some((tag) => /best[\s_-]*sell|bestseller/i.test(String(tag)));
+      if (isBestSeller) { const badge = document.createElement("span"); badge.className = "sac-best-seller-badge"; badge.textContent = "Best seller"; titleRow.append(badge); }
       const price = document.createElement("div"); price.className = "sac-card-price"; price.textContent = Number.isFinite(product.priceCents) ? formatCents(product.priceCents) : (product.price ? `${currency} ${product.price}` : "");
-      info.append(title, price);
+      const allVariants = product.variants || [];
+      const availableVariants = allVariants.filter((value) => value.availableForSale !== false);
+      const outOfStock = allVariants.length > 0 && availableVariants.length === 0;
+      info.append(titleRow, price);
       const variant = document.createElement("select"); variant.setAttribute("aria-label", `Choose ${product.title || "product"} variant`);
-      (product.variants || []).filter((value) => value.availableForSale !== false).forEach((value) => { const option = document.createElement("option"); option.value = String(value.id).split("/").pop(); option.textContent = `${value.title}${Number.isFinite(value.priceCents) ? ` · ${formatCents(value.priceCents)}` : ""}`; variant.append(option); });
+      availableVariants.forEach((value) => { const option = document.createElement("option"); option.value = String(value.id).split("/").pop(); option.textContent = `${value.title}${Number.isFinite(value.priceCents) ? ` · ${formatCents(value.priceCents)}` : ""}`; variant.append(option); });
+      if (availableVariants.length > 1 || (availableVariants.length === 1 && !/^default title$/i.test(availableVariants[0].title || ""))) info.append(variant);
       variant.addEventListener("change", () => { const selected = product.variants.find((value) => String(value.id).split("/").pop() === variant.value); if (selected && Number.isFinite(selected.priceCents)) price.textContent = formatCents(selected.priceCents); });
-      const add = document.createElement("button"); add.type = "button"; add.textContent = "Add to cart"; add.disabled = !variant.value;
-      add.addEventListener("click", async () => { add.disabled = true; try { const result = await fetch(`${window.Shopify?.routes?.root || "/"}cart/add.js`, { method: "POST", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify({ items: [{ id: Number(variant.value), quantity: 1 }] }) }); if (!result.ok) throw new Error(); document.dispatchEvent(new CustomEvent("cart:refresh", { bubbles: true })); document.dispatchEvent(new CustomEvent("cart:updated", { bubbles: true })); add.textContent = "Added to cart ✓"; } catch { add.textContent = "Try again"; add.disabled = false; } });
-      info.append(variant, add); card.append(info); wrap.append(card);
+      if (outOfStock) { const stock = document.createElement("span"); stock.className = "sac-stock-badge is-out"; stock.textContent = "Out of stock"; info.append(stock); }
+      const add = document.createElement("button"); add.type = "button"; add.textContent = outOfStock ? "Unavailable" : "Add to cart"; add.disabled = outOfStock || !variant.value;
+      add.addEventListener("click", async () => {
+        const originalLabel = add.textContent;
+        add.disabled = true;
+        add.textContent = "Adding…";
+        try {
+          const rootPath = window.Shopify?.routes?.root || "/";
+          const response = await fetch(`${rootPath}cart/add.js`, { method: "POST", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify({ items: [{ id: Number(variant.value), quantity: 1 }] }) });
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(payload.description || payload.message || "Could not add this item.");
+          const cartResponse = await fetch(`${rootPath}cart.js`, { headers: { accept: "application/json" }, cache: "no-store" });
+          const cart = cartResponse.ok ? await cartResponse.json() : null;
+          document.dispatchEvent(new CustomEvent("cart:refresh", { bubbles: true, detail: { cart, item: payload } }));
+          document.dispatchEvent(new CustomEvent("cart:updated", { bubbles: true, detail: { cart, item: payload } }));
+          document.dispatchEvent(new CustomEvent("cart:change", { bubbles: true, detail: { cart, item: payload } }));
+          updateThemeCart(cart, rootPath);
+          animateProductToCart(media, product.url);
+          add.textContent = "Added ✓";
+          add.classList.add("is-added");
+          window.setTimeout(() => { add.textContent = originalLabel; add.classList.remove("is-added"); add.disabled = false; }, 1800);
+        } catch (error) {
+          add.textContent = error.message || "Try again";
+          window.setTimeout(() => { add.textContent = originalLabel; add.disabled = false; }, 2400);
+        }
+      });
+      info.append(add);
+      if (product.url) { const details = document.createElement("a"); details.className = "sac-product-details-link"; details.href = product.url; details.target = "_blank"; details.rel = "noopener noreferrer"; details.textContent = "View product details ↗"; info.append(details); }
+      card.append(media, info); wrap.append(card);
     });
     if (wrap.childElementCount) container.append(wrap);
+  }
+  function createProductPlaceholder() {
+    const placeholder = document.createElement("span");
+    placeholder.className = "sac-product-placeholder";
+    placeholder.setAttribute("role", "img");
+    placeholder.setAttribute("aria-label", "Product image unavailable");
+    placeholder.innerHTML = '<svg viewBox="0 0 48 48" aria-hidden="true"><path d="M13 18h22l3 20H10l3-20Z"/><path d="M18 19v-4a6 6 0 0 1 12 0v4M18 27h12"/></svg>';
+    return placeholder;
+  }
+  function updateThemeCart(cart, rootPath) {
+    if (!cart) return;
+    const count = Number(cart.item_count || 0);
+    document.querySelectorAll("[data-cart-count], .cart-count-bubble span[aria-hidden='true'], .cart-count-bubble span:not(.visually-hidden), #cart-icon-bubble .cart-count-bubble span").forEach((node) => { node.textContent = String(count); });
+    document.querySelectorAll(".cart-count-bubble, [data-cart-count-bubble]").forEach((node) => { node.hidden = count === 0; node.classList.toggle("is-empty", count === 0); });
+    const cartIcon = document.querySelector("#cart-icon-bubble, a[href$='/cart'], a[href*='/cart']");
+    if (cartIcon) {
+      cartIcon.classList.remove("animate", "is-empty");
+      void cartIcon.offsetWidth;
+      cartIcon.classList.add("animate");
+      cartIcon.dispatchEvent(new CustomEvent("cart:render", { bubbles: true, detail: { cart } }));
+    }
+    fetch(`${rootPath}cart?section_id=cart-drawer`, { headers: { accept: "text/html" }, cache: "no-store" })
+      .then((response) => response.ok ? response.text() : "")
+      .then((html) => {
+        if (!html) return;
+        const doc = new DOMParser().parseFromString(html, "text/html");
+        const freshDrawer = doc.querySelector("cart-drawer");
+        const currentDrawer = document.querySelector("cart-drawer");
+        if (freshDrawer && currentDrawer) { currentDrawer.innerHTML = freshDrawer.innerHTML; currentDrawer.classList.toggle("is-empty", count === 0); }
+      }).catch(() => {});
+  }
+  function animateProductToCart(source) {
+    const target = Array.from(document.querySelectorAll("#cart-icon-bubble, [data-cart-icon], .cart-count-bubble, [aria-label*='cart' i], a[href$='/cart'], a[href*='/cart']"))
+      .find((element) => { const rect = element.getBoundingClientRect(); return rect.width > 0 && rect.height > 0 && getComputedStyle(element).visibility !== "hidden"; });
+    if (!target || !source || typeof source.getBoundingClientRect !== "function") return;
+    const from = source.getBoundingClientRect();
+    const to = target.getBoundingClientRect();
+    if (!from.width || !to.width) return;
+    const startX = from.left + from.width / 2;
+    const startY = from.top + from.height / 2;
+    const endX = to.left + to.width / 2;
+    const endY = to.top + to.height / 2;
+    const deltaX = endX - startX;
+    const deltaY = endY - startY;
+    const flyer = document.createElement("span");
+    flyer.className = "sac-cart-bird";
+    flyer.setAttribute("aria-hidden", "true");
+    flyer.innerHTML = '<svg viewBox="0 0 52 48"><path d="M4 27c8-11 16-17 27-18-3 4-4 8-3 11 6-6 12-9 19-9-4 5-8 9-11 15-5 9-13 15-25 17 5-5 8-10 9-15-5 0-10 0-16-1Z"/><path class="sac-bird-wing" d="M8 25c8-5 15-8 23-9-8 5-13 10-16 17l-4 3c3-6 4-10 4-14-2 0-4 1-7 3Z"/><path class="sac-bird-beak" d="m43 11 7-3-4 7Z"/></svg>';
+    flyer.style.left = `${startX - 17}px`;
+    flyer.style.top = `${startY - 17}px`;
+    document.body.append(flyer);
+    const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (reducedMotion || typeof flyer.animate !== "function") {
+      flyer.remove();
+      target.classList.add("sac-cart-arrived");
+      window.setTimeout(() => target.classList.remove("sac-cart-arrived"), 550);
+      return;
+    }
+    const compact = window.matchMedia?.("(max-width: 520px)").matches;
+    const arc = Math.min(compact ? 42 : 64, Math.max(22, Math.abs(deltaX) * .12));
+    const flight = flyer.animate([
+      { opacity: 0, transform: "translate3d(0, 10px, 0) rotate(-18deg) scale(.55)" },
+      { opacity: 1, offset: .12, transform: "translate3d(0, 0, 0) rotate(-4deg) scale(1)" },
+      { opacity: 1, offset: .42, transform: `translate3d(${deltaX * .38}px, ${deltaY * .38 - arc}px, 0) rotate(9deg) scale(.9)` },
+      { opacity: 1, offset: .76, transform: `translate3d(${deltaX * .78}px, ${deltaY * .78 - arc * .42}px, 0) rotate(22deg) scale(.7)` },
+      { opacity: .94, transform: `translate3d(${deltaX}px, ${deltaY}px, 0) rotate(34deg) scale(.28)` },
+    ], { duration: compact ? 780 : 900, easing: "cubic-bezier(.2,.72,.25,1)", fill: "forwards" });
+    const wing = flyer.querySelector(".sac-bird-wing");
+    if (wing?.animate) wing.animate([
+      { transform: "rotate(0deg)" }, { transform: "rotate(-30deg)" }, { transform: "rotate(5deg)" },
+    ], { duration: 190, iterations: Math.ceil((compact ? 780 : 900) / 190), easing: "ease-in-out" });
+    flight.onfinish = () => { flyer.remove(); target.classList.add("sac-cart-arrived"); window.setTimeout(() => target.classList.remove("sac-cart-arrived"), 550); };
   }
 })();

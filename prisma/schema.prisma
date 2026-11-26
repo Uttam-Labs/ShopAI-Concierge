@@ -58,6 +58,7 @@ model Ticket {
   subject   String
   message   String
   status    String   @default("open")
+  resolvedEmailSentAt DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -101,6 +102,7 @@ model AssistantSettings {
   responseGuidelines String   @default("Be concise, helpful, and on-brand. Use only approved store information. Never invent products, stock, policies, tracking details, or discounts.")
   ticketPrefix       String   @default("SAC")
   ticketOptions      Json     @default("[]")
+  flows              Json     @default("[]")
   updatedAt          DateTime @updatedAt
 }
 

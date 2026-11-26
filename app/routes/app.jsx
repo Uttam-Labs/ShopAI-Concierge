@@ -32,7 +32,8 @@ export default function App() {
         <s-link href="/app" onClick={navigateInApp("/app")}>Dashboard</s-link>
         <s-link href="/app/conversations" onClick={navigateInApp("/app/conversations")}>Concierge</s-link>
         <s-link href="/app/rag" onClick={navigateInApp("/app/rag")}>RAG knowledge</s-link>
-        <s-link href="/app/faqs" onClick={navigateInApp("/app/faqs")}>FAQs</s-link>
+        <s-link href="/app/flows" onClick={navigateInApp("/app/flows")}>Flows</s-link>
+        <s-link href="/app/faqs" onClick={navigateInApp("/app/faqs")}>Questions</s-link>
         <s-link href="/app/tickets" onClick={navigateInApp("/app/tickets")}>Tickets</s-link>
         <s-link href="/app/settings" onClick={navigateInApp("/app/settings")}>Settings</s-link>
       </s-app-nav>
