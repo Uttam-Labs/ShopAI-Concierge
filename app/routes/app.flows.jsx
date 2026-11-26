@@ -141,8 +141,8 @@ export default function Flows({ loaderData }) {
         const startY = sourceRect.bottom - groupRect.top;
         const branches = [...group.querySelectorAll(".flow-canvas-branch-node")].map((branch) => {
           const target = branch.getBoundingClientRect();
-          // Leave a visible gap after the arrow tip so it does not touch the card.
-          return { endX: target.left + target.width / 2 - groupRect.left, endY: target.top - groupRect.top - 8, row: Math.round((target.top - groupRect.top) / 12) };
+          // Leave a comfortable visible gap after the arrow tip so it does not touch the card.
+          return { endX: target.left + target.width / 2 - groupRect.left, endY: target.top - groupRect.top - 14, row: Math.round((target.top - groupRect.top) / 12) };
         });
         if (!branches.length) return;
         const rows = new Map();
