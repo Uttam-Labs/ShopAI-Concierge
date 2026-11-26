@@ -862,4 +862,13 @@ button:disabled, s-button[disabled] { cursor: not-allowed; }
 .flow-branch-info b svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.7; }
 .flow-branch-action b { color: #a84b18; background: #fff0e5; }
 .flow-canvas-connectors > path { stroke: #aeb8c4; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.flow-canvas-help p { font-size: 11px; }
+.flow-canvas-node strong { font-size: 12px; }
+.flow-canvas-node em { font-size: 10px; }
+.flow-node-edit { font-size: 9px; }
+.flow-branch-card-header { font-size: 9px; }
+.flow-branch-card-content { padding: 17px 15px; }
+.flow-branch-user-text { font-size: 12px; }
+.flow-branch-info { font-size: 10px; }
+.flow-branch-info b { font-size: 8px; }
 @media (max-width: 720px) { .flow-canvas-branches { margin-top: 76px; column-gap: 18px; row-gap: 46px; } }
