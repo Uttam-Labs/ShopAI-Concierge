@@ -364,8 +364,11 @@ async function saveConversation(shop, sessionId, userMessage, assistantMessage, 
 }
 
 async function answerFaq(question, faq, settings) {
+  // FAQs without a linked source document already have an approved, complete
+  // answer. Return it directly instead of waiting for an AI generation call.
+  if (!faq.sourceContent) return faq.answer;
   const apiKey = resolveProviderKey(settings);
-  if (!apiKey) return faq.sourceContent ? extractFaqDocumentAnswer(question, faq) : faq.answer;
+  if (!apiKey) return extractFaqDocumentAnswer(question, faq);
   try {
     return await generateProviderAnswer({
       provider: settings.aiProvider || "gemini",

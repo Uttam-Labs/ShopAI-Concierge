@@ -384,7 +384,22 @@
     async function sendMessage(rawMessage, options = {}) {
       const message = String(rawMessage || "").trim();
       const faqId = typeof options.faqId === "string" ? options.faqId : "";
-      if (!message || form.dataset.sending === "true") return;
+      if (form.dataset.sending === "true") return;
+      if (options.exitFlow) {
+        activeFlow = null;
+        chatHistory.forEach((item) => { delete item.flow; });
+        panel.querySelectorAll(".sac-flow-choices").forEach((choices) => choices.remove());
+        panel.querySelectorAll(".sac-helpful-actions").forEach((actions) => actions.remove());
+        const answer = "Okay, we’ve left this topic. What else can I help you with?";
+        addMessage(messages, answer, "assistant");
+        chatHistory.push({ role: "assistant", content: answer, createdAt: Date.now() });
+        welcomeActions.hidden = false;
+        persistChat();
+        messages.scrollTop = messages.scrollHeight;
+        input.focus();
+        return;
+      }
+      if (!message) return;
       const previousAssistantTurn = chatHistory[chatHistory.length - 1];
       if (!options.flow && /^(yes|yes please|sure|go ahead|please do|that one)$/i.test(message) && previousAssistantTurn?.role === "assistant" && previousAssistantTurn.purchaseIntent) {
         const purchaseCards = [...messages.querySelectorAll('.sac-products[data-purchase-intent="true"] .sac-card')];
@@ -766,7 +781,7 @@
     exitButton.type = "button";
     exitButton.className = "sac-flow-choice sac-flow-exit";
     exitButton.textContent = "Exit from this topic";
-    exitButton.addEventListener("click", () => sendMessage("Exit from this topic", { clearFlow: true }));
+    exitButton.addEventListener("click", () => sendMessage("", { exitFlow: true }));
     group.append(exitButton);
     const time = content.querySelector(".sac-message-time");
     if (time) content.insertBefore(group, time);
