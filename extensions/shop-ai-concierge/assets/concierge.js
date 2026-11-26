@@ -34,6 +34,7 @@
     panel.innerHTML = `<div class="sac-head"><div class="sac-brand"><span class="sac-brand-mark">✦</span><div class="sac-brand-copy"><strong>${escapeHtml(root.dataset.title || "How can we help?")}</strong><span class="sac-live">Here to help</span></div></div><button class="sac-close" type="button" aria-label="Close chat">×</button></div><div class="sac-welcome"><span>Product advice</span><i></i><span>Order updates</span><i></i><span>Store support</span><button type="button" class="sac-help-button" aria-label="Contact store support"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11.5a7.5 7.5 0 0 1-8 7.5 8 8 0 0 1-3.5-.8L4 20l1.2-3.7A7.4 7.4 0 0 1 4 12.5 7.5 7.5 0 0 1 12 5a7.5 7.5 0 0 1 8 6.5Z"/><path d="M12 9v4m0 3h.01"/></svg><span>${escapeHtml(supportButtonLabel)}</span></button></div><div class="sac-messages" aria-live="polite" aria-relevant="additions text"><div class="sac-message-row sac-assistant-row sac-initial-greeting"><span class="sac-avatar" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4.5" y="8" width="15" height="11" rx="4"/><path d="M12 4v4M9 13h.01M15 13h.01M9 16h6M3 12v3M21 12v3"/></svg></span><div class="sac-message-content"><div class="sac-msg sac-greeting">Hi! 👋 I can help you find products, check or request a change to an order, ask about returns, or contact the store team. What can I help with?</div><time class="sac-message-time" data-time="${Date.now()}">just now</time></div></div><div class="sac-faqs" hidden><div class="sac-faq-heading"><span>POPULAR QUESTIONS</span><small>Choose a question</small></div><div class="sac-faq-list"></div></div></div><div class="sac-form-wrap"><form class="sac-form"><textarea class="sac-input" rows="1" maxlength="1000" autocomplete="off" placeholder="Ask us anything…" aria-label="Your message"></textarea><button class="sac-send" type="submit" aria-label="Send message"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 2 11 13"/><path d="m22 2-7 20-4-9-9-4Z"/></svg></button></form><div class="sac-footer">Powered by <span>ShopAI Concierge</span></div></div><div class="sac-support-backdrop" hidden><section class="sac-support-card" role="dialog" aria-modal="true" aria-labelledby="sac-support-title"><button type="button" class="sac-support-close" aria-label="Close support request">×</button><span class="sac-support-icon">✦</span><p class="sac-support-kicker">CUSTOMER SUPPORT</p><h3 id="sac-support-title">${escapeHtml(supportTitle)}</h3><p class="sac-support-copy">${escapeHtml(root.dataset.supportDescription || "Tell us what you need help with. Our team will follow up by email.")}</p><form class="sac-support-form"><label>${escapeHtml(root.dataset.supportNameLabel || "Your name")}<input name="customerName" autocomplete="name" maxlength="120" placeholder="${escapeHtml(root.dataset.supportNamePlaceholder || "Name")}" required></label><label>${escapeHtml(root.dataset.supportEmailLabel || "Email for follow-up")}<input name="customerEmail" type="email" autocomplete="email" maxlength="254" placeholder="${escapeHtml(root.dataset.supportEmailPlaceholder || "you@example.com")}" required></label><label>${escapeHtml(root.dataset.supportIssueTypeLabel || "Select a request type")}<select name="requestTypeId" class="sac-support-select" required><option value="" selected disabled>${escapeHtml(root.dataset.supportTypePlaceholder || "Choose a support topic")}</option><option value="other">${escapeHtml(root.dataset.supportOtherOption || "Other")}</option></select></label><div class="sac-support-guidance" hidden><strong class="sac-support-question"></strong><p class="sac-support-answer"></p></div><label class="sac-support-other-field">${escapeHtml(supportDetailsLabel)}<textarea name="requestDetails" rows="3" maxlength="2000" placeholder="${escapeHtml(root.dataset.supportDetailsPlaceholder || "Describe what you need help with…")}"></textarea></label><div class="sac-support-notice" aria-live="polite"></div><footer><button type="button" class="sac-support-cancel">${escapeHtml(root.dataset.supportCancelLabel || "Cancel")}</button><button type="submit" class="sac-support-submit">${escapeHtml(root.dataset.supportSubmitLabel || "Create support request")}</button></footer></form></section></div>`;
     panel.querySelector(".sac-greeting").textContent = `Hi! 👋 Welcome to ${storeName}. I can help you find products, answer questions about ${storeName}’s products, pages, and policies, check an order, or contact the team. What can I help with?`;
     const welcome = panel.querySelector(".sac-welcome");
+    welcome.querySelector(".sac-help-button")?.remove();
     Array.from(welcome.childNodes).forEach((node) => {
       if (!(node.nodeType === Node.ELEMENT_NODE && node.classList.contains("sac-help-button"))) node.remove();
     });
@@ -95,7 +96,7 @@
       button.addEventListener("click", () => sendMessage(message));
       return button;
     };
-    welcomeActions.append(makeQuickAction("Find products", "Help me find a product"), orderButton, makeQuickAction("Cancel an order", "I want to cancel my order"), makeQuickAction("Returns & refunds", "I want to return a product"), panel.querySelector(".sac-help-button"));
+    welcomeActions.append(makeQuickAction("Find products", "Help me find a product"), orderButton, makeQuickAction("Cancel an order", "I want to cancel my order"), makeQuickAction("Returns & refunds", "I want to return a product"));
     panel.querySelector(".sac-welcome").append(welcomeActions);
     const persistentSupportButton = document.createElement("button");
     persistentSupportButton.type = "button";
@@ -103,7 +104,7 @@
     persistentSupportButton.setAttribute("aria-label", "Contact store support");
     persistentSupportButton.textContent = supportButtonLabel || "Contact store support";
     persistentSupportButton.addEventListener("click", () => openSupportRequest());
-    panel.querySelector(".sac-form-wrap").insertBefore(persistentSupportButton, panel.querySelector(".sac-footer"));
+    panel.insertBefore(persistentSupportButton, panel.querySelector(".sac-form-wrap"));
     const orderBackdrop = panel.querySelector(".sac-order-backdrop");
     const orderForm = panel.querySelector(".sac-order-form");
     const orderNotice = panel.querySelector(".sac-order-notice");
@@ -245,7 +246,6 @@
           }
           humanHandoffEnabled = config.humanHandoff !== false;
           if (!humanHandoffEnabled) {
-            panel.querySelector(".sac-help-button").hidden = true;
             persistentSupportButton.hidden = true;
           }
           orderButton.hidden = !enableOrderLookup || config.orderLookup === false;
@@ -492,7 +492,6 @@
       supportBackdrop.hidden = false;
       (identity?.email ? supportValues.customerName : supportValues.customerEmail).focus();
     };
-    panel.querySelector(".sac-help-button").addEventListener("click", () => openSupportRequest());
     supportIssueType.addEventListener("change", () => {
       const selected = supportTypes.find((item) => item.id === supportIssueType.value);
       supportGuidance.hidden = !selected;
@@ -718,7 +717,7 @@
   }
   function renderFaqs(faqs, section, list, sendMessage) {
     list.replaceChildren();
-    faqs.slice(0, 6).forEach((faq) => {
+    faqs.slice(0, 4).forEach((faq) => {
       if (!faq?.question) return;
       const button = document.createElement("button");
       button.type = "button";
@@ -758,13 +757,14 @@
       button.type = "button";
       button.className = "sac-flow-choice";
       button.textContent = choice.label;
-      button.addEventListener("click", () => sendMessage(choice.label, { flow: { id: flow.id, stepId: flow.stepId, choiceId: choice.id } }));
+      button.addEventListener("click", () => sendMessage(choice.label, { flow: { id: flow.id, stepId: flow.stepId, choiceId: choice.id, data: flow.data || {} } }));
       group.append(button);
     });
     const exitButton = document.createElement("button");
     exitButton.type = "button";
     exitButton.className = "sac-flow-choice sac-flow-exit";
     exitButton.textContent = "Exit from this topic";
+    exitButton.addEventListener("click", () => sendMessage("Exit from this topic", { clearFlow: true }));
     group.append(exitButton);
     const time = content.querySelector(".sac-message-time");
     if (time) content.insertBefore(group, time);

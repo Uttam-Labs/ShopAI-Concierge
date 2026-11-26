@@ -449,7 +449,7 @@ export const loader = async ({ request }) => {
     // assistant setting controls answer matching, and must not hide the visible questions.
     const activeFaqs = await prisma.faq.findMany({ where: { shop, active: true }, select: { id: true, question: true, featured: true }, orderBy: { createdAt: "desc" }, take: 100 });
     const suggestedFaqs = activeFaqs.filter((faq) => faq.featured);
-    const faqs = (suggestedFaqs.length ? suggestedFaqs : activeFaqs).slice(0, 6).map(({ id, question }) => ({ id, question }));
+    const faqs = (suggestedFaqs.length ? suggestedFaqs : activeFaqs).slice(0, 4).map(({ id, question }) => ({ id, question }));
     return Response.json({ greeting: settings?.defaultGreeting || "Hi there! 👋 Tell me what you’re shopping for, ask about our policies, or track an order.", humanHandoff: settings?.humanHandoff !== false, orderLookup: settings?.orderLookup !== false, orderEmailRequired: settings?.orderEmailRequired !== false, faqs, ticketOptions: normalizeTicketOptions(settings?.ticketOptions), flows: normalizeConversationFlows(settings?.flows).filter((flow) => flow.enabled).map(({ id, name }) => ({ id, name })) }, { headers });
   } catch (error) {
     console.error("App proxy config request failed", error);
@@ -845,20 +845,22 @@ export const action = async ({ request }) => {
     }
     const orderHelpIntent = settings.orderLookup && /(?:\b(?:track|tracking|status|where is|where's|check|find)\b.{0,35}\border\b|\border\b.{0,35}\b(?:track|tracking|status|where|update|details)\b|\border number\b|অর্ডার.{0,24}(?:ট্র্যাক|স্ট্যাটাস|কোথায়|কোথায়|চেক|খুঁজে|আপডেট)|(?:ট্র্যাক|স্ট্যাটাস|কোথায়|কোথায়).{0,24}অর্ডার)/i.test(userMessage);
     if (activeFaqs.length && !orderHelpIntent) {
-      const stopWords = new Set(["a", "an", "and", "are", "can", "could", "do", "does", "for", "how", "i", "is", "it", "me", "my", "of", "on", "or", "the", "to", "we", "what", "when", "where", "which", "will", "with", "you", "your"]);
+      const stopWords = new Set(["a", "an", "and", "are", "can", "could", "do", "does", "for", "how", "i", "is", "it", "me", "my", "of", "on", "or", "the", "to", "we", "what", "when", "where", "which", "will", "with", "you", "your", "please", "help", "order", "product", "store"]);
+      const aliases = { package: "shipping", parcel: "shipping", delivery: "shipping", shipped: "shipping", delivered: "shipping", shipment: "shipping", courier: "shipping", exchange: "return", refund: "return", money: "payment", paid: "payment", charge: "payment", cancel: "cancellation", cancelled: "cancellation", canceled: "cancellation", change: "edit", update: "edit", modify: "edit", address: "edit", email: "contact", phone: "contact", speak: "human", agent: "human", person: "human", representative: "human", discount: "promotion", coupon: "promotion", promo: "promotion", code: "promotion", size: "fit", sizing: "fit", available: "stock", availability: "stock", sold: "stock", restock: "stock" };
       const normalize = (value) => String(value || "").toLocaleLowerCase().normalize("NFKD").replace(/^\s*\d+[.)\s-]+/, "").replace(/[^\p{L}\p{N}\s]/gu, " ").replace(/\s+/g, " ").trim();
+      const terms = (value) => [...new Set(normalize(value).split(" ").filter((word) => word.length > 2 && !stopWords.has(word)).map((word) => aliases[word] || word))];
       const customerQuestion = normalize(message);
-      const customerWords = new Set(customerQuestion.split(" ").filter((word) => word.length > 2 && !stopWords.has(word)));
+      const customerWords = new Set(terms(customerQuestion));
       const matchingFaq = activeFaqs.map((faq) => {
         const faqQuestion = normalize(faq.question);
-        const faqWords = [...new Set(faqQuestion.split(" ").filter((word) => word.length > 2 && !stopWords.has(word)))];
+        const faqWords = terms(faqQuestion);
         const overlap = faqWords.filter((word) => customerWords.has(word)).length;
         const precision = overlap / Math.max(1, customerWords.size);
         const score = overlap / Math.max(1, Math.min(faqWords.length, customerWords.size));
         const coverage = overlap / Math.max(1, faqWords.length);
         return { faq, score: faqQuestion === customerQuestion ? 1 : score, precision, coverage, overlap };
       }).sort((left, right) => right.score - left.score)[0];
-      if (matchingFaq && (matchingFaq.score === 1 || (matchingFaq.overlap >= 2 && matchingFaq.precision >= 0.5 && matchingFaq.coverage >= 0.65))) {
+      if (matchingFaq && (matchingFaq.score === 1 || (matchingFaq.overlap >= 2 && matchingFaq.precision >= 0.5 && matchingFaq.coverage >= 0.65) || (customerWords.size <= 3 && matchingFaq.overlap >= 1 && matchingFaq.precision >= 0.5 && matchingFaq.coverage >= 0.3))) {
         // A direct FAQ answer is already merchant-approved. Do not dilute it with
         // unrelated vector matches, which can cause the assistant to mix policies.
         const answer = await answerFaq(userMessage, matchingFaq.faq, settings);
