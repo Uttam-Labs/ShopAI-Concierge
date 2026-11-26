@@ -203,6 +203,7 @@ export default function Flows({ loaderData }) {
             <div className="flow-canvas-zoom-content" style={{ "--flow-map-zoom": zoom }}>
             <div className="flow-canvas-help"><span>START</span><p>Customer messages matching one of these phrases enter this flow.</p></div>
             <button type="button" className={`flow-canvas-node flow-canvas-start ${selectedNode?.kind === "start" ? "active" : ""}`} onClick={() => setSelectedNode({ kind: "start" })}><span className="flow-node-icon"><AdminIcon name="bolt"/></span><span><small>FLOW ENTRY</small><strong>{selectedFlow.name}</strong><em>{selectedFlow.triggerTerms.slice(0, 5).join(", ")}{selectedFlow.triggerTerms.length > 5 ? ` +${selectedFlow.triggerTerms.length - 5} more` : ""}</em></span><span className="flow-node-edit">Edit</span></button>
+            {selectedFlow.steps.length > 0 && <div className="flow-canvas-entry-connector" aria-hidden="true"/>}
             <div className="flow-canvas-steps">{selectedFlow.steps.map((step, stepIndex) => {
               const branches = [...(step.choices || []).map((item) => ({ ...item, kind: "choice" })), ...(step.routes || []).map((item) => ({ ...item, kind: "route" }))];
               const isStepActive = selectedNode?.kind === "step" && selectedNode.stepId === step.id;

@@ -867,20 +867,22 @@ button:disabled, s-button[disabled] { cursor: not-allowed; }
 .flow-canvas-node em { font-size: 10px; }
 .flow-node-edit { font-size: 9px; }
 .flow-branch-card-header { font-size: 9px; }
-.flow-branch-card-content { padding: 17px 15px; }
+.flow-branch-card-content { gap: 14px; padding: 23px 15px 18px; }
 .flow-branch-user-text { font-size: 12px; }
 .flow-branch-info { font-size: 10px; }
 .flow-branch-info b { font-size: 8px; }
-.flow-studio { align-items: start; }
-.flow-studio-library { position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow-y: auto; scrollbar-gutter: stable; }
-.flow-studio-main { height: clamp(360px, calc(100vh - 370px), 920px); min-height: 0; grid-template-rows: auto minmax(0, 1fr); }
+.flow-studio { align-items: stretch; min-height: min(760px, calc(100dvh - 300px)); margin-bottom: 0; }
+.flow-studio-library { position: sticky; top: 12px; max-height: calc(100dvh - 24px); overflow-y: auto; scrollbar-gutter: stable; }
+.flow-studio-main { height: min(920px, max(540px, calc(100dvh - 300px))); min-height: 0; grid-template-rows: auto minmax(0, 1fr); }
 .flow-studio-body { height: 100%; min-height: 0; overflow: hidden; }
 .flow-canvas-wrap { height: 100%; min-height: 0; max-height: 100%; overscroll-behavior: contain; }
 .flow-canvas-empty { height: 100%; min-height: 0; }
 .flow-canvas-node small svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.5; }
-.flow-canvas-start + .flow-canvas-steps { margin-top: 30px; }
+.flow-canvas-entry-connector { position: relative; width: 2px; height: 38px; margin: 0 auto; background: linear-gradient(#c4ccd6, #9daaba); }
+.flow-canvas-entry-connector::after { position: absolute; bottom: 1px; left: 50%; width: 8px; height: 8px; transform: translateX(-50%) rotate(45deg); border-right: 2px solid #9daaba; border-bottom: 2px solid #9daaba; content: ""; }
 @media (max-width: 720px) {
+  .flow-studio { min-height: 0; }
   .flow-studio-library { position: static; max-height: none; overflow: visible; }
-  .flow-studio-main { height: clamp(320px, calc(100dvh - 300px), 700px); }
+  .flow-studio-main { height: min(700px, max(440px, calc(100dvh - 260px))); }
 }
 @media (max-width: 720px) { .flow-canvas-branches { margin-top: 76px; column-gap: 18px; row-gap: 46px; } }
