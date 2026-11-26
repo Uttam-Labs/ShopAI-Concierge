@@ -97,6 +97,7 @@ export default function Flows({ loaderData }) {
   const [selectedFlowId, setSelectedFlowId] = useState(null);
   const [selectedNode, setSelectedNode] = useState(null);
   const [connections, setConnections] = useState({});
+  const [zoom, setZoom] = useState(1);
   const canvasRef = useRef(null);
   useEffect(() => { if (fetcher.data?.saved) setFlows(fetcher.data.flows); }, [fetcher.data]);
   const selectedFlow = flows.find((flow) => flow.id === selectedFlowId) || null;
@@ -138,16 +139,24 @@ export default function Flows({ loaderData }) {
         const sourceRect = source.getBoundingClientRect();
         const startX = sourceRect.left + sourceRect.width / 2 - groupRect.left;
         const startY = sourceRect.bottom - groupRect.top;
-        const branches = [...group.querySelectorAll(".flow-canvas-branch-node")];
-        const junctionY = startY + Math.min(28, Math.max(16, (branches[0]?.getBoundingClientRect().top - groupRect.top - startY) * 0.35));
-        const paths = branches.map((branch) => {
+        const branches = [...group.querySelectorAll(".flow-canvas-branch-node")].map((branch) => {
           const target = branch.getBoundingClientRect();
-          const endX = target.left + target.width / 2 - groupRect.left;
-          const endY = target.top - groupRect.top + 1;
-          const bend = Math.max(20, Math.min(44, (endY - junctionY) * 0.55));
-          return `M ${startX} ${startY} L ${startX} ${junctionY} C ${startX} ${junctionY + bend}, ${endX} ${endY - bend}, ${endX} ${endY}`;
+          return { endX: target.left + target.width / 2 - groupRect.left, endY: target.top - groupRect.top + 1, row: Math.round((target.top - groupRect.top) / 12) };
         });
-        next[group.dataset.stepId] = { width: group.clientWidth, height: group.clientHeight, paths };
+        if (!branches.length) return;
+        const rows = new Map();
+        branches.forEach((branch) => rows.set(branch.row, [...(rows.get(branch.row) || []), branch]));
+        const sortedRows = [...rows.values()].sort((left, right) => left[0].endY - right[0].endY);
+        const junctions = sortedRows.map((row) => Math.min(...row.map((branch) => branch.endY)) - 17);
+        const paths = [{ d: `M ${startX} ${startY} L ${startX} ${junctions[junctions.length - 1]}`, arrow: false }];
+        sortedRows.forEach((row, rowIndex) => {
+          const junctionY = junctions[rowIndex];
+          row.forEach((branch) => {
+            const control = Math.max(14, Math.min(36, Math.abs(branch.endX - startX) * 0.18));
+            paths.push({ d: `M ${startX} ${junctionY} C ${startX} ${junctionY + control}, ${branch.endX} ${branch.endY - control}, ${branch.endX} ${branch.endY}`, arrow: true });
+          });
+        });
+        next[group.dataset.stepId] = { width: groupRect.width, height: groupRect.height, paths };
       });
       setConnections((current) => JSON.stringify(current) === JSON.stringify(next) ? current : next);
     };
@@ -157,7 +166,7 @@ export default function Flows({ loaderData }) {
     window.addEventListener("resize", measure);
     const frame = requestAnimationFrame(measure);
     return () => { cancelAnimationFrame(frame); observer.disconnect(); window.removeEventListener("resize", measure); };
-  }, [selectedFlowId, selectedFlow, selectedNode]);
+  }, [selectedFlowId, selectedFlow, selectedNode, zoom]);
 
   useEffect(() => {
     if (!selectedNode) return undefined;
@@ -167,11 +176,11 @@ export default function Flows({ loaderData }) {
   }, [selectedNode]);
 
   return <s-page heading="Flows" inlineSize="large">
-    <AdminPageHeader title="Conversation flows" description="Map customer messages to helpful replies and actions. Click any node to edit it in the side panel." metrics={[{ label: "Built-in flows", value: flows.length }, { label: "Enabled", value: flows.filter((flow) => flow.enabled).length }, { label: "Vector context", value: "Synced on save" }]}/>
+    <AdminPageHeader title="Conversation flows" description="Follow each path from the assistant’s question to the shopper’s reply and the action that follows." metrics={[{ label: "Built-in flows", value: flows.length }, { label: "Enabled", value: flows.filter((flow) => flow.enabled).length }, { label: "Vector context", value: "Synced on save" }]}/>
     <section className="flow-studio">
       <aside className="flow-studio-library" aria-label="Flow library">
         <div className="flow-studio-library-heading"><span className="rag-eyebrow">FLOW LIBRARY</span><h2>Choose a flow</h2><p>Built-in flows can be customized and switched on or off.</p></div>
-        <div className="flow-studio-flow-list">{flows.map((flow) => <button key={flow.id} type="button" className={`flow-studio-flow-button ${flow.id === selectedFlowId ? "selected" : ""}`} onClick={() => { setSelectedFlowId(flow.id); setSelectedNode(null); }}><span className="flow-studio-flow-icon"><AdminIcon name={flow.id === "product-discovery" ? "search" : flow.id === "returns-support" ? "ticket" : flow.id === "order-updates" ? "list" : "chat"}/></span><span><strong>{flow.name}</strong><small>{flow.steps.length} steps · {flow.enabled ? "On" : "Off"}</small></span><span className={`flow-enabled-pill ${flow.enabled ? "active" : ""}`}>{flow.enabled ? "On" : "Off"}</span></button>)}</div>
+        <div className="flow-studio-flow-list">{flows.map((flow) => <button key={flow.id} type="button" className={`flow-studio-flow-button ${flow.id === selectedFlowId ? "selected" : ""}`} onClick={() => { setSelectedFlowId(flow.id); setSelectedNode(null); setZoom(1); }}><span className="flow-studio-flow-icon"><AdminIcon name={flow.id === "product-discovery" ? "search" : flow.id === "returns-support" ? "ticket" : flow.id === "order-updates" ? "list" : "chat"}/></span><span><strong>{flow.name}</strong><small>{flow.steps.length} steps · {flow.enabled ? "On" : "Off"}</small></span><span className={`flow-enabled-pill ${flow.enabled ? "active" : ""}`}>{flow.enabled ? "On" : "Off"}</span></button>)}</div>
       </aside>
 
       <section className="flow-studio-main">
@@ -179,7 +188,9 @@ export default function Flows({ loaderData }) {
         <div className="flow-studio-body">
           {!selectedFlow && <div className="flow-canvas-empty"><span className="flow-studio-flow-icon"><AdminIcon name="list"/></span><strong>Your flow map will appear here</strong><p>Select one of the built-in flows on the left to see how customer messages connect to replies and actions.</p></div>}
           {selectedFlow && <>
-          <div className="flow-canvas-wrap" ref={canvasRef}>
+          <div className={`flow-canvas-wrap ${selectedFlow.steps.some((step) => (step.choices || []).length + (step.routes || []).length > 2) ? "has-multiple-branches" : "has-two-branch-layout"}`} ref={canvasRef}>
+            <div className="flow-canvas-zoom" role="group" aria-label="Flow map zoom controls"><button type="button" aria-label="Zoom out" disabled={zoom <= 0.6} onClick={() => setZoom((value) => Math.max(0.6, Math.round((value - 0.1) * 10) / 10))}>−</button><span>{Math.round(zoom * 100)}%</span><button type="button" aria-label="Zoom in" disabled={zoom >= 1.5} onClick={() => setZoom((value) => Math.min(1.5, Math.round((value + 0.1) * 10) / 10))}>+</button><button type="button" onClick={() => setZoom(1)}>Reset</button></div>
+            <div className="flow-canvas-zoom-content" style={{ "--flow-map-zoom": zoom }}>
             <div className="flow-canvas-help"><span>START</span><p>Customer messages matching one of these phrases enter this flow.</p></div>
             <button type="button" className={`flow-canvas-node flow-canvas-start ${selectedNode?.kind === "start" ? "active" : ""}`} onClick={() => setSelectedNode({ kind: "start" })}><span className="flow-node-icon"><AdminIcon name="bolt"/></span><span><small>FLOW ENTRY</small><strong>{selectedFlow.name}</strong><em>{selectedFlow.triggerTerms.slice(0, 5).join(", ")}{selectedFlow.triggerTerms.length > 5 ? ` +${selectedFlow.triggerTerms.length - 5} more` : ""}</em></span><span className="flow-node-edit">Edit</span></button>
             <div className="flow-canvas-flowline" aria-hidden="true"/>
@@ -187,8 +198,8 @@ export default function Flows({ loaderData }) {
               const branches = [...(step.choices || []).map((item) => ({ ...item, kind: "choice" })), ...(step.routes || []).map((item) => ({ ...item, kind: "route" }))];
               const isStepActive = selectedNode?.kind === "step" && selectedNode.stepId === step.id;
               return <section className="flow-canvas-step-group" data-step-id={step.id} key={step.id}>
-                {connections[step.id]?.paths?.length > 0 && <svg className="flow-canvas-connectors" viewBox={`0 0 ${connections[step.id].width} ${connections[step.id].height}`} preserveAspectRatio="none" aria-hidden="true"><defs><marker id={`flow-arrow-${step.id}`} viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 8 4 L 0 8"/></marker></defs>{connections[step.id].paths.map((path, index) => <path key={`${step.id}-connector-${index}`} d={path} markerEnd={`url(#flow-arrow-${step.id})`}/>)}</svg>}
-                <button type="button" className={`flow-canvas-node flow-canvas-step ${isStepActive ? "active" : ""}`} onClick={() => setSelectedNode({ kind: "step", stepId: step.id })}><span className="flow-node-index">{String(stepIndex + 1).padStart(2, "0")}</span><span><small>{step.inputAction ? "ASSISTANT STEP" : "CONVERSATION STEP"}</small><strong>{step.title}</strong><em>{step.prompt}</em></span><span className="flow-node-edit">Edit</span></button>
+                {connections[step.id]?.paths?.length > 0 && <svg className="flow-canvas-connectors" viewBox={`0 0 ${connections[step.id].width} ${connections[step.id].height}`} preserveAspectRatio="none" aria-hidden="true"><defs><marker id={`flow-arrow-${step.id}`} viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 8 4 L 0 8"/></marker></defs>{connections[step.id].paths.map((path, index) => <path key={`${step.id}-connector-${index}`} d={path.d} markerEnd={path.arrow ? `url(#flow-arrow-${step.id})` : undefined}/>)}</svg>}
+                <button type="button" className={`flow-canvas-node flow-canvas-step ${isStepActive ? "active" : ""}`} onClick={() => setSelectedNode({ kind: "step", stepId: step.id })}><span className="flow-node-index">{String(stepIndex + 1).padStart(2, "0")}</span><span><small>{step.inputAction ? "AGENT ACTION" : "AGENT"}</small><strong>{step.title}</strong><em>{step.prompt}</em></span><span className="flow-node-edit">Edit</span></button>
                 {branches.length > 0 && <><div className="flow-canvas-branch-stem" aria-hidden="true"/><div className="flow-canvas-branches">{branches.map((branch) => {
                   const active = selectedNode?.kind === branch.kind && selectedNode.stepId === step.id && selectedNode.itemId === branch.id;
                   const phraseList = branch.kind === "choice" ? [branch.label] : branch.keywords;
@@ -196,11 +207,12 @@ export default function Flows({ loaderData }) {
                   const targetStep = branch.nextStepId ? targetFlow?.steps.find((item) => item.id === branch.nextStepId) : null;
                   const event = branch.action === "openSupport" ? "Open the support request form" : branch.action === "openOrderTracking" ? "Open secure order lookup" : branch.action === "continueAI" ? "Search store info and catalog" : targetStep ? `Show next question: ${targetStep.title}` : "Continue the conversation";
                   const assistantText = branch.reply || targetStep?.prompt || "The assistant continues with the next available step.";
-                  return <button key={`${branch.kind}-${branch.id}`} type="button" className={`flow-canvas-branch-node ${active ? "active" : ""}`} onClick={() => setSelectedNode({ kind: branch.kind, stepId: step.id, itemId: branch.id })}><span className="flow-branch-type">{branch.kind === "choice" ? "SHOPPER SELECTS" : "SHOPPER SAYS"}</span><strong>{phraseList.slice(0, 3).join(", ") || "Add matching phrase"}{phraseList.length > 3 ? ` +${phraseList.length - 3}` : ""}</strong><small><b>Assistant says</b> {assistantText}</small><span className="flow-branch-event">Next: {event}</span></button>;
+                  return <button key={`${branch.kind}-${branch.id}`} type="button" className={`flow-canvas-branch-node ${active ? "active" : ""}`} onClick={() => setSelectedNode({ kind: branch.kind, stepId: step.id, itemId: branch.id })}><span className="flow-branch-card-header">USER {branch.kind === "choice" ? "SELECTS" : "SAYS"}</span><span className="flow-branch-card-content"><span className="flow-branch-user-text">{phraseList.slice(0, 3).join(", ") || "Add matching phrase"}{phraseList.length > 3 ? ` +${phraseList.length - 3}` : ""}</span><span className="flow-branch-info"><b>AGENT REPLY</b><span>{assistantText}</span></span><span className="flow-branch-info flow-branch-action"><b>ACTION</b><span>{event}</span></span></span></button>;
                 })}</div></>}
                 {stepIndex < selectedFlow.steps.length - 1 && <div className="flow-canvas-nextline" aria-hidden="true"/>}
               </section>;
             })}</div>
+            </div>
           </div>
           </>}
         </div>
