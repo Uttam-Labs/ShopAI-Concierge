@@ -21,6 +21,7 @@ test("normalizes common spelling, spacing, and color variants", () => {
   assert.equal(normalizeProductLookup("skyblue"), normalizeProductLookup("sky blue"));
   assert.match(productSearchPhrase("show tees below Rs 400"), /t shirt/);
   assert.doesNotMatch(productSearchPhrase("show tees below Rs 400"), /400|rs/i);
+  assert.doesNotMatch(productSearchPhrase("What is the cheapest tee in the featured products?"), /featured/i);
 });
 
 test("extracts budget without mistaking the amount for a clothing size", () => {
@@ -49,6 +50,8 @@ test("under, approximate price, and requested size are applied to variants", () 
 });
 
 test("filters the requested apparel type and descriptive attributes", () => {
+  assert.equal(productMatchesFilters(catalog[0], extractProductFilters("navy t-shirt")), true);
+  assert.equal(productMatchesFilters(catalog[0], extractProductFilters("blue t-shirt")), false);
   assert.equal(productMatchesFilters(catalog[0], extractProductFilters("navy t-shirt")), true);
   assert.equal(productMatchesFilters(catalog[7], extractProductFilters("navy t-shirt")), false);
   assert.equal(productMatchesFilters(catalog[8], extractProductFilters("best selling t-shirt")), false);

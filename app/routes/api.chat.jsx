@@ -200,7 +200,7 @@ function knowledgeProduct(row, extra = {}) {
 async function discoverShopifyProducts(shop, question, knowledgeRows = []) {
   const filters = extractProductFilters(question);
   const phrase = productSearchPhrase(question);
-  const filterOnlyQuery = !normalizeProductLookup(phrase) || /^(?:show|find|search|recommend|browse|me|some|any|products?|items?|catalog|collection|the|for|please|in|with|under|below|less than|over|above|more than|greater than|at least|at most|between|price|cost|budget|size|small|medium|large|available|stock|color|colour|red|black|white|blue|green|pink|yellow|orange|purple|grey|brown|silver|gold|beige|navy|company|brand|from|by|and|or|a|an|to|buy|purchase|best|selling|popular|trending|latest|new|arrival|sale|discount|cheap|affordable|premium|recommendations?|similar|compare|t shirt|shirt|tee|hoodie|pants|oversized|crew neck|pocket|stripe)$/i.test(normalizeProductLookup(phrase));
+  const filterOnlyQuery = !normalizeProductLookup(phrase) || /^(?:show|find|search|recommend|browse|me|some|any|products?|items?|catalog|collection|the|for|please|in|with|under|below|less than|over|above|more than|greater than|at least|at most|between|price|cost|budget|size|small|medium|large|available|stock|colors?|colours?|color|colour|red|black|white|blue|green|pink|yellow|orange|purple|grey|brown|silver|gold|beige|navy|company|brand|from|by|and|or|a|an|to|buy|purchase|best|selling|popular|trending|latest|new|arrival|featured|sale|discount|cheap|affordable|premium|recommendations?|similar|compare|t shirt|shirt|tee|hoodie|pants|oversized|crew neck|pocket|stripe)$/i.test(normalizeProductLookup(phrase));
   const catalogQuery = filterOnlyQuery ? [filters.brand, ...filters.colors, filters.productType === "shirt" ? "t shirt" : filters.productType, ...filters.features, ...filters.excludeFeatures].filter(Boolean).join(" ") : phrase;
   const sku = String(question || "").match(/\bsku\s*[:#]?\s*([A-Z0-9][A-Z0-9._/-]{2,})\b/i)?.[1] || String(question || "").match(/\b[A-Z0-9]{2,}(?:-[A-Z0-9]+)+\b/i)?.[0] || "";
   const exactNameTerms = normalizeProductLookup(phrase).split(/\s+/).filter((term) => term && !["red", "black", "white", "blue", "green", "pink", "yellow", "orange", "purple", "grey", "gray", "brown", "silver", "gold", "beige", "navy", "t", "tee", "shirt", "shirts", "sizes", "size", "small", "medium", "large", "hoodie", "hoodies", "pants"].includes(term));
@@ -362,7 +362,7 @@ function closestKnowledgeAnswer(question, rows = [], storeName = "the shop") {
     return rightScore - leftScore;
   });
   const best = candidates[0];
-  const isClose = best && (best.semantic ? best.similarity >= 0.29 : best.overlap >= 2 && best.lexicalScore >= 0.28);
+  const isClose = best && (best.semantic ? best.similarity >= 0.29 && best.lexicalScore >= 0.15 : best.overlap >= 2 && best.lexicalScore >= 0.28);
   if (!isClose) return `I can help with ${storeName}’s products, pages, and policies. Could you share the product name or a little more detail about what you’d like to know?`;
   const title = String(best.row.title || "Store information").replace(/[<>]/g, "").slice(0, 120);
   return `Here’s the most relevant information I found for ${storeName}, from “${title}”:\n\n${best.excerpt.slice(0, 800)}\n\nDoes this answer your question, or would you like me to check a related product or policy?`;
@@ -473,7 +473,7 @@ export const action = async ({ request }) => {
       const flowIsOrder = ["order-updates", "order-cancellation"].includes(flowId);
       const flowIsReturn = flowId === "returns-support";
       const isFlowReply = Boolean(flowChoiceId) || /^(?:yes|yeah|yep|no|no thanks|sure|please|go ahead|that one|skip|next|\d{1,6}|[^\s@]+@[^\s@]+\.[^\s@]+)$/i.test(userMessage.trim());
-      const unrelatedIntent = !isFlowReply && Boolean(orderIntent || productTopic || isSupportRequestIntent(userMessage) || (flowIsReturn && !explicitReturn && !/\b(?:damaged|broken|wrong item|missing item|complaint|not satisfied|disappointed|return request|exchange request|refund request)\b/i.test(userMessage)) || (flowIsOrder && isPolicyIntent(userMessage) && !orderIntent));
+    const unrelatedIntent = !isFlowReply && Boolean(orderIntent || productTopic || isSupportRequestIntent(userMessage) || /\b(?:thanks?(?:\s+so\s+much)?|thank\s+you(?:\s+so\s+much)?|what\s+can\s+you\s+help\s+me\s+with|can\s+you\s+help\s+me\s+with|what\s+can\s+you\s+do|are\s+you\s+(?:a\s+)?(?:real\s+person|human)|can\s+you\s+(?:answer|reply|respond)\s+in\s+bengali|contact\s+page|question\s+about\s+(?:this\s+)?store|check\s+whether\s+a\s+product\s+is\s+in\s+stock|compare\s+(?:two|some)\s+(?:products|items|shirts?))\b/i.test(userMessage) || (flowIsReturn && !explicitReturn && !/\b(?:damaged|broken|wrong item|missing item|complaint|not satisfied|disappointed|return request|exchange request|refund request)\b/i.test(userMessage)) || (flowIsOrder && isPolicyIntent(userMessage) && !orderIntent));
       if (unrelatedIntent) {
         flowId = null;
         flowStepId = null;
@@ -582,9 +582,26 @@ export const action = async ({ request }) => {
     const previousConversation = await conversationContextPromise;
     const priorMessages = Array.isArray(previousConversation?.messages) ? previousConversation.messages : [];
     const previousUserMessage = [...priorMessages].reverse().find((item) => item?.role === "user")?.content || "";
+    const previousProductQuestion = [...priorMessages].reverse().find((item) => item?.role === "user" && typeof item.content === "string" && hasProductSearchLanguage(item.content) && !isProductContextFollowup(item.content))?.content || "";
     const refersToPreviousProduct = isProductContextFollowup(userMessage) && !isOrderDeliveryQuestion(userMessage)
-      && !/\b(?:t\s*-?\s*shirt|tee|shirt|hoodie|pants|trousers?|jeans|shoes?|sku|catalog|collection)\b/i.test(userMessage);
-    const previousSearchTerms = refersToPreviousProduct && hasProductSearchLanguage(previousUserMessage) ? productSearchPhrase(previousUserMessage) : "";
+      && !/\b(?:t\s*-?\s*shirts?|tees?|shirts?|hoodies?|pants|trousers?|jeans|shoes?|sku|catalog|collection)\b/i.test(userMessage);
+    let previousSearchTerms = "";
+    if (refersToPreviousProduct) {
+      const baseQuestion = previousProductQuestion || previousUserMessage;
+      const baseFilters = extractProductFilters(baseQuestion);
+      const currentFilters = extractProductFilters(userMessage);
+      const baseType = baseFilters.productType === "shirt" ? "t shirt" : baseFilters.productType;
+      const baseAttributes = [baseFilters.brand, baseType, ...baseFilters.features].filter(Boolean);
+      if (currentFilters.colors.length) {
+        const priceFilter = currentFilters.maxPrice !== null ? `under ${currentFilters.maxPrice}` : currentFilters.minPrice !== null ? `over ${currentFilters.minPrice}` : "";
+        previousSearchTerms = [...baseAttributes, priceFilter, ...currentFilters.colors].filter(Boolean).join(" ");
+      } else if (/\b(?:another|different|other)\s+(?:color|colour)\b/i.test(userMessage)) {
+        const priorColor = extractProductFilters(previousUserMessage).colors[0] || baseFilters.colors[0];
+        previousSearchTerms = [...baseAttributes, priorColor ? `not ${priorColor}` : ""].filter(Boolean).join(" ");
+      } else {
+        previousSearchTerms = productSearchPhrase(baseQuestion);
+      }
+    }
     productQuestion = [previousSearchTerms, userMessage].filter(Boolean).join(" ").trim();
     const recentConversation = priorMessages.slice(-6).filter((item) => ["user", "assistant"].includes(item?.role) && typeof item.content === "string")
       .map((item) => ({ role: item.role, content: item.content.replace(/\s+/g, " ").trim().slice(0, 500) }));
@@ -603,10 +620,10 @@ export const action = async ({ request }) => {
     const bestProductIntent = /\b(best|top|popular|most (?:bought|ordered|popular)|bestseller|best selling|trending|latest|new arrivals?|new products?|discounted?|on sale|sale items?|cheap|cheapest|affordable|budget friendly|premium|gift|gifts|similar products?|compare)\b|সেরা|সবচেয়ে ভালো|জনপ্রিয়/i.test(normalizeProductLookup(userMessage));
     const skuCandidate = !explicitOrderReference ? userMessage.match(/\bsku\s*[:#]?\s*([A-Z0-9][A-Z0-9._/-]{2,})\b/i)?.[1] || userMessage.match(/\b[A-Z0-9]{2,}(?:-[A-Z0-9]+)+\b/i)?.[0] : null;
     const vagueProductRequest = !flowId && (/\b(?:buy something|want to buy|looking for a product|looking for something|specific product|this product|this item|do you sell this|do you have this|help me find a product|find a product|recommend something|recommend me something|need a new product|help me find something)\b/i.test(normalizeProductLookup(userMessage)) || purchaseRequestedInMessage && !productPurchaseIntent);
-    const smallTalk = /^(?:thanks?(?: so much)?|thank you(?: so much)?|okay|ok|got it|bye|goodbye|see you)$/i.test(userMessage.trim().replace(/[.!?]+$/, ""));
+    const smallTalk = /^(?:thanks?(?: so much)?(?: for your help)?|thank you(?: so much)?(?: for your help)?|okay|ok|got it|bye|goodbye|see you)$/i.test(userMessage.trim().replace(/[.!?]+$/, ""));
     const generalHelpRequest = /^(?:(?:i|we)\s+)?(?:need|want|would like|could use)\s+(?:(?:some|a little|your)\s+)?help(?:\s+please)?$|^(?:can|could|would)\s+you\s+help(?:\s+me)?(?:\s+please)?$|^help(?:\s+me)?(?:\s+please)?$/i.test(userMessage.trim().replace(/[.!?]+$/, ""));
     const greetingIntent = /^(?:hi|hello|hey|hiya|howdy|good morning|good afternoon|good evening)$/i.test(userMessage.trim().replace(/[.!?,\s]+$/g, ""));
-    const identityQuestion = /\b(?:who are you|what are you|what can you do|how can you help|what do you help with|are you (?:a )?human|are you real)\b/i.test(userMessage);
+    const identityQuestion = /\b(?:who are you|what are you|what can you do|what can you help me with|how can you help|what do you help with|are you (?:a )?(?:real person|human)|are you real)\b/i.test(userMessage);
     const asksForAnotherCustomer = /\b(?:another customer|someone else|somebody else|other customer'?s|someone else'?s)\b.{0,50}\b(?:order|email|address|personal|purchase|details)\b/i.test(userMessage);
     const abusiveMessage = /\b(?:fuck(?:ing)?|shit|bitch|asshole|idiot|stupid)\b/i.test(userMessage);
     const storeRelated = greetingIntent || identityQuestion || smallTalk || isConversationalFollowup || hasProductFilters || productCategoryIntent || productActionIntent || productPurchaseIntent || bestProductIntent || Boolean(skuCandidate) || hasProductSearchLanguage(userMessage)
@@ -636,13 +653,35 @@ export const action = async ({ request }) => {
       return Response.json({ answer }, { headers });
     }
     if (canUseGeneralIntent && identityQuestion) {
-      const asksCapabilities = /what can you do|how can you help|what do you help with/i.test(userMessage);
+      const asksCapabilities = /what can you do|what can you help me with|how can you help|what do you help with/i.test(userMessage);
       const answer = asksCapabilities
         ? `I can help you find products, answer questions about ${storeDisplayName}’s products, pages, and policies, check an order, submit a cancellation request for Support Team review, and connect with the team. I can’t cancel or change an order myself.`
         : `I’m ${storeDisplayName}’s AI assistant. I can help with products, order updates, cancellation requests, returns, store information, and support. I can’t cancel or change orders myself.`;
       const flow = getConversationFlowStep(settings.flows, "welcome", "start");
       await saveConversation(normalizedShop, sessionId, userMessage, answer, identity, userCreatedAt).catch((error) => console.error("Assistant introduction save failed", error));
       return Response.json({ answer, ...(flow ? { flow } : {}) }, { headers });
+    }
+    const generalQuestion = /\b(?:i have a question about (?:this )?store|do you know (?:the )?store contact page|what colors? are available in (?:the )?catalog|can you check whether a product is in stock|can you check product availability|can you compare (?:two|some) (?:products|items|shirts?)|do you sell anything besides (?:shirts?|tees?))\b/i.test(userMessage);
+    if (canUseGeneralIntent && generalQuestion) {
+      const answer = /contact page/i.test(userMessage)
+        ? "You can reach the store through the Contact page or the Contact support option in this chat."
+        : /compare/i.test(userMessage)
+          ? "Sure—tell me the names of the two products you’d like to compare."
+          : /stock|availability/i.test(userMessage)
+            ? "Yes. Tell me the product name, and I can check the options and availability shown in the store catalog."
+            : /colors?/i.test(userMessage)
+              ? "Colors vary by product. Which item would you like me to check?"
+              : /besides/i.test(userMessage)
+                ? "I can help look beyond shirts too. What kind of product are you interested in?"
+                : "Of course. Ask me about a product, store policy, order, or support request, and I’ll help from the store’s information.";
+      const flow = getConversationFlowStep(settings.flows, "welcome", "start");
+      await saveConversation(normalizedShop, sessionId, userMessage, answer, identity, userCreatedAt).catch((error) => console.error("General store question save failed", error));
+      return Response.json({ answer, products: [], ...(flow ? { flow } : {}) }, { headers });
+    }
+    if (canUseGeneralIntent && /\bcan you (?:answer|reply|respond) in bengali\b/i.test(userMessage)) {
+      const answer = "হ্যাঁ, আমি বাংলায়ও সাহায্য করতে পারি। পণ্য, অর্ডার, রিটার্ন বা স্টোরের নীতি সম্পর্কে কী জানতে চান?";
+      await saveConversation(normalizedShop, sessionId, userMessage, answer, identity, userCreatedAt).catch((error) => console.error("Language preference conversation save failed", error));
+      return Response.json({ answer }, { headers });
     }
     if (canUseGeneralIntent && generalHelpRequest) {
       const answer = "Of course—I’m here to help. Are you looking for a product, asking about shipping or returns, checking an order, or something else?";
@@ -690,7 +729,7 @@ export const action = async ({ request }) => {
       return Response.json({ answer, ...(flow ? { flow } : {}) }, { headers });
     }
     const productInformationIntent = !hasProductFilters && Boolean((productCategoryIntent || skuCandidate || /\b(?:product|item|sku|variant)\b/i.test(userMessage)) && /\b(?:what|which|how|does|is|are|tell me|describe|explain|details?|specifications?|material|made of|care|wash|fabric|fit|color|colour|size|price|cost|stock|available|availability|ingredients?)\b/i.test(userMessage));
-    const productSearchIntent = settings.recommendations && !policyIntent && !productInformationIntent && (productPurchaseIntent || explicitProductIntent || bestProductIntent || Boolean(skuCandidate) || hasProductFilters || productCategoryIntent || flowId === "product-discovery" || hasProductSearchLanguage(userMessage));
+    const productSearchIntent = settings.recommendations && !policyIntent && !productInformationIntent && (productPurchaseIntent || explicitProductIntent || bestProductIntent || Boolean(skuCandidate) || hasProductFilters || productCategoryIntent || isProductContextFollowup(userMessage) || flowId === "product-discovery" || hasProductSearchLanguage(userMessage));
     productSearchRequested = productSearchIntent;
     purchaseRequested = purchaseRequested || productPurchaseIntent;
     let flowData = submittedFlowDataForRequest && typeof submittedFlowDataForRequest === "object" && !Array.isArray(submittedFlowDataForRequest) ? { ...submittedFlowDataForRequest } : {};

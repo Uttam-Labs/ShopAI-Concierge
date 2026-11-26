@@ -24,6 +24,7 @@ test("natural requests to talk to a person open support without submitting a tic
     "Can I talk to a real person?",
     "I need customer support",
   ]) assert.equal(isSupportRequestIntent(question), true, question);
+  assert.equal(isSupportRequestIntent("Are you a real person?"), false);
   assert.equal(isSupportRequestIntent("need a nice gift for my brother"), false);
   assert.equal(isSupportEscalationIntent("my parcel arrived damaged"), true);
   assert.equal(isSupportEscalationIntent("what is your return policy"), false);
@@ -94,6 +95,7 @@ test("prepared FAQ answers match natural customer phrasing", () => {
   ];
   assert.equal(findMatchingFaq(faqs, "where is my package?"), faqs[0]);
   assert.equal(findMatchingFaq(faqs, "I got the wrong size, can I swap it?"), faqs[1]);
+  assert.equal(findMatchingFaq(faqs, "What is your shipping policy?"), null);
   assert.equal(findMatchingFaq(faqs, "show me a black T-shirt under 500"), null);
 });
 
@@ -164,6 +166,7 @@ test("explicit return and exchange requests are recognized separately from polic
   ]) assert.equal(isReturnRequestIntent(question), true, question);
   for (const question of [
     "Can I return this if it doesn't fit?",
+    "Can I return an item that does not fit?",
     "What is your refund policy?",
     "Show me exchangeable products",
   ]) assert.equal(isReturnRequestIntent(question), false, question);

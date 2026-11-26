@@ -26,7 +26,7 @@ export function productSearchPhrase(value) {
     .replace(/^\s*(?:the|a|an)\s+/i, "")
     .replace(/^\s*(?:please\s+)?(?:can you|could you)\s+/i, "").replace(/^(?:do you have|have you got|is there|can i (?:get|see)|where can i (?:find|buy)|where is)\s+/i, "")
     .replace(/^(?:i(?:'m|’m| am)?\s+)?(?:want(?:\s+to\s+(?:buy|purchase|find))?|would like(?:\s+to\s+(?:buy|purchase|find))?|would love(?:\s+to\s+(?:buy|purchase|find))?|plan(?:ning)?(?:\s+to\s+(?:buy|purchase|find))?|need|looking for|searching for|show me|find me|find|search for|search|look for|buy|purchase|recommend)\s+/i, "")
-    .replace(/\b(?:can you|could you|please|product|products|item|items|sku|any|show|me|in|color|colour|colored|coloured|model|brand|company|under|below|less than|over|above|more than|greater than|at least|at most|between|price|cost|budget|cheap|cheapest|affordable|discounted|sale|premium|for|with|size|sizes|small|medium|large|available|in stock|showing|new|latest|arrival|arrivals|best|selling|popular|trending|similar|recommendations|compare|most|expensive|priciest|highest|costliest|the|a|an|do|you|have|does|is|are|what|much|how|see|it|its|not|without|other|all|men|women|kids|summer|casual|around|about|approximately|store|in|of|my|your|we|got|any|does|come)\b/gi, " ")
+    .replace(/\b(?:can you|could you|please|product|products|item|items|sku|any|show|me|in|colors?|colours?|color|colour|colored|coloured|featured|model|brand|company|under|below|less than|over|above|more than|greater than|at least|at most|between|price|cost|budget|cheap|cheapest|affordable|discounted|sale|premium|for|with|size|sizes|small|medium|large|available|in stock|showing|new|latest|arrival|arrivals|best|selling|popular|trending|similar|recommendations|compare|most|expensive|priciest|highest|costliest|the|a|an|do|you|have|does|is|are|what|much|how|see|it|its|not|without|other|all|men|women|kids|summer|casual|around|about|approximately|store|in|of|my|your|we|got|any|does|come)\b/gi, " ")
     .replace(/\s+/g, " ").trim();
 }
 
@@ -45,7 +45,6 @@ export function extractProductFilters(question) {
   const negativeClause = /\b(?:not|no|without|do not want)\b(.+?)(?:\b(?:but|instead|other|except)\b|$)/i.exec(text)?.[1] || "";
   const excludedColors = COLOR_WORDS.filter((color) => new RegExp(`\\b${color}\\b`, "i").test(negativeClause));
   const colors = COLOR_WORDS.filter((color) => new RegExp(`\\b${color}\\b`, "i").test(text) && !excludedColors.includes(color));
-  if (colors.includes("blue") && !colors.includes("navy")) colors.push("navy");
   const sizeAlternatives = [...SIZE_WORDS].sort((left, right) => right.length - left.length).join("|");
   const namedSize = new RegExp(`\\b(?:size|in|available in|comes in)\\s+(${sizeAlternatives})\\b|\\b(${sizeAlternatives})\\s+(?:size|t shirt|shirt|tee|hoodie|pants)\\b`, "i").exec(text);
   const rawSize = (namedSize?.[1] || namedSize?.[2] || "").toLowerCase();
@@ -81,7 +80,7 @@ export function productRelevance(product, phrase) {
 export function productMatchesFilters(product, filters) {
   const title = normalizeProductLookup(product.title);
   const fields = normalizeProductLookup([product.title, product.vendor, product.productType, ...(product.tags || []), ...(product.collections || []).flatMap((item) => [item.title, item.handle]), ...(product.metafields || []).map((field) => `${field.namespace} ${field.key} ${field.value}`), ...(product.variants || []).flatMap((variant) => [variant.title, ...(variant.selectedOptions || []).map((option) => option.value)])].join(" "));
-  if (filters.colors?.length && !filters.colors.some((color) => color === "blue" ? /\b(?:blue|navy)\b/.test(fields) : fields.split(" ").includes(color))) return false;
+  if (filters.colors?.length && !filters.colors.some((color) => fields.split(" ").includes(color))) return false;
   if (filters.excludedColors?.some((color) => fields.split(" ").includes(color) || (color === "blue" && /\bnavy\b/.test(fields)))) return false;
   if (filters.brand && !fields.includes(normalizeProductLookup(filters.brand)) && !normalizeProductLookup(product.vendor).includes(normalizeProductLookup(filters.brand))) return false;
   if (filters.productType && !(filters.productType === "shirt" ? /\b(?:t shirt|shirt|tee)\b/.test(title) : title.includes(filters.productType))) return false;

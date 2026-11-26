@@ -1,6 +1,6 @@
 const POLICY_INTENT = /\b(policy|policies|shipping|delivery|returns?|refunds?|exchanges?|send\s+(?:it\s+)?back|send\s+back|doesn['’]?t\s+fit|too\s+(?:big|small)|cancel|cancellation|privacy|terms|warranty|guarantee|payment|dispatch)\b|নীতি|শিপিং|ডেলিভারি|ফেরত|রিটার্ন|রিফান্ড|বাতিল|গোপনীয়তা|পেমেন্ট|ওয়ারেন্টি/i;
 
-const SUPPORT_REQUEST_INTENT = /\b(?:contact\s+(?:(?:the|your)\s+)?(?:store\s+)?support|customer\s+support|support\s+team|talk\s+to\s+(?:a\s+)?(?:human|person|someone|agent)|speak\s+(?:to|with)\s+(?:a\s+)?(?:human|person|someone|agent)|connect\s+me\s+(?:to|with)\s+(?:a\s+)?(?:human|person|someone|agent)|real\s+person|live\s+agent|human\s+help|someone\s+from\s+(?:the\s+)?(?:store|support)\s+team|help\s+from\s+(?:the\s+)?support|can\s+someone\s+from\s+(?:the\s+)?store\s+help)\b|সাপোর্টের সাথে কথা|মানুষের সাথে কথা/i;
+const SUPPORT_REQUEST_INTENT = /\b(?:contact\s+(?:(?:the|your)\s+)?(?:store\s+)?support|customer\s+support|support\s+team|talk\s+to\s+(?:a\s+)?(?:human|person|someone|agent)|speak\s+(?:to|with)\s+(?:a\s+)?(?:human|person|someone|agent)|connect\s+me\s+(?:to|with)\s+(?:a\s+)?(?:human|person|someone|agent)|(?:talk|speak|connect\s+me)\b.{0,25}\breal\s+person|live\s+agent|human\s+help|someone\s+from\s+(?:the\s+)?(?:store|support)\s+team|help\s+from\s+(?:the\s+)?support|can\s+someone\s+from\s+(?:the\s+)?store\s+help)\b|সাপোর্টের সাথে কথা|মানুষের সাথে কথা/i;
 const SUPPORT_ESCALATION_INTENT = /\b(refund not received|dispute|chargeback|angry|frustrated|unacceptable|complaint|complain|broken|damaged)\b/i;
 const ORDER_CANCEL_INTENT = /\b(?:cancel(?:lation)?|stop)\b.{0,55}\b(?:order|purchase|parcel|delivery)\b|\b(?:order|purchase)\b.{0,55}\b(?:cancel(?:lation)?|stop)\b/i;
 const ORDER_REFERENCE_INTENT = /\b(?:order|ordered|purchase|parcel|package|shipment|delivery|tracking|track|courier|carrier|checkout|confirmation)\b/i;
@@ -22,6 +22,7 @@ export function isSupportEscalationIntent(message) {
 
 export function isReturnRequestIntent(message) {
   const text = String(message || "");
+  if (/\b(?:can|could|would)\s+i\s+(?:return|exchange|swap)\b.{0,60}\b(?:if|when|that|which)\b.{0,35}\b(?:fit|fits|too\s+(?:big|small)|change my mind)\b/i.test(text)) return false;
   if (/\b(?:if|whether|in case)\b.{0,35}\b(?:fit|fits|too big|too small|change my mind)\b/i.test(text)) return RETURN_ACTION_INTENT.test(text);
   return RETURN_ACTION_INTENT.test(text)
     || /\b(?:can|could|would)\s+i\s+(?:return|exchange|swap)\s+(?:this|that|my|the|an?|these|those)\b/i.test(text)
@@ -70,11 +71,12 @@ export function findMatchingFaq(faqs = [], message = "") {
     const faqWords = terms(faqQuestion);
     const overlap = faqWords.filter((word) => customerWords.has(word)).length;
     const precision = overlap / Math.max(1, customerWords.size);
+    const exact = faqQuestion === customerQuestion;
     const score = overlap / Math.max(1, Math.min(faqWords.length, customerWords.size));
     const coverage = overlap / Math.max(1, faqWords.length);
-    return { faq, score: faqQuestion === customerQuestion ? 1 : score, precision, coverage, overlap };
+    return { faq, score: exact ? 1 : score, precision, coverage, overlap, exact };
   }).sort((left, right) => right.score - left.score)[0];
-  return matchingFaq && (matchingFaq.score === 1 || (matchingFaq.overlap >= 2 && matchingFaq.precision >= 0.5 && matchingFaq.coverage >= 0.35) || (customerWords.size <= 3 && matchingFaq.overlap >= 1 && matchingFaq.precision >= 0.5 && matchingFaq.coverage >= 0.3))
+  return matchingFaq && (matchingFaq.exact || (matchingFaq.overlap >= 2 && matchingFaq.precision >= 0.5 && matchingFaq.coverage >= 0.35) || (customerWords.size === 1 && matchingFaq.overlap === 1 && matchingFaq.precision >= 0.5 && matchingFaq.coverage >= 0.3))
     ? matchingFaq.faq
     : null;
 }
@@ -99,7 +101,8 @@ export function isOrderDeliveryQuestion(message = "") {
 
 export function isProductContextFollowup(message = "") {
   const text = String(message || "").trim().toLocaleLowerCase();
-  return /\b(?:it|that|that one|those|them|same|another one|this one)\b|^(?:what about|how about|and in|in size|in medium|in large|under \d|over \d)\b/i.test(text)
+  return /\b(?:it|its|that|that one|those|them|same|another one|another option|this one|which one)\b|^(?:what about|how about|and in|in size|in medium|in large|under \d|over \d)\b/i.test(text)
+    || /^(?:can|could) i (?:see|get) (?:the )?(?:red|black|white|blue|green|pink|yellow|orange|purple|grey|gray|brown|silver|gold|beige|navy) one[?.!]*$/i.test(text)
     || /^(?:any\s+)?(?:in\s+)?(?:size\s+)?(?:xs|xxs|xxl|xxxl|small|medium|large|extra large|s|m|l|xl|red|black|white|blue|green|pink|yellow|orange|purple|grey|gray|brown|silver|gold|beige|navy)(?:\s+(?:one|ones|color|colour|size))?[?.!]*$/i.test(text)
     || /^(?:any|and|what about|how about|do they have|does it come in)\s+(?:(?:size|color|colour)\s+)?(?:xs|xxs|xxl|xxxl|small|medium|large|extra large|s|m|l|xl|red|black|white|blue|green|pink|yellow|orange|purple|grey|gray|brown|silver|gold|beige|navy)\b/i.test(text)
     || /^(?:another|different|other)\s+(?:color|colour|size)[?.!]*$/i.test(text);
