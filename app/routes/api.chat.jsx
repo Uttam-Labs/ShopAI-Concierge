@@ -577,7 +577,8 @@ export const action = async ({ request }) => {
     const previousUserMessage = [...priorMessages].reverse().find((item) => item?.role === "user")?.content || "";
     const previousAssistantMessage = [...priorMessages].reverse().find((item) => item?.role === "assistant")?.content || "";
     const productFollowupPrompt = /(?:what are you looking for|what product|product name|share another detail|product type.{0,30}(?:size|color|sku)|tell me.{0,40}(?:product|size|color|budget)|looking for today)/i.test(previousAssistantMessage);
-    const refersToPreviousProduct = /\b(?:it|that|that one|those|them|same|another one|this one)\b|^(?:what about|how about|and in|in size|in medium|in large|under \d|over \d)\b/i.test(userMessage)
+    const isOrderDeliveryQuestion = /\b(?:order|ordered|tracking|track|shipment|delivery|delivered|arrive|arrival|parcel|package|courier|carrier|shipped|dispatch)\b|অর্ডার|ট্র্যাক|পার্সেল|ডেলিভারি/i.test(userMessage);
+    const refersToPreviousProduct = !isOrderDeliveryQuestion && (/\b(?:it|that|that one|those|them|same|another one|this one)\b|^(?:what about|how about|and in|in size|in medium|in large|under \d|over \d)\b/i.test(userMessage))
       && !/\b(?:t\s*-?\s*shirt|tee|shirt|hoodie|pants|trousers?|jeans|shoes?|sku|catalog|collection)\b/i.test(userMessage);
     const previousSearchTerms = productFollowupPrompt && refersToPreviousProduct && hasProductSearchLanguage(previousUserMessage) ? productSearchPhrase(previousUserMessage) : "";
     productQuestion = [previousSearchTerms, userMessage].filter(Boolean).join(" ").trim();
