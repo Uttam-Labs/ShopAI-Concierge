@@ -100,11 +100,12 @@
     panel.querySelector(".sac-welcome").append(welcomeActions);
     const persistentSupportButton = document.createElement("button");
     persistentSupportButton.type = "button";
-    persistentSupportButton.className = "sac-persistent-support";
+    persistentSupportButton.className = "sac-quick-action-button sac-persistent-support";
     persistentSupportButton.setAttribute("aria-label", "Contact store support");
     persistentSupportButton.textContent = supportButtonLabel || "Contact store support";
     persistentSupportButton.addEventListener("click", () => openSupportRequest());
-    panel.insertBefore(persistentSupportButton, messages);
+    if (welcomeActions.hidden) welcome.append(persistentSupportButton);
+    else welcomeActions.append(persistentSupportButton);
     const orderBackdrop = panel.querySelector(".sac-order-backdrop");
     const orderForm = panel.querySelector(".sac-order-form");
     const orderNotice = panel.querySelector(".sac-order-notice");
@@ -411,6 +412,7 @@
       if (emailFromMessage && !identity?.email) identity = { ...(identity || {}), name: identity?.name || "Anonymous shopper", email: emailFromMessage.toLowerCase() };
       addMessage(messages, message, "user");
       welcomeActions.hidden = true;
+      welcome.append(persistentSupportButton);
       input.value = "";
       resizeComposer();
       form.dataset.sending = "true";
