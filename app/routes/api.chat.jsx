@@ -144,7 +144,8 @@ function mapAdminProduct(product) {
     tags: product.tags || [],
     collections,
     metafields,
-    variants: variants.map((variant) => ({ id: variant.id, title: variant.title, sku: variant.sku || "", price: variant.price, availableForSale: variant.availableForSale, selectedOptions: variant.selectedOptions || [] })),
+    // The storefront cart endpoint expects the numeric variant ID, not the Admin GraphQL GID.
+    variants: variants.map((variant) => ({ id: String(variant.id || "").split("/").pop(), title: variant.title, sku: variant.sku || "", price: variant.price, availableForSale: variant.availableForSale, selectedOptions: variant.selectedOptions || [] })),
   };
 }
 
@@ -181,6 +182,8 @@ function productSearchPhrase(value) {
     .replace(/\bbetween\s*[$£€₹]?\s*\d[\d,.]*\s*(?:and|to|-)\s*[$£€₹]?\s*\d[\d,.]*/gi, " ")
     .replace(/\b(?:less than|under|below|up to|at most|maximum|max|over|above|more than|greater than|at least|minimum|min)\s*[$£€₹]?\s*\d[\d,.]*/gi, " ")
     .replace(/[$£€₹]\s*\d[\d,.]*/g, " ")
+    .replace(/^\s*(?:what(?:'s|’s| is)|tell me about|describe|details? (?:for|about))\s+/i, "")
+    .replace(/^\s*(?:the|a|an)\s+/i, "")
     .replace(/^\s*(?:please\s+)?(?:can you|could you)\s+/i, "").replace(/^(?:do you have|have you got|is there|can i get|where can i (?:find|buy)|where is)\s+/i, "")
     .replace(/^(?:i(?:'m|’m| am)?\s+)?(?:want(?:\s+to\s+(?:buy|purchase|find))?|would like(?:\s+to\s+(?:buy|purchase|find))?|would love(?:\s+to\s+(?:buy|purchase|find))?|plan(?:ning)?(?:\s+to\s+(?:buy|purchase|find))?|need|looking for|searching for|show me|find me|find|search for|search|look for|buy|purchase|recommend)\s+/i, "")
     .replace(/\b(?:can you|could you|please|product|products|item|items|sku|any|show|me|in|red|black|white|blue|green|pink|yellow|orange|purple|grey|gray|brown|silver|gold|beige|navy|color|colour|colored|coloured|model|brand|company|under|below|less than|over|above|more than|greater than|at least|at most|between|price|cost|budget|cheap|cheapest|affordable|discounted|sale|premium|for|with|size|small|medium|large|available|in stock|showing|new|latest|arrival|arrivals|best|selling|popular|trending|similar|recommendations|compare)\b/gi, " ")
@@ -207,8 +210,12 @@ function extractProductFilters(question) {
 
 function hasProductSearchLanguage(message) {
   const text = normalizeProductLookup(message);
+  const words = text.split(" ").filter(Boolean);
+  const queryWords = words.filter((word) => !/^(?:a|about|am|an|and|are|can|checkout|color|colour|contact|could|cost|delivery|discount|do|does|for|have|help|hours|how|i|is|it|me|much|my|need|of|or|order|payment|please|policy|price|product|products|refund|return|returns|shipping|shop|show|size|some|status|store|support|the|to|track|tracking|update|want|we|what|when|where|which|who|why|with|you|your)$/i.test(word));
+  const namedCatalogCandidate = words.length > 0 && words.length <= 7 && queryWords.some((word) => word.length >= 3);
   return /\b(?:product|item|catalog|collection|category|shoe|shoes|clothing|men s shoes|women s clothing|t shirt|new arrival|latest|new products|best seller|popular|trending|sale|discount|cheap|affordable|budget friendly|premium|recommendation|recommend|similar|compare|specific product|this product|this item|do you sell|do you have|find product|search for|looking for|looking to buy|gift|sku|handle)\b/.test(text)
-    || /\b(?:buy|purchase|show|find|search|explore|browse)\b/.test(text) && text.split(" ").filter(Boolean).length <= 7;
+    || /\b(?:buy|purchase|show|find|search|explore|browse)\b/.test(text) && text.split(" ").filter(Boolean).length <= 7
+    || namedCatalogCandidate && !/^(?:hello|hi|hey|help|thanks?|thank|yes|yeah|yep|no|nope|ok|okay|sure|please|available|price|cost|size|color|colour|shipping|delivery|refund|return|policy|order|track)$/i.test(text);
 }
 
 function exactProductMatch(product, phrase, sku) {
@@ -301,7 +308,7 @@ async function discoverShopifyProducts(shop, question, knowledgeRows = []) {
     return filters.maxPrice !== null ? Math.max(...prices.filter((price) => price < filters.maxPrice)) : Math.min(...prices);
   };
   const products = matchingProducts.map((product) => ({ product, score: productRelevance(product, catalogQuery) * 0.72 + product._similarity * 0.28, price: priceForSort(product) }))
-    .filter((item) => hasTextQuery ? item.score > 0 : filters.colors.length || filters.brand || filters.size || filters.minPrice !== null || filters.maxPrice !== null || filters.availability)
+    .filter((item) => hasTextQuery ? item.score > 0 : true)
     .sort((left, right) => right.score - left.score || (filters.maxPrice !== null ? (right.price ?? -Infinity) - (left.price ?? -Infinity) : (left.price ?? Infinity) - (right.price ?? Infinity)))
     .slice(0, 5).map(({ product }) => ({ ...product, exactMatch: false }));
   return { exact: false, products, phrase: phrase || catalogQuery, filters };
@@ -316,9 +323,15 @@ function productSearchAnswer(discovery) {
   if (discovery.filters?.size) filterLabels.push(`size ${discovery.filters.size}`);
   if (discovery.exact && discovery.products.length === 1) return `I found an exact match for “${discovery.products[0].title}”. You can review its details below.`;
   if (discovery.exact && discovery.products.length > 1) return `I found an exact match for “${discovery.products[0].title}”. I’ve also included ${discovery.products.length - 1} related items in case you’d like to compare them.`;
-  if (discovery.products.length) return `I found ${discovery.products.length === 1 ? "a product" : "products"}${filterLabels.length ? ` matching ${filterLabels.join(", ")}` : ` matching “${discovery.phrase}”`}. Review the product details below${discovery.products.length > 1 ? " and compare the options" : ""}.`;
+  if (discovery.products.length) return filterLabels.length
+    ? `I found ${discovery.products.length === 1 ? "a product" : "products"} matching ${filterLabels.join(", ")}. Review the product details below${discovery.products.length > 1 ? " and compare the options" : ""}.`
+    : discovery.phrase
+      ? `I found ${discovery.products.length === 1 ? "a product" : "products"} matching “${discovery.phrase}”. Review the product details below${discovery.products.length > 1 ? " and compare the options" : ""}.`
+      : `${discovery.products.length === 1 ? "Here’s a product" : "Here are some products"} from the live store catalog to explore.`;
   if (filterLabels.length) return `I couldn’t find products matching ${filterLabels.join(", ")} in the live catalog. You can try a different budget, color, size, or product type.`;
-  return `I couldn’t find a close catalog match for “${discovery.phrase}” yet. Could you share another detail, such as the product type, size, color, or SKU?`;
+  return discovery.phrase
+    ? `I couldn’t find a close catalog match for “${discovery.phrase}” yet. Could you share another detail, such as the product type, size, color, or SKU?`
+    : "I couldn’t load product suggestions from the live catalog just now. Please try again, or choose “View all products” to browse the store.";
 }
 
 function productCards(products) {
@@ -509,15 +522,16 @@ export const action = async ({ request }) => {
     const explicitProductIntent = (productCategoryIntent || hasProductFilters) && (productActionIntent || hasProductFilters || /\b(price|cost|in stock|available|size|colour|color|material|details|sku|compare|similar|alternative)\b/i.test(userMessage)) || /\b(?:show|find|search|recommend|explore|browse)\s+(?:me\s+)?(?:some|any|your|all|the|our)?\s*(?:products?|catalog|collection|category|products? in|items?)\b/i.test(userMessage);
     const bestProductIntent = /\b(best|top|popular|most (?:bought|ordered|popular)|bestseller|best selling|trending|latest|new arrivals?|new products?|discounted?|on sale|sale items?|cheap|cheapest|affordable|budget friendly|premium|gift|gifts|similar products?|compare)\b|সেরা|সবচেয়ে ভালো|জনপ্রিয়/i.test(normalizeProductLookup(userMessage));
     const skuCandidate = !explicitOrderReference ? userMessage.match(/\bsku\s*[:#]?\s*([A-Z0-9][A-Z0-9._/-]{2,})\b/i)?.[1] || userMessage.match(/\b[A-Z0-9]{2,}(?:-[A-Z0-9]+)+\b/i)?.[0] : null;
-    const vagueProductRequest = !flowId && (/\b(?:buy something|want to buy|see your products|show me your products|show your catalog|browse your products|where can i find products|looking for a product|looking for something|specific product|this product|this item|do you sell this|do you have this|help me find a product|find a product|recommend something|recommend me something|need a new product|help me find something)\b/i.test(normalizeProductLookup(userMessage)) || purchaseRequestedInMessage && !productPurchaseIntent);
+    const vagueProductRequest = !flowId && (/\b(?:buy something|want to buy|looking for a product|looking for something|specific product|this product|this item|do you sell this|do you have this|help me find a product|find a product|recommend something|recommend me something|need a new product|help me find something)\b/i.test(normalizeProductLookup(userMessage)) || purchaseRequestedInMessage && !productPurchaseIntent);
     const smallTalk = /^(?:thanks?(?: so much)?|thank you(?: so much)?|okay|ok|got it|bye|goodbye|see you)$/i.test(userMessage.trim().replace(/[.!?]+$/, ""));
     const generalHelpRequest = /^(?:(?:i|we)\s+)?(?:need|want|would like|could use)\s+(?:(?:some|a little|your)\s+)?help(?:\s+please)?$|^(?:can|could|would)\s+you\s+help(?:\s+me)?(?:\s+please)?$|^help(?:\s+me)?(?:\s+please)?$/i.test(userMessage.trim().replace(/[.!?]+$/, ""));
     const greetingIntent = /^(?:hi|hello|hey|hiya|howdy|good morning|good afternoon|good evening)$/i.test(userMessage.trim().replace(/[.!?,\s]+$/g, ""));
     const identityQuestion = /\b(?:who are you|what are you|what can you do|how can you help|what do you help with|are you (?:a )?human|are you real)\b/i.test(userMessage);
     const asksForAnotherCustomer = /\b(?:another customer|someone else|somebody else|other customer'?s|someone else'?s)\b.{0,50}\b(?:order|email|address|personal|purchase|details)\b/i.test(userMessage);
     const abusiveMessage = /\b(?:fuck(?:ing)?|shit|bitch|asshole|idiot|stupid)\b/i.test(userMessage);
-    const storeRelated = greetingIntent || identityQuestion || smallTalk || hasProductFilters || productCategoryIntent || productActionIntent || productPurchaseIntent || bestProductIntent || Boolean(skuCandidate)
+    const storeRelated = greetingIntent || identityQuestion || smallTalk || isConversationalFollowup || hasProductFilters || productCategoryIntent || productActionIntent || productPurchaseIntent || bestProductIntent || Boolean(skuCandidate) || hasProductSearchLanguage(userMessage)
       || /\b(?:order|track|tracking|shipment|delivery|package|parcel|shipped|arrive|cancel|cancellation|return|refund|exchange|store|shop|shipping|payment|policy|policies|support|help|contact|business hours|opening hours|address|warranty|guarantee|checkout|discount|promotion)\b|অর্ডার|ট্র্যাক|ডেলিভারি|শিপিং|রিটার্ন|রিফান্ড|সাপোর্ট|দোকান|পেমেন্ট/i.test(userMessage);
+    const canUseGeneralIntent = !flowId || flowId === "product-discovery";
     if (!flowId && asksForAnotherCustomer) {
       const answer = "Sorry, I can’t provide another customer’s personal or order information. I can help verify your own order using its order number and checkout email.";
       await saveConversation(normalizedShop, sessionId, userMessage, answer, identity, userCreatedAt).catch((error) => console.error("Privacy reply save failed", error));
@@ -528,13 +542,13 @@ export const action = async ({ request }) => {
       await saveConversation(normalizedShop, sessionId, userMessage, answer, identity, userCreatedAt).catch((error) => console.error("Conduct reply save failed", error));
       return Response.json({ answer }, { headers });
     }
-    if (!flowId && smallTalk) {
+    if (canUseGeneralIntent && smallTalk) {
       const normalizedSmallTalk = userMessage.trim().toLowerCase().replace(/[.!?]+$/, "");
       const answer = normalizedSmallTalk.startsWith("thank") ? "You’re welcome! Is there anything else I can help you with?" : /^(?:bye|goodbye|see you)$/.test(normalizedSmallTalk) ? "Thank you for visiting! Have a great day." : "Great! Let me know if you need help finding a product, checking an order, or contacting the store team.";
       await saveConversation(normalizedShop, sessionId, userMessage, answer, identity, userCreatedAt).catch((error) => console.error("Small-talk reply save failed", error));
       return Response.json({ answer }, { headers });
     }
-    if (!flowId && identityQuestion) {
+    if (canUseGeneralIntent && identityQuestion) {
       const asksCapabilities = /what can you do|how can you help|what do you help with/i.test(userMessage);
       const answer = asksCapabilities
         ? `I can help you find products, answer questions about ${storeDisplayName}’s products, pages, and policies, check an order, submit a cancellation request for Support Team review, and connect with the team. I can’t cancel or change an order myself.`
@@ -543,13 +557,13 @@ export const action = async ({ request }) => {
       await saveConversation(normalizedShop, sessionId, userMessage, answer, identity, userCreatedAt).catch((error) => console.error("Assistant introduction save failed", error));
       return Response.json({ answer, ...(flow ? { flow } : {}) }, { headers });
     }
-    if (!flowId && generalHelpRequest) {
+    if (canUseGeneralIntent && generalHelpRequest) {
       const answer = "Of course—I’m here to help. Are you looking for a product, asking about shipping or returns, checking an order, or something else?";
       const flow = getConversationFlowStep(settings.flows, "welcome", "start");
       await saveConversation(normalizedShop, sessionId, userMessage, answer, identity, userCreatedAt).catch((error) => console.error("General help conversation save failed", error));
       return Response.json({ answer, products: [], ...(flow ? { flow } : {}) }, { headers });
     }
-    if (!flowId) {
+    if (canUseGeneralIntent) {
       const greeting = userMessage.trim().toLowerCase().replace(/[.!?,\s]+$/g, "");
       const greetings = {
         hi: `Hi! Welcome to ${storeDisplayName}. How can I help you today?`,
@@ -616,7 +630,8 @@ export const action = async ({ request }) => {
         return Response.json({ answer, ...(flow ? { flow } : { openOrderTracking: true }) }, { headers });
       }
     }
-    const resolvedFlow = orderLookupRequest || supportRequest || faqId || (hasInlineOrderDetails && !flowId) || (!flowId && (productPurchaseIntent || Boolean(skuCandidate)))
+    const useCatalogSearch = productSearchIntent && !flowChoiceId && (!flowId || flowId === "product-discovery");
+    const resolvedFlow = useCatalogSearch || orderLookupRequest || supportRequest || faqId || (hasInlineOrderDetails && !flowId) || (!flowId && (productPurchaseIntent || Boolean(skuCandidate)))
       ? null
       : resolveConversationFlow(settings.flows, { message: userMessage, flowId, stepId: flowStepId, choiceId: flowChoiceId, flowData });
     let flowGuidance = "";
