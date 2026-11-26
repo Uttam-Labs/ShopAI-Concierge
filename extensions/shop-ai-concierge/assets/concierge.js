@@ -347,7 +347,7 @@
       chatHistory.push({ role: "user", content: customerText, createdAt: Date.now() });
       persistChat();
       const pending = addMessage(messages, "", "assistant pending");
-      pending.bubble.innerHTML = '<span class="sac-typing-spinner" aria-hidden="true"></span><span class="sac-sr-only">Checking your order</span>';
+      pending.bubble.innerHTML = '<span class="sac-typing-status is-visible" aria-hidden="true">Checking your order…</span><span class="sac-sr-only">Checking your order</span>';
       try {
         const response = await postProxyData(apiEndpoint, { message: customerText, shop, sessionId, customerName: identity?.name || "", customerEmail: emailValue, orderNumber: orderNumberValue, orderLookupRequest: true });
         const data = await readApiJson(response, "order lookup");
@@ -436,7 +436,7 @@
       persistChat();
       const pending = addMessage(messages, "", "assistant pending");
       pending.bubble.setAttribute("aria-label", "ShopAI is replying");
-      pending.bubble.innerHTML = '<span class="sac-typing-spinner" aria-hidden="true"></span><span class="sac-typing-status" aria-hidden="true">Typing…</span><span class="sac-sr-only">ShopAI is replying</span>';
+      pending.bubble.innerHTML = '<span class="sac-typing-status is-visible" aria-hidden="true">Typing…</span><span class="sac-sr-only">ShopAI is replying</span>';
       const pendingStatus = pending.bubble.querySelector(".sac-typing-status");
       const questionText = message.toLowerCase();
       const progressMessages = /\b(?:order|tracking|shipment|delivery|parcel)\b/.test(questionText)
@@ -447,7 +447,6 @@
             ? ["Checking the store information…", "Reviewing the relevant policy…", "Preparing a clear answer…"]
             : ["Thinking…", "Checking the store information…", "Preparing a clear answer…"];
       let progressIndex = 0;
-      const pendingRevealTimer = window.setTimeout(() => pendingStatus.classList.add("is-visible"), 650);
       const pendingProgressTimer = window.setInterval(() => {
         progressIndex = (progressIndex + 1) % progressMessages.length;
         pendingStatus.textContent = progressMessages[progressIndex];
@@ -498,7 +497,6 @@
         chatHistory.push({ role: "assistant", content: pending.bubble.textContent, createdAt: Date.now(), ...(activeFlow ? { flow: activeFlow } : {}) });
         persistChat();
       } finally {
-        window.clearTimeout(pendingRevealTimer);
         window.clearInterval(pendingProgressTimer);
         form.dataset.sending = "false";
         panel.querySelector(".sac-send").disabled = false;
@@ -561,7 +559,7 @@
       persistChat();
       const pending = addMessage(messages, "", "assistant pending");
       pending.bubble.setAttribute("aria-label", "Creating your support ticket");
-      pending.bubble.innerHTML = '<span class="sac-typing-spinner" aria-hidden="true"></span><span class="sac-sr-only">Creating your support ticket</span>';
+      pending.bubble.innerHTML = '<span class="sac-typing-status is-visible" aria-hidden="true">Creating your support ticket…</span><span class="sac-sr-only">Creating your support ticket</span>';
       try {
         const supportContext = chatHistory.slice(0, -1).slice(-12).map(({ role, content }) => ({ role, content }));
         const response = await postProxyData(apiEndpoint, { message: ticketMessage, shop, sessionId, customerName: name, customerEmail: email, supportRequest: true, requestTypeId, requestDetails, supportContext, ...(supportFollowup ? { supportFollowup } : {}), supportSuccessMessage: root.dataset.supportSuccessMessage || "" });
