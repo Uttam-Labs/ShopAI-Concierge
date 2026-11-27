@@ -111,6 +111,7 @@
     const orderEmail = orderForm.elements.customerEmail;
     const orderSelection = orderForm.elements.orderSelection;
     const orderSelectLabel = orderSelection.closest("label");
+    const orderNumberLabel = orderForm.querySelector(".sac-order-number-label");
     const orderEmailLabel = orderEmail.closest("label");
     const orderCopy = panel.querySelector(".sac-order-copy");
     let orderEmailRequired = true;
@@ -133,7 +134,6 @@
         const response = await fetch(apiEndpoint, { headers: { accept: "application/json" }, cache: "no-store" });
         const config = await readApiJson(response, "customer orders");
         customerOrders = Array.isArray(config?.customerOrders) ? config.customerOrders : [];
-        if (!customerOrders.length) return;
         populateCustomerOrderOptions();
       } catch (error) { console.warn("Could not load customer orders", error); }
     };
@@ -144,8 +144,11 @@
         option.dataset.email = order.email || identity.email;
         orderSelection.add(option);
       });
-      orderSelectLabel.hidden = customerOrders.length === 0;
-      orderForm.elements.orderNumber.required = orderLookupMode !== "tracking" && customerOrders.length === 0;
+      const hasCustomerOrders = customerOrders.length > 0;
+      orderSelectLabel.hidden = orderLookupMode === "tracking" || !hasCustomerOrders;
+      orderSelection.required = orderLookupMode !== "tracking" && hasCustomerOrders;
+      orderNumberLabel.hidden = orderLookupMode === "tracking" || hasCustomerOrders;
+      orderForm.elements.orderNumber.required = orderLookupMode !== "tracking" && !hasCustomerOrders;
     };
     const orderTabs = panel.querySelectorAll("[data-lookup-mode]");
     let orderLookupMode = "order";
@@ -153,9 +156,10 @@
       orderLookupMode = tab.dataset.lookupMode;
       orderTabs.forEach((item) => item.setAttribute("aria-selected", String(item === tab)));
       const trackingMode = orderLookupMode === "tracking";
-      panel.querySelector(".sac-order-number-label").hidden = trackingMode;
+      orderNumberLabel.hidden = trackingMode || customerOrders.length > 0;
       panel.querySelector(".sac-tracking-number-label").hidden = !trackingMode;
       orderSelectLabel.hidden = trackingMode || customerOrders.length === 0;
+      orderSelection.required = !trackingMode && customerOrders.length > 0;
       orderForm.elements.orderNumber.required = !trackingMode && customerOrders.length === 0;
       orderForm.elements.trackingNumber.required = trackingMode;
       orderEmailLabel.hidden = trackingMode;
@@ -259,7 +263,11 @@
       orderResult.hidden = true;
       orderForm.elements.customerEmail.value = identity?.email || "";
       orderSelection.replaceChildren(new Option("Choose an order", ""));
-      orderSelectLabel.hidden = true;
+      orderSelection.required = false;
+      orderNumberLabel.hidden = customerOrders.length > 0;
+      orderForm.elements.orderNumber.required = customerOrders.length === 0;
+      orderSelectLabel.hidden = customerOrders.length === 0;
+      if (customerOrders.length) populateCustomerOrderOptions();
       if (root.dataset.customerEmail) loadCustomerOrders();
       orderBackdrop.hidden = false;
       orderForm.elements.orderNumber.focus();
