@@ -1016,6 +1016,17 @@
   async function renderProducts(container, products, options = {}) {
     const wrap = document.createElement("div");
     wrap.className = "sac-products";
+    const cue = document.createElement("div");
+    cue.className = "sac-products-cue";
+    cue.setAttribute("aria-label", "Products found. Product options are listed below.");
+    const cueArrow = document.createElement("span");
+    cueArrow.className = "sac-products-cue-arrow";
+    cueArrow.setAttribute("aria-hidden", "true");
+    cueArrow.textContent = "↓";
+    const cueLabel = document.createElement("span");
+    cueLabel.textContent = "Products found";
+    cue.append(cueArrow, cueLabel);
+    wrap.append(cue);
     if (options.purchaseIntent) wrap.dataset.purchaseIntent = "true";
     const rootUrl = window.Shopify?.routes?.root || "/";
     const currentProducts = await Promise.all(products.map(async (product) => {
