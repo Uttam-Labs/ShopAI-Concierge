@@ -160,7 +160,53 @@
     const persistChat = () => {
       try { sessionStorage.setItem(storageKey, JSON.stringify({ sessionId, identity, activeFlow, messages: chatHistory.slice(-40) })); } catch { /* Session storage can be disabled by the browser. */ }
     };
+    let popupAutoOpenTimer = null;
+    const clearPopupAutoOpen = () => {
+      if (popupAutoOpenTimer !== null) window.clearInterval(popupAutoOpenTimer);
+      popupAutoOpenTimer = null;
+    };
+    const showPopupAction = (row, kind, prefill = {}) => {
+      clearPopupAutoOpen();
+      const content = row?.querySelector(".sac-message-content");
+      if (!content) return;
+      const priorPrompt = panel.querySelector(".sac-popup-action-prompt");
+      priorPrompt?.remove();
+      const prompt = document.createElement("div");
+      prompt.className = "sac-popup-action-prompt";
+      const description = document.createElement("span");
+      description.className = "sac-popup-action-copy";
+      description.setAttribute("aria-live", "polite");
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "sac-popup-action-button";
+      let secondsLeft = 10;
+      const label = kind === "support" ? "Create support ticket" : "Open order lookup";
+      const updateCopy = () => {
+        description.textContent = kind === "support"
+          ? `The support form opens automatically in ${secondsLeft} seconds. Nothing is sent until you submit it.`
+          : `The secure order lookup opens automatically in ${secondsLeft} seconds. Nothing is checked until you submit it.`;
+        button.textContent = `${label} · ${secondsLeft}s`;
+      };
+      const open = () => {
+        clearPopupAutoOpen();
+        prompt.remove();
+        if (kind === "support") openSupportRequest(prefill);
+        else openOrderTracking();
+      };
+      button.addEventListener("click", open);
+      updateCopy();
+      prompt.append(description, button);
+      const time = content.querySelector(".sac-message-time");
+      if (time) content.insertBefore(prompt, time);
+      else content.append(prompt);
+      popupAutoOpenTimer = window.setInterval(() => {
+        secondsLeft -= 1;
+        if (secondsLeft <= 0) { open(); return; }
+        updateCopy();
+      }, 1000);
+    };
     const openOrderTracking = () => {
+      clearPopupAutoOpen();
       orderNotice.textContent = "";
       orderResult.hidden = true;
       orderForm.elements.customerEmail.value = identity?.email || "";
@@ -172,7 +218,7 @@
       button.type = "button";
       button.className = "sac-order-chat-view sac-order-chat-link";
       button.textContent = "Click here to check your order";
-      button.addEventListener("click", openOrderTracking);
+      button.addEventListener("click", () => { clearPopupAutoOpen(); openOrderTracking(); });
       const content = row.querySelector(".sac-message-content");
       content.insertBefore(button, content.querySelector(".sac-message-time"));
     };
@@ -241,6 +287,7 @@
       if (open) input.focus();
     });
     panel.querySelector(".sac-close").addEventListener("click", () => {
+      clearPopupAutoOpen();
       panel.classList.remove("is-open");
       launcher.setAttribute("aria-expanded", "false");
       launcher.focus();
@@ -363,6 +410,7 @@
       const faqId = typeof options.faqId === "string" ? options.faqId : "";
       if (form.dataset.sending === "true") return;
       if (options.chooseTopic || options.endTopic) {
+        clearPopupAutoOpen();
         activeFlow = null;
         topicNav.querySelectorAll(".sac-topic-button").forEach((button) => button.setAttribute("aria-pressed", "false"));
         chatHistory.forEach((item) => { delete item.flow; });
@@ -381,6 +429,7 @@
         return;
       }
       if (!message) return;
+      clearPopupAutoOpen();
       const previousAssistantTurn = chatHistory[chatHistory.length - 1];
       if (!options.flow && /^(yes|yes please|sure|go ahead|please do|that one)$/i.test(message) && previousAssistantTurn?.role === "assistant" && previousAssistantTurn.purchaseIntent) {
         const purchaseCards = [...messages.querySelectorAll('.sac-products[data-purchase-intent="true"] .sac-card')];
@@ -438,6 +487,8 @@
         if (!response.ok) throw new Error(data.error || "I couldn’t complete that request. Please try again.");
         pending.row.remove();
         let answer = data.answer || "I’m sorry, I couldn’t find an answer to that just yet.";
+        if (data.openSupport) answer += "\n\nTo get help with this, please create a support ticket. Our team will review your case and follow up. You can open the form now, or it will open automatically in 10 seconds. Nothing is sent until you submit it.";
+        else if (data.openOrderTracking || data.openOrderTrackingNow) answer += "\n\nTo check your order securely, enter your order number and checkout email. You can open the lookup now, or it will open automatically in 10 seconds. Nothing is checked until you submit it.";
         let purchaseIntent = data.purchaseIntent === true;
         if (purchasePromptActive && /^(?:no|no thanks)$/i.test(message)) {
           answer = "No problem — I won’t add it to your cart. I can help you find a different product or answer questions about the store.";
@@ -450,10 +501,9 @@
           purchaseIntent = true;
         }
         const reply = addMessage(messages, answer, "assistant");
-        if (data.openOrderTracking) addOrderTrackingAction(reply.row);
-        if (data.openOrderTrackingNow) openOrderTracking();
+        if (data.openSupport) showPopupAction(reply.row, "support", data.openSupport);
+        else if (data.openOrderTracking || data.openOrderTrackingNow) showPopupAction(reply.row, "order");
         if (data.order) addOrderDetailsAction(reply.row, data.order, answer);
-        if (data.openSupport) openSupportRequest(data.openSupport);
         activeFlow = data.flow || null;
         if (activeFlow) renderFlowChoices(reply.row, activeFlow, sendMessage);
         renderTopicActions(reply.row, sendMessage, topicOptions);
