@@ -1150,9 +1150,36 @@
   function updateThemeCart(cart, rootPath) {
     if (!cart) return;
     const count = Number(cart.item_count || 0);
-    document.querySelectorAll("[data-cart-count], .cart-count-bubble span[aria-hidden='true'], .cart-count-bubble span:not(.visually-hidden), #cart-icon-bubble .cart-count-bubble span").forEach((node) => { node.textContent = String(count); });
-    document.querySelectorAll(".cart-count-bubble, [data-cart-count-bubble]").forEach((node) => { node.hidden = count === 0; node.classList.toggle("is-empty", count === 0); });
-    const cartIcon = document.querySelector("#cart-icon-bubble, a[href$='/cart'], a[href*='/cart']");
+    const badgeSelector = "[data-cart-count], [data-cart-count-bubble], .cart-count-bubble, .cart-count, .cart__count, .header__cart-count";
+    const cartTargets = document.querySelectorAll("#cart-icon-bubble, [data-cart-icon], [aria-label*='cart' i], a[href$='/cart'], a[href*='/cart']");
+    const updateBadge = (badge) => {
+      const visibleLabels = badge.querySelectorAll("span[aria-hidden='true'], span:not(.visually-hidden):not([class*='sr-only'])");
+      if (visibleLabels.length) visibleLabels.forEach((node) => { node.textContent = String(count); });
+      else if (!badge.children.length || badge.matches("[data-cart-count]")) badge.textContent = String(count);
+      badge.querySelectorAll(".visually-hidden, [class*='sr-only']").forEach((node) => { node.textContent = count === 1 ? "1 item in cart" : `${count} items in cart`; });
+      if (badge.matches(".cart-count-bubble, [data-cart-count-bubble]")) {
+        badge.hidden = count === 0;
+        badge.classList.toggle("is-empty", count === 0);
+      }
+    };
+    document.querySelectorAll(badgeSelector).forEach(updateBadge);
+    cartTargets.forEach((target) => {
+      let badge = target.matches(badgeSelector) ? target : target.querySelector(badgeSelector);
+      if (badge) { updateBadge(badge); return; }
+      let customBadge = target.querySelector(":scope > .sac-theme-cart-count");
+      if (count === 0) { customBadge?.remove(); return; }
+      if (!customBadge) {
+        customBadge = document.createElement("span");
+        customBadge.className = "sac-theme-cart-count";
+        customBadge.setAttribute("aria-live", "polite");
+        customBadge.setAttribute("aria-label", "Items in cart");
+        if (getComputedStyle(target).position === "static") target.style.position = "relative";
+        target.append(customBadge);
+      }
+      customBadge.textContent = String(count);
+      customBadge.setAttribute("aria-label", `${count} ${count === 1 ? "item" : "items"} in cart`);
+    });
+    const cartIcon = document.querySelector("#cart-icon-bubble, [data-cart-icon], a[href$='/cart'], a[href*='/cart']");
     if (cartIcon) {
       cartIcon.classList.remove("animate", "is-empty");
       void cartIcon.offsetWidth;
@@ -1186,8 +1213,9 @@
     flyer.className = "sac-cart-bird";
     flyer.setAttribute("aria-hidden", "true");
     flyer.innerHTML = '<svg viewBox="0 0 52 48"><path d="M4 27c8-11 16-17 27-18-3 4-4 8-3 11 6-6 12-9 19-9-4 5-8 9-11 15-5 9-13 15-25 17 5-5 8-10 9-15-5 0-10 0-16-1Z"/><path class="sac-bird-wing" d="M8 25c8-5 15-8 23-9-8 5-13 10-16 17l-4 3c3-6 4-10 4-14-2 0-4 1-7 3Z"/><path class="sac-bird-beak" d="m43 11 7-3-4 7Z"/></svg>';
-    flyer.style.left = `${startX - 17}px`;
-    flyer.style.top = `${startY - 17}px`;
+    const flyerSize = 50;
+    flyer.style.left = `${startX - flyerSize / 2}px`;
+    flyer.style.top = `${startY - flyerSize / 2}px`;
     document.body.append(flyer);
     const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
     if (reducedMotion || typeof flyer.animate !== "function") {
@@ -1197,18 +1225,18 @@
       return;
     }
     const compact = window.matchMedia?.("(max-width: 520px)").matches;
-    const arc = Math.min(compact ? 42 : 64, Math.max(22, Math.abs(deltaX) * .12));
+    const arc = Math.min(compact ? 50 : 72, Math.max(28, Math.abs(deltaX) * .13));
     const flight = flyer.animate([
-      { opacity: 0, transform: "translate3d(0, 10px, 0) rotate(-18deg) scale(.55)" },
-      { opacity: 1, offset: .12, transform: "translate3d(0, 0, 0) rotate(-4deg) scale(1)" },
-      { opacity: 1, offset: .42, transform: `translate3d(${deltaX * .38}px, ${deltaY * .38 - arc}px, 0) rotate(9deg) scale(.9)` },
-      { opacity: 1, offset: .76, transform: `translate3d(${deltaX * .78}px, ${deltaY * .78 - arc * .42}px, 0) rotate(22deg) scale(.7)` },
-      { opacity: .94, transform: `translate3d(${deltaX}px, ${deltaY}px, 0) rotate(34deg) scale(.28)` },
-    ], { duration: compact ? 780 : 900, easing: "cubic-bezier(.2,.72,.25,1)", fill: "forwards" });
+      { opacity: 0, transform: "translate3d(0, 12px, 0) rotate(-18deg) scale(.62)" },
+      { opacity: 1, offset: .1, transform: "translate3d(0, 0, 0) rotate(-5deg) scale(1)" },
+      { opacity: 1, offset: .43, transform: `translate3d(${deltaX * .4}px, ${deltaY * .4 - arc}px, 0) rotate(5deg) scale(1.08)` },
+      { opacity: 1, offset: .78, transform: `translate3d(${deltaX * .8}px, ${deltaY * .8 - arc * .38}px, 0) rotate(17deg) scale(.88)` },
+      { opacity: .98, transform: `translate3d(${deltaX}px, ${deltaY}px, 0) rotate(28deg) scale(.58)` },
+    ], { duration: compact ? 980 : 1120, easing: "cubic-bezier(.22,.7,.18,1)", fill: "forwards" });
     const wing = flyer.querySelector(".sac-bird-wing");
     if (wing?.animate) wing.animate([
-      { transform: "rotate(0deg)" }, { transform: "rotate(-30deg)" }, { transform: "rotate(5deg)" },
-    ], { duration: 190, iterations: Math.ceil((compact ? 780 : 900) / 190), easing: "ease-in-out" });
+      { transform: "rotate(0deg)" }, { transform: "rotate(-34deg)" }, { transform: "rotate(6deg)" },
+    ], { duration: 210, iterations: Math.ceil((compact ? 980 : 1120) / 210), easing: "ease-in-out" });
     flight.onfinish = () => { flyer.remove(); target.classList.add("sac-cart-arrived"); window.setTimeout(() => target.classList.remove("sac-cart-arrived"), 550); };
   }
 })();
