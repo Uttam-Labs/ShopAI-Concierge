@@ -212,7 +212,10 @@ function hasProductSearchLanguage(message) {
   const words = text.split(" ").filter(Boolean);
   const queryWords = words.filter((word) => !/^(?:a|about|am|an|and|are|can|checkout|color|colour|contact|could|cost|delivery|discount|do|does|for|have|help|hours|how|i|is|it|me|much|my|need|of|or|order|payment|please|policy|price|product|products|refund|return|returns|shipping|shop|show|size|some|status|store|support|the|to|track|tracking|update|want|we|what|when|where|which|who|why|with|you|your)$/i.test(word));
   const namedCatalogCandidate = words.length > 0 && words.length <= 7 && queryWords.some((word) => word.length >= 3);
-  return /\b(?:product|item|catalog|collection|category|shoe|shoes|clothing|men s shoes|women s clothing|t shirt|new arrival|latest|new products|best seller|popular|trending|sale|discount|cheap|affordable|budget friendly|premium|recommendation|recommend|similar|compare|specific product|this product|this item|do you sell|do you have|find product|search for|looking for|looking to buy|gift|sku|handle)\b/.test(text)
+  const shoppingContext = /\b(?:(?:i am|i'm|im)\s+)?(?:looking|searching|shopping)\s+for\b|\b(?:i\s+)?(?:need|want|would like|could use)\s+(?:a|an|some|something|anything|one|any kind of)\b|\b(?:i|we)\s+(?:want|need|plan|hope|am trying|are trying)\s+to\s+(?:find|buy|purchase|choose)\b|\bwhat\s+(?:would|could)\s+you\s+recommend\b|\bi(?:'m| am)?\s+after\b/i.test(text);
+  const nonShoppingRequest = /\b(?:order|tracking|shipment|delivery|refund|return|exchange|payment|shipping|policy|support|contact)\b/i.test(text);
+  if (shoppingContext && !nonShoppingRequest) return true;
+  return /\b(?:product|item|catalog|collection|category|shoe|shoes|clothing|men s shoes|women s clothing|t shirt|new arrival|latest|new products|best seller|popular|trending|sale|discount|cheap|affordable|budget friendly|premium|recommendation|recommend|suggest|similar|compare|specific product|this product|this item|do you sell|do you have|find product|search for|looking for|looking to buy|gift|sku|handle)\b/.test(text)
     || /\b(?:buy|purchase|show|find|search|explore|browse)\b/.test(text) && text.split(" ").filter(Boolean).length <= 7
     || namedCatalogCandidate && !/^(?:hello|hi|hey|help|thanks?|thank|yes|yeah|yep|no|nope|ok|okay|sure|please|available|price|cost|size|color|colour|shipping|delivery|refund|return|policy|order|track)$/i.test(text);
 }
@@ -293,7 +296,13 @@ async function discoverShopifyProducts(shop, question, knowledgeRows = []) {
   const liveMatches = filterOnlyQuery
     ? (await safeSearch(catalogQuery, 20))
     : (await Promise.all(queryTerms.map(async (term) => safeSearch(`"${term.replace(/"/g, "")}"`, 20)))).flat();
-  const verifiedKnowledgeProducts = (await Promise.all(productsFromKnowledge.filter((product) => product.handle).sort((left, right) => Number(right._similarity || 0) - Number(left._similarity || 0)).slice(0, 5).map(async (product) => (await safeSearch(`handle:${product.handle}`, 1)).find((candidate) => candidate.handle === product.handle)))).filter(Boolean);
+  // Keep the vector similarity when replacing indexed product data with the
+  // current Shopify record. This lets purpose/context searches ("for rainy
+  // runs") match catalog descriptions even when their exact wording differs.
+  const verifiedKnowledgeProducts = (await Promise.all(productsFromKnowledge.filter((product) => product.handle).sort((left, right) => Number(right._similarity || 0) - Number(left._similarity || 0)).slice(0, 5).map(async (product) => {
+    const liveProduct = (await safeSearch(`handle:${product.handle}`, 1)).find((candidate) => candidate.handle === product.handle);
+    return liveProduct ? { ...liveProduct, _similarity: Number(product._similarity || 0) } : null;
+  }))).filter(Boolean);
   const rankedByHandle = new Map(verifiedKnowledgeProducts.map((product) => [product.handle, product]));
   const merged = new Map();
   [...verifiedKnowledgeProducts, ...liveMatches].forEach((product) => {
@@ -310,8 +319,12 @@ async function discoverShopifyProducts(shop, question, knowledgeRows = []) {
     if (!prices.length) return null;
     return Math.min(...prices);
   };
-  const products = matchingProducts.map((product) => ({ product, score: productRelevance(product, catalogQuery) * 0.72 + product._similarity * 0.28, price: priceForSort(product), bestSeller: (product.tags || []).some((tag) => /best[\s_-]*sell|bestseller/i.test(String(tag))) }))
-    .filter((item) => hasTextQuery ? item.score > 0 : true)
+  const products = matchingProducts.map((product) => {
+    const lexicalScore = productRelevance(product, catalogQuery);
+    const semanticScore = Math.max(0, Math.min(1, Number(product._similarity || 0)));
+    return { product, lexicalScore, semanticScore, score: lexicalScore * 0.55 + semanticScore * 0.45, price: priceForSort(product), bestSeller: (product.tags || []).some((tag) => /best[\s_-]*sell|bestseller/i.test(String(tag))) };
+  })
+    .filter((item) => hasTextQuery ? item.lexicalScore > 0 || item.semanticScore >= 0.22 : true)
     .sort((left, right) => filters.sort === "price-desc" ? (right.price ?? -Infinity) - (left.price ?? -Infinity) || right.score - left.score
       : filters.sort === "price-asc" ? (left.price ?? Infinity) - (right.price ?? Infinity) || right.score - left.score
         : filters.sort === "best-selling" ? Number(right.bestSeller) - Number(left.bestSeller) || right.score - left.score
@@ -735,7 +748,8 @@ export const action = async ({ request }) => {
     const explicitProductIntent = (productCategoryIntent || hasProductFilters || /\b(?:around|under|below|less than|cheapest|least expensive|best sellers?|best selling|bestsellers?)\b/i.test(userMessage) && /\b(?:shirt|t-?shirt|tee|products?|items?|catalog)\b/i.test(userMessage)) && (productActionIntent || hasProductFilters || /\b(price|cost|in stock|available|size|colour|color|material|details|sku|compare|similar|alternative|cheapest|least expensive|best sellers?|best selling|bestsellers?)\b/i.test(userMessage)) || /\b(?:show|find|search|recommend|explore|browse)\s+(?:me\s+)?(?:some|any|your|all|the|our)?\s*(?:products?|catalog|collection|category|products? in|items?)\b/i.test(userMessage);
     const bestProductIntent = /\b(best|top|popular|most (?:bought|ordered|popular)|bestseller|best selling|trending|latest|new arrivals?|new products?|discounted?|on sale|sale items?|cheap|cheapest|affordable|budget friendly|premium|gift|gifts|similar products?|compare)\b|সেরা|সবচেয়ে ভালো|জনপ্রিয়/i.test(normalizeProductLookup(userMessage));
     const skuCandidate = !explicitOrderReference ? userMessage.match(/\bsku\s*[:#]?\s*([A-Z0-9][A-Z0-9._/-]{2,})\b/i)?.[1] || userMessage.match(/\b[A-Z0-9]{2,}(?:-[A-Z0-9]+)+\b/i)?.[0] : null;
-    const vagueProductRequest = !flowId && (/\b(?:buy something|want to buy|looking for a product|looking for something|specific product|this product|this item|do you sell this|do you have this|help me find a product|find a product|recommend something|recommend me something|need a new product|help me find something)\b/i.test(normalizeProductLookup(userMessage)) || purchaseRequestedInMessage && !productPurchaseIntent);
+    const hasDescriptiveProductDetail = productSearchPhrase(userMessage).split(/\s+/).some((term) => term.length >= 3);
+    const vagueProductRequest = !flowId && !hasDescriptiveProductDetail && !hasProductFilters && (/\b(?:buy something|want to buy|looking for a product|looking for something|specific product|this product|this item|do you sell this|do you have this|help me find a product|find a product|recommend something|recommend me something|suggest something|not sure what to buy|based on my needs|need a new product|help me find something)\b/i.test(normalizeProductLookup(userMessage)) || purchaseRequestedInMessage && !productPurchaseIntent);
     const smallTalk = /^(?:thanks?(?: so much)?(?: for your help| for helping me out)?|thank you(?: so much)?(?: for your help| for helping me out)?|okay|ok|got it|bye|goodbye|see you)$/i.test(userMessage.trim().replace(/[.!?]+$/, ""));
     const generalHelpRequest = /^(?:(?:i|we)\s+)?(?:need|want|would like|could use)\s+(?:(?:some|a little|your)\s+)?help(?:\s+please)?$|^(?:can|could|would)\s+you\s+help(?:\s+me)?(?:\s+please)?$|^help(?:\s+me)?(?:\s+please)?$/i.test(userMessage.trim().replace(/[.!?]+$/, ""));
     const greetingIntent = /^(?:hi|hello|hey|hiya|howdy|good morning|good afternoon|good evening)$/i.test(userMessage.trim().replace(/[.!?,\s]+$/g, ""));
@@ -1227,13 +1241,10 @@ export const action = async ({ request }) => {
         : matches;
     let productRows = matches.filter((row) => row.source_type === "product" && row.metadata?.handle);
     if (productPurchaseIntent) {
-      const titleTokens = userMessage.toLocaleLowerCase().normalize("NFKD").match(/[\p{L}\p{N}]{3,}/gu) || [];
-      const ranked = productRows.map((row) => {
-        const haystack = `${row.title} ${row.content || ""} ${JSON.stringify(row.metadata || {})}`.toLocaleLowerCase();
-        const matched = titleTokens.filter((token) => haystack.includes(token)).length;
-        return { row, matched, score: matched / Math.max(1, titleTokens.length) };
-      }).sort((left, right) => right.score - left.score || Number(right.row.similarity) - Number(left.row.similarity));
-      productRows = ranked.filter((item) => item.score >= 0.25).slice(0, 5).map((item) => item.row);
+      // match_knowledge already ranks product rows semantically. Do not apply a
+      // second token-overlap gate here: it discards valid products when the
+      // shopper describes a use case rather than repeating the catalog title.
+      productRows = productRows.sort((left, right) => Number(right.similarity || 0) - Number(left.similarity || 0)).slice(0, 5);
     }
     const collectionRows = matches.filter((row) => row.source_type === "collection");
     const collectionHandles = collectionRows.map((row) => String(row.metadata?.handle || "")).filter(Boolean);

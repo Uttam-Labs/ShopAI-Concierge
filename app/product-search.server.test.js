@@ -26,6 +26,16 @@ test("normalizes common spelling, spacing, and color variants", () => {
   assert.doesNotMatch(productSearchPhrase("What is the cheapest tee in the featured products?"), /featured/i);
 });
 
+test("keeps use-case meaning while removing conversational filler", () => {
+  const purposeQuery = productSearchPhrase("I need something waterproof that will be suitable to use for running in the rain");
+  assert.match(purposeQuery, /waterproof/);
+  assert.match(purposeQuery, /running/);
+  assert.match(purposeQuery, /rain/);
+  assert.equal(productSearchPhrase("Can you help me find something good?"), "");
+  assert.equal(productSearchPhrase("I am not sure what to buy. Can you suggest something?"), "");
+  assert.match(productSearchPhrase("I want something comfortable for travelling"), /comfortable.*travelling/);
+});
+
 test("extracts budget without mistaking the amount for a clothing size", () => {
   const under350 = extractProductFilters("black t-shirt for 350");
   assert.equal(under350.size, "");
