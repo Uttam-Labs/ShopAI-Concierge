@@ -1016,16 +1016,32 @@
   async function renderProducts(container, products, options = {}) {
     const wrap = document.createElement("div");
     wrap.className = "sac-products";
-    const cue = document.createElement("div");
+    const cue = document.createElement("button");
+    cue.type = "button";
     cue.className = "sac-products-cue";
-    cue.setAttribute("aria-label", "Products found. Product options are listed below.");
+    cue.setAttribute("aria-label", "View product options below");
     const cueArrow = document.createElement("span");
     cueArrow.className = "sac-products-cue-arrow";
     cueArrow.setAttribute("aria-hidden", "true");
     cueArrow.textContent = "↓";
     const cueLabel = document.createElement("span");
-    cueLabel.textContent = "Products found";
+    cueLabel.textContent = "View products";
     cue.append(cueArrow, cueLabel);
+    cue.addEventListener("click", () => {
+      const target = wrap.querySelector(".sac-card") || wrap.querySelector(".sac-view-all-products");
+      const scroller = target?.closest(".sac-messages") || container.closest?.(".sac-messages");
+      if (!target || !scroller) return;
+      const scrollerTop = scroller.getBoundingClientRect().top;
+      const targetTop = target.getBoundingClientRect().top;
+      const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+      scroller.scrollTo({ top: scroller.scrollTop + targetTop - scrollerTop - 10, behavior: reducedMotion ? "auto" : "smooth" });
+      if (target.classList.contains("sac-card")) {
+        target.classList.remove("is-suggested");
+        void target.offsetWidth;
+        target.classList.add("is-suggested");
+        window.setTimeout(() => target.classList.remove("is-suggested"), 1400);
+      }
+    });
     wrap.append(cue);
     if (options.purchaseIntent) wrap.dataset.purchaseIntent = "true";
     const rootUrl = window.Shopify?.routes?.root || "/";
@@ -1136,6 +1152,7 @@
       allProducts.rel = "noopener noreferrer";
       allProducts.textContent = "View all products ↗";
       wrap.append(allProducts);
+      container.querySelectorAll(".sac-products-cue").forEach((previousCue) => previousCue.remove());
       container.append(wrap);
     }
   }
@@ -1151,35 +1168,48 @@
     if (!cart) return;
     const count = Number(cart.item_count || 0);
     const badgeSelector = "[data-cart-count], [data-cart-count-bubble], .cart-count-bubble, .cart-count, .cart__count, .header__cart-count";
-    const cartTargets = document.querySelectorAll("#cart-icon-bubble, [data-cart-icon], [aria-label*='cart' i], a[href$='/cart'], a[href*='/cart']");
+    const visualBadgeSelector = "[data-cart-count-bubble], .cart-count-bubble, .cart-count, .cart__count, .header__cart-count";
+    const cartTargetSelector = "#cart-icon-bubble, [data-cart-icon], button[aria-label*='cart' i], a[href$='/cart'], [role='button'][aria-label*='cart' i]";
+    document.querySelectorAll(".sac-theme-cart-count").forEach((badge) => badge.remove());
     const updateBadge = (badge) => {
+      if (badge.closest(".sac-panel")) return;
       const visibleLabels = badge.querySelectorAll("span[aria-hidden='true'], span:not(.visually-hidden):not([class*='sr-only'])");
       if (visibleLabels.length) visibleLabels.forEach((node) => { node.textContent = String(count); });
       else if (!badge.children.length || badge.matches("[data-cart-count]")) badge.textContent = String(count);
       badge.querySelectorAll(".visually-hidden, [class*='sr-only']").forEach((node) => { node.textContent = count === 1 ? "1 item in cart" : `${count} items in cart`; });
-      if (badge.matches(".cart-count-bubble, [data-cart-count-bubble]")) {
+      if (badge.matches(visualBadgeSelector)) {
+        badge.classList.add("sac-cart-count-badge");
+        badge.style.setProperty("--sac-accent", document.querySelector(".sac-root")?.dataset.accent || "#f97316");
+        if (badge.parentElement && getComputedStyle(badge.parentElement).position === "static") badge.parentElement.style.position = "relative";
         badge.hidden = count === 0;
         badge.classList.toggle("is-empty", count === 0);
       }
     };
-    document.querySelectorAll(badgeSelector).forEach(updateBadge);
-    cartTargets.forEach((target) => {
-      let badge = target.matches(badgeSelector) ? target : target.querySelector(badgeSelector);
-      if (badge) { updateBadge(badge); return; }
-      let customBadge = target.querySelector(":scope > .sac-theme-cart-count");
-      if (count === 0) { customBadge?.remove(); return; }
-      if (!customBadge) {
-        customBadge = document.createElement("span");
-        customBadge.className = "sac-theme-cart-count";
-        customBadge.setAttribute("aria-live", "polite");
-        customBadge.setAttribute("aria-label", "Items in cart");
-        if (getComputedStyle(target).position === "static") target.style.position = "relative";
-        target.append(customBadge);
-      }
-      customBadge.textContent = String(count);
-      customBadge.setAttribute("aria-label", `${count} ${count === 1 ? "item" : "items"} in cart`);
+    const badges = [...document.querySelectorAll(badgeSelector)].filter((badge) => !badge.parentElement?.closest(visualBadgeSelector));
+    badges.forEach(updateBadge);
+    const cartTargets = [...document.querySelectorAll(cartTargetSelector)].filter((target) => {
+      if (target.closest(".sac-panel, .sac-launch")) return false;
+      const rect = target.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0 && getComputedStyle(target).visibility !== "hidden";
     });
-    const cartIcon = document.querySelector("#cart-icon-bubble, [data-cart-icon], a[href$='/cart'], a[href*='/cart']");
+    if (!badges.length && count > 0 && cartTargets.length) {
+      const target = cartTargets.sort((left, right) => {
+        const priority = (element) => element.matches("#cart-icon-bubble") ? 0 : element.matches("[data-cart-icon]") ? 1 : element.matches("button[aria-label*='cart' i]") ? 2 : 3;
+        return priority(left) - priority(right) || left.getBoundingClientRect().width * left.getBoundingClientRect().height - right.getBoundingClientRect().width * right.getBoundingClientRect().height;
+      })[0];
+      const customBadge = document.createElement("span");
+      customBadge.className = "sac-theme-cart-count sac-cart-count-badge";
+      customBadge.setAttribute("aria-live", "polite");
+      customBadge.setAttribute("aria-label", `${count} ${count === 1 ? "item" : "items"} in cart`);
+      customBadge.textContent = String(count);
+      customBadge.style.setProperty("--sac-accent", document.querySelector(".sac-root")?.dataset.accent || "#f97316");
+      if (getComputedStyle(target).position === "static") target.style.position = "relative";
+      target.append(customBadge);
+    }
+    const cartIcon = cartTargets.sort((left, right) => {
+      const priority = (element) => element.matches("#cart-icon-bubble") ? 0 : element.matches("[data-cart-icon]") ? 1 : 2;
+      return priority(left) - priority(right) || left.getBoundingClientRect().width * left.getBoundingClientRect().height - right.getBoundingClientRect().width * right.getBoundingClientRect().height;
+    })[0];
     if (cartIcon) {
       cartIcon.classList.remove("animate", "is-empty");
       void cartIcon.offsetWidth;
@@ -1197,8 +1227,16 @@
       }).catch(() => {});
   }
   function animateProductToCart(source) {
-    const target = Array.from(document.querySelectorAll("#cart-icon-bubble, [data-cart-icon], .cart-count-bubble, [aria-label*='cart' i], a[href$='/cart'], a[href*='/cart']"))
-      .find((element) => { const rect = element.getBoundingClientRect(); return rect.width > 0 && rect.height > 0 && getComputedStyle(element).visibility !== "hidden"; });
+    const visible = (element) => {
+      const rect = element.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0 && getComputedStyle(element).visibility !== "hidden" && !element.closest(".sac-panel, .sac-launch");
+    };
+    const target = Array.from(document.querySelectorAll(".sac-cart-count-badge, .sac-theme-cart-count, #cart-icon-bubble, [data-cart-icon], button[aria-label*='cart' i], a[href$='/cart'], [role='button'][aria-label*='cart' i]"))
+      .filter(visible)
+      .sort((left, right) => {
+        const priority = (element) => element.matches(".sac-cart-count-badge, .sac-theme-cart-count") ? 0 : element.matches("#cart-icon-bubble") ? 1 : element.matches("[data-cart-icon]") ? 2 : 3;
+        return priority(left) - priority(right);
+      })[0];
     if (!target || !source || typeof source.getBoundingClientRect !== "function") return;
     const from = source.getBoundingClientRect();
     const to = target.getBoundingClientRect();
@@ -1212,7 +1250,7 @@
     const flyer = document.createElement("span");
     flyer.className = "sac-cart-bird";
     flyer.setAttribute("aria-hidden", "true");
-    flyer.innerHTML = '<svg viewBox="0 0 52 48"><path d="M4 27c8-11 16-17 27-18-3 4-4 8-3 11 6-6 12-9 19-9-4 5-8 9-11 15-5 9-13 15-25 17 5-5 8-10 9-15-5 0-10 0-16-1Z"/><path class="sac-bird-wing" d="M8 25c8-5 15-8 23-9-8 5-13 10-16 17l-4 3c3-6 4-10 4-14-2 0-4 1-7 3Z"/><path class="sac-bird-beak" d="m43 11 7-3-4 7Z"/></svg>';
+    flyer.innerHTML = '<svg viewBox="0 0 64 64"><g class="sac-bird-wing sac-bird-wing-left"><path d="M32 30C24 21 16 16 5 15c4 9 9 16 17 22-6-2-11-2-16 1 10 7 19 6 26 0Z"/></g><g class="sac-bird-wing sac-bird-wing-right"><path d="M32 30c8-9 16-14 27-15-4 9-9 16-17 22 6-2 11-2 16 1-10 7-19 6-26 0Z"/></g><path d="M27 25c1-5 9-5 10 0 2 12-1 23-5 32-4-9-7-20-5-32Z"/><path class="sac-bird-beak" d="m29 22 3-7 3 7Z"/><path d="m28 48 4 9 4-9"/></svg>';
     const flyerSize = 50;
     flyer.style.left = `${startX - flyerSize / 2}px`;
     flyer.style.top = `${startY - flyerSize / 2}px`;
@@ -1225,18 +1263,22 @@
       return;
     }
     const compact = window.matchMedia?.("(max-width: 520px)").matches;
-    const arc = Math.min(compact ? 50 : 72, Math.max(28, Math.abs(deltaX) * .13));
+    const arc = Math.min(compact ? 42 : 60, Math.max(24, Math.abs(deltaX) * .105));
     const flight = flyer.animate([
-      { opacity: 0, transform: "translate3d(0, 12px, 0) rotate(-18deg) scale(.62)" },
-      { opacity: 1, offset: .1, transform: "translate3d(0, 0, 0) rotate(-5deg) scale(1)" },
-      { opacity: 1, offset: .43, transform: `translate3d(${deltaX * .4}px, ${deltaY * .4 - arc}px, 0) rotate(5deg) scale(1.08)` },
-      { opacity: 1, offset: .78, transform: `translate3d(${deltaX * .8}px, ${deltaY * .8 - arc * .38}px, 0) rotate(17deg) scale(.88)` },
-      { opacity: .98, transform: `translate3d(${deltaX}px, ${deltaY}px, 0) rotate(28deg) scale(.58)` },
-    ], { duration: compact ? 980 : 1120, easing: "cubic-bezier(.22,.7,.18,1)", fill: "forwards" });
-    const wing = flyer.querySelector(".sac-bird-wing");
-    if (wing?.animate) wing.animate([
-      { transform: "rotate(0deg)" }, { transform: "rotate(-34deg)" }, { transform: "rotate(6deg)" },
-    ], { duration: 210, iterations: Math.ceil((compact ? 980 : 1120) / 210), easing: "ease-in-out" });
+      { opacity: 0, transform: "translate3d(0, 12px, 0) rotate(-12deg) scale(.58)" },
+      { opacity: 1, offset: .12, transform: "translate3d(0, 0, 0) rotate(-4deg) scale(1)" },
+      { opacity: 1, offset: .48, transform: `translate3d(${deltaX * .42}px, ${deltaY * .42 - arc}px, 0) rotate(3deg) scale(1.08)` },
+      { opacity: 1, offset: .82, transform: `translate3d(${deltaX * .82}px, ${deltaY * .82 - arc * .36}px, 0) rotate(13deg) scale(.9)` },
+      { opacity: .98, transform: `translate3d(${deltaX}px, ${deltaY}px, 0) rotate(22deg) scale(.42)` },
+    ], { duration: compact ? 1380 : 1520, easing: "cubic-bezier(.32,.05,.22,1)", fill: "forwards" });
+    flyer.querySelectorAll(".sac-bird-wing").forEach((wing) => {
+      const leftWing = wing.classList.contains("sac-bird-wing-left");
+      wing.animate(leftWing ? [
+        { transform: "scaleY(.55) rotate(12deg)" }, { transform: "scaleY(1.12) rotate(-9deg)" }, { transform: "scaleY(.55) rotate(12deg)" },
+      ] : [
+        { transform: "scaleY(.55) rotate(-12deg)" }, { transform: "scaleY(1.12) rotate(9deg)" }, { transform: "scaleY(.55) rotate(-12deg)" },
+      ], { duration: 235, iterations: Math.ceil((compact ? 1380 : 1520) / 235), easing: "ease-in-out" });
+    });
     flight.onfinish = () => { flyer.remove(); target.classList.add("sac-cart-arrived"); window.setTimeout(() => target.classList.remove("sac-cart-arrived"), 550); };
   }
 })();
