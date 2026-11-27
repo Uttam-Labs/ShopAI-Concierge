@@ -237,12 +237,13 @@
         if (item.order && item.role === "assistant") restoredOrderRows.push({ row: restored.row, order: item.order, answer: item.content });
         if (item.products?.length && item.role === "assistant") renderProducts(messages, item.products, { persist: false, purchaseIntent: item.purchaseIntent === true });
       });
-      messages.append(faqSection);
+      faqSection.hidden = true;
     } else {
       const greeting = initialGreeting.querySelector(".sac-greeting").textContent;
       chatHistory.push({ role: "assistant", content: greeting, createdAt: Date.now() });
       persistChat();
     }
+    initialGreeting.after(faqSection);
     const resizeComposer = () => {
       input.style.height = "auto";
       input.style.height = `${Math.min(input.scrollHeight, 128)}px`;
@@ -409,6 +410,7 @@
       const message = String(rawMessage || "").trim();
       const faqId = typeof options.faqId === "string" ? options.faqId : "";
       if (form.dataset.sending === "true") return;
+      if (message) faqSection.hidden = true;
       if (options.chooseTopic || options.endTopic) {
         clearPopupAutoOpen();
         activeFlow = null;
