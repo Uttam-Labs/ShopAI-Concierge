@@ -289,8 +289,14 @@
 .sac-order-details p { margin: 5px 0; }
 .sac-order-details ul { margin: 5px 0 10px; padding-left: 18px; }
 .sac-order-details a, .sac-order-status-link { color: #a64a17; font-weight: 700; text-decoration: underline; }
+.sac-order-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin: 4px 0 12px; padding: 4px; border-radius: 10px; background: #f5f2ee; }
+.sac-order-tabs button { min-height: 35px; border: 0; border-radius: 7px; color: #756b63; background: transparent; font: inherit; font-size: 11px; font-weight: 650; cursor: pointer; }
+.sac-order-tabs button[aria-selected="true"] { color: #8f4018; background: #fff; box-shadow: 0 1px 4px #2e1d100f; }
+.sac-order-tabs button:focus-visible { outline: 2px solid var(--sac-accent, #f97316); outline-offset: 2px; }
 .sac-order-status-link { display: inline-block; margin-top: 7px; }
 .sac-order-chat-view { min-height: 29px; margin-top: 7px; padding: 0 10px; color: #a64a17; font-size: 10px; }
+.sac-order-chat-tracking { margin-top: 7px; color: #655b52; font-size: 10px; line-height: 1.5; overflow-wrap: anywhere; }
+.sac-order-chat-tracking a { color: #a64a17; font-weight: 700; text-decoration: underline; text-underline-offset: 2px; }
 .sac-message-content .sac-order-chat-link { display: inline-flex; align-items: center; margin-top: 8px; padding: 7px 11px; border: 1px solid #f2d5c2; border-radius: 999px; color: #a8430e; background: #fff8f2; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; transition: color .16s ease, background .16s ease, border-color .16s ease; }
 .sac-message-content .sac-order-chat-link:hover { color: #fff; border-color: var(--sac-accent, #f97316); background: var(--sac-accent, #f97316); }
 .sac-order-card, .sac-order-card * { box-sizing: border-box; }

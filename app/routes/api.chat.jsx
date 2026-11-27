@@ -95,29 +95,49 @@ async function getShopifyAdminToken(shop) {
   return data.access_token;
 }
 
-async function lookupShopifyOrder(shop, orderNumber, email, requireEmail = true) {
+async function lookupShopifyOrder(shop, orderNumber, email, requireEmail = true, trackingNumber = "") {
   const token = await getShopifyAdminToken(shop);
   if (!token) throw new Error("Order lookup could not authenticate with Shopify. Check the app installation, API secret and read_orders access.");
-  const query = `query OrderLookup($query: String!) { orders(first: 20, query: $query, sortKey: CREATED_AT, reverse: true) { nodes { name email createdAt displayFinancialStatus displayFulfillmentStatus statusPageUrl currentTotalPriceSet { shopMoney { amount currencyCode } } lineItems(first: 50) { nodes { title quantity } pageInfo { hasNextPage } } fulfillments(first: 5) { displayStatus estimatedDeliveryAt deliveredAt trackingInfo { company number url } } } } }`;
+  const query = trackingNumber
+    ? `query FindTracking($query: String!, $after: String) { orders(first: 250, query: $query, after: $after, sortKey: CREATED_AT, reverse: true) { nodes { name createdAt displayFulfillmentStatus statusPageUrl fulfillments(first: 5) { displayStatus estimatedDeliveryAt deliveredAt trackingInfo { company number url } } } pageInfo { hasNextPage endCursor } } }`
+    : `query OrderLookup($query: String!, $after: String) { orders(first: 250, query: $query, after: $after, sortKey: CREATED_AT, reverse: true) { nodes { name email createdAt displayFinancialStatus displayFulfillmentStatus statusPageUrl currentTotalPriceSet { shopMoney { amount currencyCode } } lineItems(first: 50) { nodes { title quantity } pageInfo { hasNextPage } } fulfillments(first: 5) { displayStatus estimatedDeliveryAt deliveredAt trackingInfo { company number url } } } pageInfo { hasNextPage endCursor } } }`;
   // Search by order name first so an optional email never prevents finding the order.
   // Shopify may return nearby name matches, so verify the normalized name exactly below.
-  const orderSearch = `status:any name:${orderNumber.replace(/^#/, "")}`;
-  const response = await fetch(`https://${shop}/admin/api/2026-07/graphql.json`, { method: "POST", headers: { "content-type": "application/json", "X-Shopify-Access-Token": token }, body: JSON.stringify({ query, variables: { query: orderSearch } }) });
-  if (!response.ok) throw new Error(`Shopify order search returned HTTP ${response.status}.`);
-  const payload = await response.json();
-  if (payload.errors?.length) {
-    const error = new Error(payload.errors.map((item) => item.message).join("; "));
-    error.shopifyRequestId = response.headers.get("x-request-id") || "";
-    error.shopifyErrorCodes = payload.errors.map((item) => item.extensions?.code).filter(Boolean);
-    throw error;
-  }
+  const orderSearch = trackingNumber ? "status:any" : `status:any name:${orderNumber.replace(/^#/, "")}`;
+  const candidates = [];
+  let cursor = null;
+  let page = 0;
+  let hasNextPage = true;
   const normalizedOrderNumber = orderNumber.replace(/^#/, "").toLowerCase();
-  const order = (payload.data?.orders?.nodes || []).find((candidate) => String(candidate.name || "").replace(/^#/, "").toLowerCase() === normalizedOrderNumber);
+  const normalizedTrackingNumber = trackingNumber.replace(/\s+/g, "").toLowerCase();
+  let matchedOrder = null;
+  while (hasNextPage && page < (trackingNumber ? 20 : 1)) {
+    const response = await fetch(`https://${shop}/admin/api/2026-07/graphql.json`, { method: "POST", headers: { "content-type": "application/json", "X-Shopify-Access-Token": token }, body: JSON.stringify({ query, variables: { query: orderSearch, after: cursor } }) });
+    if (!response.ok) throw new Error(`Shopify order search returned HTTP ${response.status}.`);
+    const payload = await response.json();
+    if (payload.errors?.length) {
+      const error = new Error(payload.errors.map((item) => item.message).join("; "));
+      error.shopifyRequestId = response.headers.get("x-request-id") || "";
+      error.shopifyErrorCodes = payload.errors.map((item) => item.extensions?.code).filter(Boolean);
+      throw error;
+    }
+    const connection = payload.data?.orders;
+    const pageOrders = connection?.nodes || [];
+    candidates.push(...pageOrders);
+    matchedOrder = pageOrders.find((candidate) => trackingNumber
+      ? (candidate.fulfillments || []).some((fulfillment) => (fulfillment.trackingInfo || []).some((tracking) => String(tracking.number || "").replace(/\s+/g, "").toLowerCase() === normalizedTrackingNumber))
+      : String(candidate.name || "").replace(/^#/, "").toLowerCase() === normalizedOrderNumber) || null;
+    if (matchedOrder) break;
+    hasNextPage = Boolean(connection?.pageInfo?.hasNextPage);
+    cursor = connection?.pageInfo?.endCursor || null;
+    page += 1;
+  }
+  const order = matchedOrder || candidates.find((candidate) => String(candidate.name || "").replace(/^#/, "").toLowerCase() === normalizedOrderNumber);
   if (!order) return null;
   const orderEmails = [order.email].map((value) => String(value || "").trim().toLowerCase()).filter(Boolean);
   if (email && !orderEmails.includes(email)) return null;
-  if (requireEmail && !email) return null;
-  return {
+  if (requireEmail && !email && !trackingNumber) return null;
+  const result = {
     name: order.name,
     createdAt: order.createdAt,
     financialStatus: order.displayFinancialStatus,
@@ -130,6 +150,7 @@ async function lookupShopifyOrder(shop, orderNumber, email, requireEmail = true)
     tracking: (order.fulfillments || []).flatMap((fulfillment) => (fulfillment.trackingInfo || []).filter((tracking) => tracking.number).map((tracking) => ({ company: tracking.company, number: tracking.number, url: tracking.url, estimatedDeliveryAt: fulfillment.estimatedDeliveryAt, deliveredAt: fulfillment.deliveredAt }))),
     statusPageUrl: order.statusPageUrl,
   };
+  return trackingNumber ? { ...result, email: undefined, total: undefined, currency: undefined, financialStatus: undefined, items: [], trackingOnly: true } : result;
 }
 
 function mapAdminProduct(product) {
@@ -445,12 +466,24 @@ export const loader = async ({ request }) => {
     const allowed = (process.env.STOREFRONT_ALLOWED_ORIGINS || "").split(",").map((value) => value.trim()).filter(Boolean);
     if (allowed.length && origin && !allowed.includes(origin)) return Response.json({ error: "This storefront is not allowed." }, { status: 403, headers });
     const settings = await prisma.assistantSettings.findUnique({ where: { shop }, select: { defaultGreeting: true, orderLookup: true, orderEmailRequired: true, humanHandoff: true, ticketOptions: true, flows: true } });
+    const loggedInCustomerId = new URL(request.url).searchParams.get("logged_in_customer_id") || "";
+    let customerOrders = [];
+    if (/^\d+$/.test(loggedInCustomerId)) {
+      try {
+        const token = await getShopifyAdminToken(shop);
+        if (token) {
+          const ordersResponse = await fetch(`https://${shop}/admin/api/2026-07/graphql.json`, { method: "POST", headers: { "content-type": "application/json", "X-Shopify-Access-Token": token }, body: JSON.stringify({ query: "query CustomerOrders($query: String!) { orders(first: 20, query: $query, sortKey: CREATED_AT, reverse: true) { nodes { name email createdAt displayFulfillmentStatus } } }", variables: { query: `status:any customer_id:${loggedInCustomerId}` } }) });
+          const ordersPayload = await ordersResponse.json();
+          if (ordersResponse.ok && !ordersPayload.errors?.length) customerOrders = (ordersPayload.data?.orders?.nodes || []).map(({ name, email, createdAt, displayFulfillmentStatus }) => ({ name, email, createdAt, fulfillmentStatus: displayFulfillmentStatus }));
+        }
+      } catch (error) { console.warn("Could not load logged-in customer's order list", error?.message); }
+    }
     // FAQ suggestions are controlled by the storefront app-embed toggle. The separate
     // assistant setting controls answer matching, and must not hide the visible questions.
     const activeFaqs = await prisma.faq.findMany({ where: { shop, active: true }, select: { id: true, question: true, featured: true }, orderBy: { createdAt: "desc" }, take: 100 });
     const suggestedFaqs = activeFaqs.filter((faq) => faq.featured);
     const faqs = (suggestedFaqs.length ? suggestedFaqs : activeFaqs).slice(0, 4).map(({ id, question }) => ({ id, question }));
-    return Response.json({ greeting: settings?.defaultGreeting || "Hi there! 👋 Tell me what you’re shopping for, ask about our policies, or track an order.", humanHandoff: settings?.humanHandoff !== false, orderLookup: settings?.orderLookup !== false, orderEmailRequired: settings?.orderEmailRequired !== false, faqs, ticketOptions: normalizeTicketOptions(settings?.ticketOptions), flows: normalizeConversationFlows(settings?.flows).filter((flow) => flow.enabled).map(({ id, name }) => ({ id, name })) }, { headers });
+    return Response.json({ greeting: settings?.defaultGreeting || "Hi there! 👋 Tell me what you’re shopping for, ask about our policies, or track an order.", humanHandoff: settings?.humanHandoff !== false, orderLookup: settings?.orderLookup !== false, orderEmailRequired: settings?.orderEmailRequired !== false, customerOrders, faqs, ticketOptions: normalizeTicketOptions(settings?.ticketOptions), flows: normalizeConversationFlows(settings?.flows).filter((flow) => flow.enabled).map(({ id, name }) => ({ id, name })) }, { headers });
   } catch (error) {
     console.error("App proxy config request failed", error);
     return Response.json({ error: "Shopify did not verify the app proxy request. Check that the active Shopify app version has the /apps/shopai-concierge proxy enabled." }, { status: error instanceof Response ? error.status : 500, headers });
@@ -481,7 +514,7 @@ export const action = async ({ request }) => {
     verifiedShop = proxyContext.session?.shop?.toLowerCase();
     if (!verifiedShop) return proxyJson({ error: "Shopify could not identify this store. Verify the active app proxy configuration." }, headers, 401);
     if (allowed.length && origin && !allowed.includes(origin)) return proxyJson({ error: "This storefront is not allowed." }, headers, 403);
-    const { message, shop: bodyShop, storeName: bodyStoreName, sessionId: requestSessionId, customerName, customerEmail, faqId, flowId: requestedFlowId, flowStepId: requestedFlowStepId, flowChoiceId: requestedFlowChoiceId, flowData: submittedFlowData, orderLookupRequest, orderNumber, supportRequest, supportSuccessMessage, requestTypeId, requestDetails, supportContext, supportFollowup } = await readChatPayload(request);
+    const { message, shop: bodyShop, storeName: bodyStoreName, sessionId: requestSessionId, customerName, customerEmail, faqId, flowId: requestedFlowId, flowStepId: requestedFlowStepId, flowChoiceId: requestedFlowChoiceId, flowData: submittedFlowData, orderLookupRequest, orderNumber, trackingNumber, supportRequest, supportSuccessMessage, requestTypeId, requestDetails, supportContext, supportFollowup } = await readChatPayload(request);
     supportSubmission = supportRequest === true;
     const shop = verifiedShop;
     if (typeof message !== "string" || !message.trim() || message.length > 1000) return proxyJson({ error: "Please enter a message up to 1,000 characters." }, headers, 400);
@@ -489,10 +522,12 @@ export const action = async ({ request }) => {
     normalizedShop = shop.toLowerCase();
     sessionId = typeof requestSessionId === "string" ? requestSessionId : "";
     userMessage = message.trim();
+    const detectedTrackingNumber = String(trackingNumber || userMessage.match(/(?:tracking(?:\s+number)?|shipment|parcel|package)(?:\s+(?:number|is|#))?\s*[:#]?\s*([A-Z0-9][A-Z0-9-]{3,99})/i)?.[1] || userMessage.match(/\b(1Z[A-Z0-9]{16})\b/i)?.[1] || "").trim();
     let flowId = requestedFlowId;
     let flowStepId = requestedFlowStepId;
     let flowChoiceId = requestedFlowChoiceId;
     let submittedFlowDataForRequest = submittedFlowData;
+    if (detectedTrackingNumber) { flowId = null; flowStepId = null; flowChoiceId = null; submittedFlowDataForRequest = {}; }
     const requestedStoreName = typeof bodyStoreName === "string" ? bodyStoreName.replace(/[^\p{L}\p{N}\s&'’.-]/gu, "").replace(/\s+/g, " ").trim().slice(0, 100) : "";
     const storeDisplayName = requestedStoreName || normalizedShop.replace(/\.myshopify\.com$/i, "").replace(/[-_]+/g, " ");
     userCreatedAt = new Date().toISOString();
@@ -519,7 +554,7 @@ export const action = async ({ request }) => {
     }
     // A guided flow is only context for its next step. When the shopper changes
     // topics, let the new request reach its own FAQ, order, or catalog handler.
-    if (flowId && !faqId && !supportRequest && !orderLookupRequest) {
+    if (flowId && !faqId && !supportRequest && !orderLookupRequest && !detectedTrackingNumber) {
       const orderIntent = resolveOrderQuestionIntent(userMessage);
       const explicitReturn = isReturnRequestIntent(userMessage);
       const productTopic = /\b(?:product|products|item|items|shirt|t-?shirt|tee|pants|sku|catalog|collection|compare|similar|material|fabric|color|colour|size|price|cost|payment methods|payment options|shipping policy|return policy|refund policy|warranty|discount|coupon|invoice|receipt|confirmation email|charged twice|double charge)\b/i.test(userMessage);
@@ -538,7 +573,7 @@ export const action = async ({ request }) => {
     const hasInlineOrderDetails = settings.orderLookup
       && /#\s*\d{3,}\b|\b(?:order|tracking|shipment|delivery)\s*(?:number|no\.?|#|id)?\s*#?\d{3,}\b/i.test(userMessage)
       && Boolean(identity.email || userMessage.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i));
-    const orderQuestionIntent = !flowId && !supportRequest && !orderLookupRequest && !hasInlineOrderDetails ? resolveOrderQuestionIntent(userMessage) : null;
+    const orderQuestionIntent = !flowId && !supportRequest && !orderLookupRequest && !detectedTrackingNumber && !hasInlineOrderDetails ? resolveOrderQuestionIntent(userMessage) : null;
     if (orderQuestionIntent) {
       let answer = "";
       let response = { products: [] };
@@ -611,7 +646,7 @@ export const action = async ({ request }) => {
       await saveConversation(normalizedShop, sessionId, userMessage, answer, identity, userCreatedAt).catch((error) => console.error("Order guidance conversation save failed", error));
       return Response.json({ answer, ...response }, { headers });
     }
-    const quickOrderHelpIntent = settings.orderLookup && /(?:\b(?:track|tracking|status|where is|where's|check|find)\b.{0,35}\border\b|\border\b.{0,35}\b(?:track|tracking|status|where|update|details)\b|\border number\b|অর্ডার.{0,24}(?:ট্র্যাক|স্ট্যাটাস|কোথায়|কোথায়|চেক|খুঁজে|আপডেট)|(?:ট্র্যাক|স্ট্যাটাস|কোথায়|কোথায়).{0,24}অর্ডার)/i.test(userMessage);
+    const quickOrderHelpIntent = !detectedTrackingNumber && settings.orderLookup && /(?:\b(?:track|tracking|status|where is|where's|check|find)\b.{0,35}\border\b|\border\b.{0,35}\b(?:track|tracking|status|where|update|details)\b|\border number\b|অর্ডার.{0,24}(?:ট্র্যাক|স্ট্যাটাস|কোথায়|কোথায়|চেক|খুঁজে|আপডেট)|(?:ট্র্যাক|স্ট্যাটাস|কোথায়|কোথায়).{0,24}অর্ডার)/i.test(userMessage);
     const cancellationActionIntent = /\b(?:(?:i\s+(?:want|need|would like|wanna)|i['’]d\s+like|please|can you|help me)\s+(?:to\s+)?(?:cancel|change|modify|update)\b.{0,45}\b(?:order|purchase|address)\b|(?:cancel|change|modify|update)\s+(?:my|an|the|this)\s+(?:order|purchase|address)\b)/i.test(userMessage);
     const returnActionIntent = isReturnRequestIntent(userMessage);
     const catalogActionIntent = /\b(?:find|show|search|recommend|compare|buy|purchase|shop for|looking for)\b/i.test(userMessage) && /\b(?:product|products|item|items|shirt|t-?shirt|tee|pants|sku|catalog|collection|gift)\b/i.test(userMessage);
@@ -697,7 +732,7 @@ export const action = async ({ request }) => {
     const storeRelated = greetingIntent || identityQuestion || smallTalk || isConversationalFollowup || hasProductFilters || productCategoryIntent || productActionIntent || productPurchaseIntent || bestProductIntent || Boolean(skuCandidate) || hasProductSearchLanguage(userMessage)
       || /\b(?:order|track|tracking|shipment|delivery|package|parcel|shipped|arrive|cancel|cancellation|return|refund|exchange|store|shop|shipping|payment|policy|policies|support|help|contact|business hours|opening hours|address|warranty|guarantee|checkout|discount|promotion)\b|অর্ডার|ট্র্যাক|ডেলিভারি|শিপিং|রিটার্ন|রিফান্ড|সাপোর্ট|দোকান|পেমেন্ট/i.test(userMessage);
     const canUseGeneralIntent = !flowId || flowId === "product-discovery";
-    if (!supportRequest && settings.humanHandoff && (isSupportRequestIntent(userMessage) || isSupportEscalationIntent(userMessage))) {
+    if (!supportRequest && !detectedTrackingNumber && settings.humanHandoff && (isSupportRequestIntent(userMessage) || isSupportEscalationIntent(userMessage))) {
       const answer = isSupportEscalationIntent(userMessage)
         ? "I’m sorry this happened. I can send the details to the store team. Add your name and email in the support form so they can follow up; your ticket is created only after you submit it."
         : "I can help you contact the store team. Add your name, email, and a short description in the support form; the ticket will only be created when you submit it.";
@@ -891,13 +926,14 @@ export const action = async ({ request }) => {
         return Response.json({ answer, flow: resolvedFlow.flow || null }, { headers });
       }
     }
-    if (orderLookupRequest === true) {
+    if (orderLookupRequest === true || detectedTrackingNumber) {
       if (!settings.orderLookup) return proxyJson({ error: "Order tracking is currently turned off." }, headers, 403);
       const lookupEmail = String(customerEmail || "").trim().toLowerCase();
       const lookupNumber = String(orderNumber || "").trim().replace(/^#/, "");
-      if ((settings.orderEmailRequired || lookupEmail) && !isValidEmail(lookupEmail)) return proxyJson({ error: "Enter a valid email address used for this order." }, headers, 400);
-      if (!/^[A-Za-z0-9-]{1,30}$/.test(lookupNumber)) return proxyJson({ error: "Enter a valid order number, such as 1001." }, headers, 400);
-      const attemptKey = orderAttemptKey(lookupNumber, lookupEmail);
+      const lookupTracking = detectedTrackingNumber;
+      if (!lookupTracking && (settings.orderEmailRequired || lookupEmail) && !isValidEmail(lookupEmail)) return proxyJson({ error: "Enter a valid email address used for this order." }, headers, 400);
+      if (lookupTracking ? !/^[A-Za-z0-9-]{4,100}$/.test(lookupTracking) : !/^[A-Za-z0-9-]{1,30}$/.test(lookupNumber)) return proxyJson({ error: lookupTracking ? "Enter a valid tracking number." : "Enter a valid order number, such as 1001." }, headers, 400);
+      const attemptKey = orderAttemptKey(lookupTracking || lookupNumber, lookupEmail);
       // A lookup throttle must never prevent the actual Shopify order search if
       // this optional audit table has a temporary database/migration problem.
       let recent = null;
@@ -908,8 +944,8 @@ export const action = async ({ request }) => {
       try { await prisma.orderLookupAttempt.create({ data: { shop: normalizedShop, orderHint: attemptKey, result: { ok: false } } }); }
       catch (error) { console.error("Order lookup audit save failed", error); }
       try {
-        const order = await lookupShopifyOrder(normalizedShop, lookupNumber, lookupEmail, settings.orderEmailRequired);
-        if (!order) return proxyJson({ error: settings.orderEmailRequired ? "We couldn’t find an order matching that number and email. Check the order number and the email used at checkout, then try again." : "We couldn’t find that order number. Check it and try again." }, headers, 404);
+        const order = await lookupShopifyOrder(normalizedShop, lookupNumber, lookupEmail, settings.orderEmailRequired, lookupTracking);
+        if (!order) return proxyJson({ error: lookupTracking ? "We couldn’t find a shipment matching that tracking number. Check it and try again." : settings.orderEmailRequired ? "We couldn’t find an order matching that number and email. Check the order number and the email used at checkout, then try again." : "We couldn’t find that order number. Check it and try again." }, headers, 404);
         try { await prisma.orderLookupAttempt.updateMany({ where: { shop: normalizedShop, orderHint: attemptKey, result: { path: ["ok"], equals: false } }, data: { result: { ok: true, status: order.fulfillmentStatus } } }); }
         catch (error) { console.error("Order lookup audit update failed", error); }
         const fulfillment = String(order.fulfillmentStatus || "Not yet fulfilled").replaceAll("_", " ").toLowerCase();
@@ -919,8 +955,8 @@ export const action = async ({ request }) => {
         const estimatedDelivery = order.fulfillments?.find((item) => item.estimatedDeliveryAt)?.estimatedDeliveryAt;
         const estimatedLine = estimatedDelivery ? `\nEstimated delivery: ${new Intl.DateTimeFormat("en", { dateStyle: "medium" }).format(new Date(estimatedDelivery))}` : "";
         const answer = `Order ${order.name}\nPlaced ${placed} · ${fulfillment[0].toUpperCase()}${fulfillment.slice(1)}\nPayment: ${payment} · Total: ${total}${estimatedLine}${order.tracking.length ? "\nTracking details are available below." : ""}\n\nIs there anything else you’d like to know about this order?`;
-        const followupFlow = getConversationFlowStep(settings.flows, "order-updates", "followup", { orderNumber: lookupNumber, orderEmail: lookupEmail, orderVerified: true, verifiedOrder: order });
-        await saveConversation(normalizedShop, sessionId, `Track order ${order.name}`, answer, { name: identity.name, email: lookupEmail }, userCreatedAt)
+        const followupFlow = lookupTracking ? null : getConversationFlowStep(settings.flows, "order-updates", "followup", { orderNumber: order.name.replace(/^#/, ""), orderEmail: lookupEmail, orderVerified: true, verifiedOrder: order });
+        await saveConversation(normalizedShop, sessionId, lookupTracking ? `Track shipment ${lookupTracking}` : `Track order ${order.name}`, answer, { name: identity.name, email: lookupEmail }, userCreatedAt)
           .catch((saveError) => console.error("Order conversation save failed after successful lookup", saveError));
         return proxyJson({ answer, order, ...(followupFlow ? { flow: followupFlow } : {}) }, headers);
       } catch (error) {

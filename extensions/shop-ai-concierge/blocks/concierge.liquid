@@ -1,6 +1,8 @@
 <div
   class="sac-root"
   data-store-name="{{ shop.name | escape }}"
+  data-customer-email="{% if customer %}{{ customer.email | escape }}{% endif %}"
+  data-customer-name="{% if customer %}{{ customer.name | escape }}{% endif %}"
   data-title="{{ block.settings.title | escape }}"
   data-accent="{{ block.settings.accent }}"
   data-background="{{ block.settings.background }}"

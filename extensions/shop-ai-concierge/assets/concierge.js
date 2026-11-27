@@ -18,6 +18,7 @@
     let storedChat = readStoredChat(storageKey);
     const sessionId = storedChat?.sessionId || crypto.randomUUID();
     let identity = storedChat?.identity || { name: "", email: "" };
+    if (root.dataset.customerEmail) identity = { name: root.dataset.customerName || identity.name || "", email: root.dataset.customerEmail };
     let activeFlow = storedChat?.activeFlow || null;
     let chatHistory = Array.isArray(storedChat?.messages)
       ? storedChat.messages.filter((item) => !(item?.role === "assistant" && /Unexpected token|not valid JSON|returned a web page instead of chat data|apiEndpoint is not defined|ReferenceError/i.test(String(item.content || "")))).slice(-40)
@@ -65,7 +66,7 @@
       topicNav.append(button);
     });
     welcome.append(topicNav);
-    panel.insertAdjacentHTML("beforeend", `<div class="sac-order-backdrop" hidden><section class="sac-order-card" role="dialog" aria-modal="true" aria-labelledby="sac-order-title"><button type="button" class="sac-order-close" aria-label="Close order tracking">×</button><span class="sac-order-icon" aria-hidden="true">↗</span><p class="sac-order-kicker">ORDER UPDATES</p><h3 id="sac-order-title">Track your order</h3><p class="sac-order-copy">Enter your order number and the email used at checkout to see its latest status and total.</p><form class="sac-order-form"><label>Order number<input name="orderNumber" autocomplete="off" maxlength="31" placeholder="e.g. #1001 or 1001" required></label><label class="sac-order-email-label">Email used at checkout<input name="customerEmail" type="email" autocomplete="email" maxlength="254" placeholder="you@example.com"></label><div class="sac-order-notice" aria-live="polite"></div><footer><button type="button" class="sac-order-cancel">Cancel</button><button type="submit" class="sac-order-submit">Find my order</button></footer></form><section class="sac-order-result" hidden><div class="sac-order-result-title"></div><p class="sac-order-result-copy"></p><div class="sac-order-details" hidden></div><button type="button" class="sac-order-view">View order details</button></section></section></div>`);
+    panel.insertAdjacentHTML("beforeend", `<div class="sac-order-backdrop" hidden><section class="sac-order-card" role="dialog" aria-modal="true" aria-labelledby="sac-order-title"><button type="button" class="sac-order-close" aria-label="Close order tracking">×</button><span class="sac-order-icon" aria-hidden="true">↗</span><p class="sac-order-kicker">ORDER UPDATES</p><h3 id="sac-order-title">Track your order</h3><p class="sac-order-copy">Choose how you’d like to find your shipment.</p><div class="sac-order-tabs" role="tablist" aria-label="Order lookup type"><button type="button" role="tab" aria-selected="true" data-lookup-mode="order">Order Number</button><button type="button" role="tab" aria-selected="false" data-lookup-mode="tracking">Tracking Number</button></div><form class="sac-order-form"><label class="sac-order-select-label" hidden>Select an order<select name="orderSelection"><option value="">Choose an order</option></select></label><label class="sac-order-number-label">Order number<input name="orderNumber" autocomplete="off" maxlength="31" placeholder="e.g. #1001 or 1001" required></label><label class="sac-tracking-number-label" hidden>Tracking number<input name="trackingNumber" autocomplete="off" maxlength="100" placeholder="Enter your tracking number"></label><label class="sac-order-email-label">Email used at checkout<input name="customerEmail" type="email" autocomplete="email" maxlength="254" placeholder="you@example.com"></label><div class="sac-order-notice" aria-live="polite"></div><footer><button type="button" class="sac-order-cancel">Cancel</button><button type="submit" class="sac-order-submit">Find my order</button></footer></form><section class="sac-order-result" hidden><div class="sac-order-result-title"></div><p class="sac-order-result-copy"></p><div class="sac-order-details" hidden></div><button type="button" class="sac-order-view">View order details</button></section></section></div>`);
 
     const launcher = document.createElement("button");
     launcher.type = "button";
@@ -108,19 +109,65 @@
     const orderForm = panel.querySelector(".sac-order-form");
     const orderNotice = panel.querySelector(".sac-order-notice");
     const orderEmail = orderForm.elements.customerEmail;
+    const orderSelection = orderForm.elements.orderSelection;
+    const orderSelectLabel = orderSelection.closest("label");
     const orderEmailLabel = orderEmail.closest("label");
     const orderCopy = panel.querySelector(".sac-order-copy");
     let orderEmailRequired = true;
+    let customerOrders = [];
     orderEmail.required = true;
     const setOrderEmailRequirement = (required) => {
       orderEmailRequired = required;
-      orderEmail.required = required;
+      orderEmail.required = required && orderLookupMode !== "tracking";
       orderEmailLabel.firstChild.textContent = required ? "Email used at checkout" : "Email used at checkout (optional)";
       orderEmail.placeholder = required ? "you@example.com" : "Add it to verify the order";
-      orderCopy.textContent = required
+      orderCopy.textContent = orderLookupMode === "tracking"
+        ? "Enter the tracking number from your shipping confirmation to see shipment updates."
+        : required
         ? "Enter your order number and the email used at checkout to see its latest status and total."
         : "Enter your order number to see its latest status and total. Adding the checkout email helps verify the order.";
     };
+    const loadCustomerOrders = async () => {
+      if (!root.dataset.customerEmail) return;
+      try {
+        const response = await fetch(apiEndpoint, { headers: { accept: "application/json" }, cache: "no-store" });
+        const config = await readApiJson(response, "customer orders");
+        customerOrders = Array.isArray(config?.customerOrders) ? config.customerOrders : [];
+        if (!customerOrders.length) return;
+        populateCustomerOrderOptions();
+      } catch (error) { console.warn("Could not load customer orders", error); }
+    };
+    const populateCustomerOrderOptions = () => {
+      orderSelection.replaceChildren(new Option("Choose an order", ""));
+      customerOrders.forEach((order) => {
+        const option = new Option(`${order.name}${order.createdAt ? ` · ${new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(order.createdAt))}` : ""}${order.fulfillmentStatus ? ` · ${String(order.fulfillmentStatus).replaceAll("_", " ").toLowerCase()}` : ""}`, order.name.replace(/^#/, ""));
+        option.dataset.email = order.email || identity.email;
+        orderSelection.add(option);
+      });
+      orderSelectLabel.hidden = customerOrders.length === 0;
+      orderForm.elements.orderNumber.required = orderLookupMode !== "tracking" && customerOrders.length === 0;
+    };
+    const orderTabs = panel.querySelectorAll("[data-lookup-mode]");
+    let orderLookupMode = "order";
+    orderTabs.forEach((tab) => tab.addEventListener("click", () => {
+      orderLookupMode = tab.dataset.lookupMode;
+      orderTabs.forEach((item) => item.setAttribute("aria-selected", String(item === tab)));
+      const trackingMode = orderLookupMode === "tracking";
+      panel.querySelector(".sac-order-number-label").hidden = trackingMode;
+      panel.querySelector(".sac-tracking-number-label").hidden = !trackingMode;
+      orderSelectLabel.hidden = trackingMode || customerOrders.length === 0;
+      orderForm.elements.orderNumber.required = !trackingMode && customerOrders.length === 0;
+      orderForm.elements.trackingNumber.required = trackingMode;
+      orderEmailLabel.hidden = trackingMode;
+      orderEmail.required = !trackingMode && orderEmailRequired;
+      orderCopy.textContent = trackingMode ? "Enter the tracking number from your shipping confirmation to see shipment updates." : "Enter your order number and the email used at checkout to see its latest status and total.";
+    }));
+    orderSelection.addEventListener("change", () => {
+      const selected = orderSelection.selectedOptions[0];
+      if (!selected?.value) return;
+      orderForm.elements.orderNumber.value = selected.value;
+      orderEmail.value = selected.dataset.email || identity.email || "";
+    });
     const orderResult = panel.querySelector(".sac-order-result");
     const orderResultTitle = panel.querySelector(".sac-order-result-title");
     const orderResultCopy = panel.querySelector(".sac-order-result-copy");
@@ -207,9 +254,13 @@
     };
     const openOrderTracking = () => {
       clearPopupAutoOpen();
+      orderTabs[0]?.click();
       orderNotice.textContent = "";
       orderResult.hidden = true;
       orderForm.elements.customerEmail.value = identity?.email || "";
+      orderSelection.replaceChildren(new Option("Choose an order", ""));
+      orderSelectLabel.hidden = true;
+      if (root.dataset.customerEmail) loadCustomerOrders();
       orderBackdrop.hidden = false;
       orderForm.elements.orderNumber.focus();
     };
@@ -225,8 +276,10 @@
     const restoredOrderRows = [];
     if (chatHistory.length) {
       initialGreeting.remove();
+      let restoredGreeting = null;
       chatHistory.forEach((item, index) => {
         const restored = addMessage(messages, item.content, item.role === "user" ? "user" : "assistant", item.createdAt);
+        if (!restoredGreeting && item.role === "assistant") restoredGreeting = restored.row;
         if (item.ticketReference && item.role === "assistant") addTicketReference(restored.row, item.ticketReference);
         if (item.openOrderTracking && item.role === "assistant") addOrderTrackingAction(restored.row);
         if (item.flow && item.role === "assistant" && activeFlow?.id === item.flow.id && activeFlow?.stepId === item.flow.stepId) renderFlowChoices(restored.row, item.flow, sendMessage);
@@ -237,13 +290,13 @@
         if (item.order && item.role === "assistant") restoredOrderRows.push({ row: restored.row, order: item.order, answer: item.content });
         if (item.products?.length && item.role === "assistant") renderProducts(messages, item.products, { persist: false, purchaseIntent: item.purchaseIntent === true });
       });
-      faqSection.hidden = true;
+      if (restoredGreeting) restoredGreeting.after(faqSection);
     } else {
       const greeting = initialGreeting.querySelector(".sac-greeting").textContent;
       chatHistory.push({ role: "assistant", content: greeting, createdAt: Date.now() });
       persistChat();
     }
-    initialGreeting.after(faqSection);
+    if (initialGreeting.isConnected) initialGreeting.after(faqSection);
     const resizeComposer = () => {
       input.style.height = "auto";
       input.style.height = `${Math.min(input.scrollHeight, 128)}px`;
@@ -263,10 +316,10 @@
         .then((response) => readApiJson(response, "chat settings"))
         .then((config) => {
           if (!config) return;
-          const greeting = panel.querySelector(".sac-greeting");
+          const greeting = panel.querySelector(".sac-greeting") || (chatHistory[0]?.role === "assistant" ? messages.querySelector(".sac-assistant-row .sac-msg") : null);
           if (config.greeting && greeting) {
             greeting.textContent = config.greeting;
-            if (!chatHistory.some((item) => item.role === "user") && chatHistory[0]?.role === "assistant") {
+            if (chatHistory[0]?.role === "assistant") {
               chatHistory[0].content = config.greeting;
               persistChat();
             }
@@ -274,6 +327,8 @@
           humanHandoffEnabled = config.humanHandoff !== false;
           topicNav.querySelector('[data-topic="support"]')?.toggleAttribute("hidden", !humanHandoffEnabled);
           setOrderEmailRequirement(config.orderEmailRequired !== false);
+          customerOrders = Array.isArray(config.customerOrders) ? config.customerOrders : [];
+          if (customerOrders.length) populateCustomerOrderOptions();
           if (enableFaqs && Array.isArray(config.faqs) && config.faqs.length) renderFaqs(config.faqs, faqSection, faqList, sendMessage);
           const configuredOptions = Array.isArray(config.ticketOptions) ? config.ticketOptions : [];
           const activeOptions = configuredOptions.filter((item) => item && item.active !== false && item.id && item.label).slice(0, 20);
@@ -294,6 +349,18 @@
       launcher.focus();
     });
     const closeOrderLookup = () => { orderBackdrop.hidden = true; };
+    const trackingUrlFor = (tracking) => {
+      if (tracking.url && /^https:\/\//i.test(tracking.url)) return tracking.url;
+      const number = encodeURIComponent(tracking.number || "");
+      const carrier = String(tracking.company || "").toLowerCase();
+      if (/ups/.test(carrier)) return `https://www.ups.com/track?tracknum=${number}`;
+      if (/fedex/.test(carrier)) return `https://www.fedex.com/fedextrack/?trknbr=${number}`;
+      if (/usps|united states postal/.test(carrier)) return `https://tools.usps.com/go/TrackConfirmAction?tLabels=${number}`;
+      if (/dhl/.test(carrier)) return `https://www.dhl.com/global-en/home/tracking.html?tracking-id=${number}`;
+      if (/canada post/.test(carrier)) return `https://www.canadapost-postescanada.ca/track-reperage/en#/details/${number}`;
+      if (/royal mail/.test(carrier)) return `https://www.royalmail.com/track-your-item#/tracking-results/${number}`;
+      return "";
+    };
     const setOrderResult = (order, answer) => {
       orderResult.hidden = false;
       orderResultTitle.textContent = `${order.name} · ${String(order.fulfillmentStatus || "Status unavailable").replaceAll("_", " ")}`;
@@ -323,7 +390,8 @@
       (order.tracking || []).forEach((tracking) => {
         const row = document.createElement("p");
         const label = `${tracking.company || "Carrier"}: ${tracking.number}`;
-        if (tracking.url && /^https:\/\//i.test(tracking.url)) { const link = document.createElement("a"); link.href = tracking.url; link.target = "_blank"; link.rel = "noopener noreferrer"; link.textContent = label; row.append(link); }
+        const trackingUrl = trackingUrlFor(tracking);
+        if (trackingUrl) { const link = document.createElement("a"); link.href = trackingUrl; link.target = "_blank"; link.rel = "noopener noreferrer"; link.textContent = label; row.append(link); }
         else row.textContent = label;
         orderDetails.append(row);
       });
@@ -332,6 +400,28 @@
       panel.querySelector(".sac-order-view").textContent = "View order details";
     };
     const addOrderDetailsAction = (row, order, answer) => {
+      const tracking = (order?.tracking || []).filter((item) => item.number);
+      if (tracking.length) {
+        const trackingInfo = document.createElement("div");
+        trackingInfo.className = "sac-order-chat-tracking";
+        const label = document.createElement("strong");
+        label.textContent = "Tracking: ";
+        trackingInfo.append(label);
+        tracking.forEach((item, index) => {
+          if (index) trackingInfo.append(document.createTextNode(" · "));
+          const trackingUrl = trackingUrlFor(item);
+          if (trackingUrl) {
+            const link = document.createElement("a");
+            link.href = trackingUrl;
+            link.target = "_blank";
+            link.rel = "noopener noreferrer";
+            link.textContent = `${item.company || "Track shipment"} ${item.number}`;
+            trackingInfo.append(link);
+          } else trackingInfo.append(document.createTextNode(`${item.company || "Carrier"} ${item.number}`));
+        });
+        const content = row.querySelector(".sac-message-content");
+        content.insertBefore(trackingInfo, content.querySelector(".sac-message-time"));
+      }
       const button = document.createElement("button");
       button.type = "button";
       button.className = "sac-order-chat-view";
@@ -357,14 +447,16 @@
       event.preventDefault();
       const submit = panel.querySelector(".sac-order-submit");
       const orderNumberValue = String(new FormData(orderForm).get("orderNumber") || "").trim().replace(/^#/, "");
+      const trackingNumberValue = String(new FormData(orderForm).get("trackingNumber") || "").trim();
       const emailValue = String(new FormData(orderForm).get("customerEmail") || "").trim().toLowerCase();
-      if (!/^[A-Za-z0-9-]{1,30}$/.test(orderNumberValue)) { orderNotice.textContent = "Enter a valid order number, such as 1001."; return; }
-      if ((orderEmailRequired && !emailValue) || (emailValue && (!/^[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?(?:\.[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?)+$/i.test(emailValue) || emailValue.includes("..")))) { orderNotice.textContent = orderEmailRequired ? "Enter the valid email address used at checkout." : "That email address doesn’t look valid. Check it and try again."; orderEmail.focus(); return; }
+      const trackingMode = orderLookupMode === "tracking";
+      if (trackingMode ? !/^[A-Za-z0-9-]{4,100}$/.test(trackingNumberValue) : !/^[A-Za-z0-9-]{1,30}$/.test(orderNumberValue)) { orderNotice.textContent = trackingMode ? "Enter a valid tracking number." : "Enter a valid order number, such as 1001."; return; }
+      if (!trackingMode && ((orderEmailRequired && !emailValue) || (emailValue && (!/^[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?(?:\.[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?)+$/i.test(emailValue) || emailValue.includes(".."))))) { orderNotice.textContent = orderEmailRequired ? "Enter the valid email address used at checkout." : "That email address doesn’t look valid. Check it and try again."; orderEmail.focus(); return; }
       submit.disabled = true;
       submit.textContent = "Checking order…";
       orderNotice.textContent = "";
       orderResult.hidden = true;
-      const customerText = `Track order #${orderNumberValue}`;
+      const customerText = trackingMode ? `Track shipment ${trackingNumberValue}` : `Track order #${orderNumberValue}`;
       closeOrderLookup();
       addMessage(messages, customerText, "user");
       chatHistory.push({ role: "user", content: customerText, createdAt: Date.now() });
@@ -372,7 +464,7 @@
       const pending = addMessage(messages, "", "assistant pending");
       pending.bubble.innerHTML = '<span class="sac-typing-status is-visible" aria-hidden="true">Checking your order…</span><span class="sac-sr-only">Checking your order</span>';
       try {
-        const response = await postProxyData(apiEndpoint, { message: customerText, shop, sessionId, customerName: identity?.name || "", customerEmail: emailValue, orderNumber: orderNumberValue, orderLookupRequest: true });
+        const response = await postProxyData(apiEndpoint, { message: customerText, shop, sessionId, customerName: identity?.name || "", customerEmail: emailValue, orderNumber: orderNumberValue, trackingNumber: trackingMode ? trackingNumberValue : "", orderLookupRequest: true });
         const data = await readApiJson(response, "order lookup");
         if (!response.ok) throw new Error(data.error || "We couldn’t find that order. Check the details and try again.");
         pending.row.remove();
@@ -410,7 +502,6 @@
       const message = String(rawMessage || "").trim();
       const faqId = typeof options.faqId === "string" ? options.faqId : "";
       if (form.dataset.sending === "true") return;
-      if (message) faqSection.hidden = true;
       if (options.chooseTopic || options.endTopic) {
         clearPopupAutoOpen();
         activeFlow = null;
