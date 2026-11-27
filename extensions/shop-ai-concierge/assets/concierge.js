@@ -89,7 +89,7 @@
     scrollHint.type = "button";
     scrollHint.className = "sac-scroll-hint";
     scrollHint.setAttribute("aria-label", "Scroll down for more messages");
-    scrollHint.innerHTML = '<span aria-hidden="true">↓</span>';
+    scrollHint.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
     scrollHint.hidden = true;
     panel.append(scrollHint);
     const syncScrollHint = () => {
@@ -97,7 +97,7 @@
       const messagesRect = messages.getBoundingClientRect();
       const hasContentBelow = messages.scrollHeight > messages.clientHeight + 8 && messages.scrollHeight - messages.scrollTop - messages.clientHeight > 16;
       scrollHint.hidden = !panel.classList.contains("is-open") || !hasContentBelow;
-      scrollHint.style.top = `${Math.max(0, messagesRect.bottom - panelRect.top - 43)}px`;
+      scrollHint.style.top = `${Math.max(0, messagesRect.bottom - panelRect.top - 32)}px`;
     };
     scrollHint.addEventListener("click", () => {
       const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
