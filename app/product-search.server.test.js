@@ -12,6 +12,7 @@ const catalog = [
   { title: "Relaxed Olive Oversized T-Shirt", productType: "T-Shirts", tags: [], variants: [{ title: "Large", price: "599.00", availableForSale: true, selectedOptions: [{ name: "Size", value: "L" }] }] },
   { title: "Classic Beige Chino Pants", productType: "Pants", tags: [], variants: [{ title: "Default Title", price: "1099.00", availableForSale: true, selectedOptions: [] }] },
   { title: "The Complete Snowboard", productType: "Snowboards", tags: [], variants: [{ title: "Default Title", price: "699.95", availableForSale: true, selectedOptions: [] }] },
+  { title: "Weekend Light Blue Jeans", productType: "Pants", tags: [], variants: [{ title: "Default Title", price: "1499.00", availableForSale: true, selectedOptions: [] }] },
 ];
 
 test("normalizes common spelling, spacing, and color variants", () => {
@@ -19,6 +20,7 @@ test("normalizes common spelling, spacing, and color variants", () => {
   assert.equal(normalizeProductLookup("tshert"), normalizeProductLookup("tee"));
   assert.equal(normalizeProductLookup("gray"), normalizeProductLookup("grey"));
   assert.equal(normalizeProductLookup("skyblue"), normalizeProductLookup("sky blue"));
+  assert.match(productSearchPhrase("তোমাদের দোকানে কালো টি-শার্ট আছে?"), /black.*t shirt|t shirt.*black/);
   assert.match(productSearchPhrase("show tees below Rs 400"), /t shirt/);
   assert.doesNotMatch(productSearchPhrase("show tees below Rs 400"), /400|rs/i);
   assert.doesNotMatch(productSearchPhrase("What is the cheapest tee in the featured products?"), /featured/i);
@@ -41,6 +43,8 @@ test("extracts budget without mistaking the amount for a clothing size", () => {
 
 test("under, approximate price, and requested size are applied to variants", () => {
   assert.equal(extractProductFilters("tee under 350").maxPrice, 350);
+  assert.equal(extractProductFilters("black pants under ₹1,500").maxPrice, 1500);
+  assert.equal(extractProductFilters("show products under ₹700").maxPrice, 700);
   assert.equal(extractProductFilters("tee around Rs 700").priceTarget, 700);
   assert.equal(productMatchesFilters(catalog[2], extractProductFilters("blue tee in size L")), true);
   assert.equal(productMatchesFilters(catalog[2], extractProductFilters("blue tee, size large")), true);
@@ -55,6 +59,7 @@ test("filters the requested apparel type and descriptive attributes", () => {
   assert.equal(productMatchesFilters(catalog[0], extractProductFilters("navy t-shirt")), true);
   assert.equal(productMatchesFilters(catalog[7], extractProductFilters("navy t-shirt")), false);
   assert.equal(productMatchesFilters(catalog[8], extractProductFilters("best selling t-shirt")), false);
+  assert.equal(productMatchesFilters(catalog[9], extractProductFilters("blue jeans")), true);
   assert.equal(productMatchesFilters(catalog[1], extractProductFilters("navy tee without stripes")), false);
   assert.equal(productMatchesFilters(catalog[0], extractProductFilters("navy tee without stripes")), true);
   assert.equal(productMatchesFilters(catalog[3], extractProductFilters("grey tee")), true);

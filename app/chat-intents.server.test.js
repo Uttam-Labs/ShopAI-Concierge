@@ -54,6 +54,7 @@ test("order and delivery follow-ups never inherit unrelated previous product sea
     "My parcel is late",
     "Tracking has not updated",
     "It says delivered but I never got it",
+    "It says delivered, but nothing arrived. What should I do?",
     "Can I change the delivery address?",
     "Please cancel my order",
     "Only one item arrived",
@@ -67,7 +68,7 @@ test("order and delivery follow-ups never inherit unrelated previous product sea
       tested += 1;
     }
   }
-  assert.equal(tested, 100);
+  assert.equal(tested, 110);
 });
 
 test("product color and size follow-ups retain product context across 100 question pairs", () => {
@@ -148,6 +149,14 @@ test("common order questions with varied customer wording route to safe, specifi
   assert.equal(resolveOrderQuestionIntent("Show me a navy T-shirt under 500"), null);
   assert.equal(resolveOrderQuestionIntent("Can I add this product to my cart?"), null);
   assert.equal(resolveOrderQuestionIntent("What is the shipping policy for orders?"), null);
+  assert.equal(resolveOrderQuestionIntent("One of the shirts arrived with a hole. Can the team help?"), "order_item_issue");
+});
+
+test("store policy and business information questions stay out of product search", () => {
+  for (const question of [
+    "Do you ship internationally?", "Do you have any promo codes right now?", "What time does customer service open?",
+    "Where do I find your contact page?", "Where can I read how you use customer data?", "Can I pay with a gift card?",
+  ]) assert.equal(isPolicyIntent(question), true, question);
 });
 
 test("harmful requests remain blocked when phrased as a target rather than how-to", () => {

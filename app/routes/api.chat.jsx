@@ -200,7 +200,7 @@ function knowledgeProduct(row, extra = {}) {
 async function discoverShopifyProducts(shop, question, knowledgeRows = []) {
   const filters = extractProductFilters(question);
   const phrase = productSearchPhrase(question);
-  const filterOnlyQuery = !normalizeProductLookup(phrase) || /^(?:show|find|search|recommend|browse|me|some|any|products?|items?|catalog|collection|the|for|please|in|with|under|below|less than|over|above|more than|greater than|at least|at most|between|price|cost|budget|size|small|medium|large|available|stock|colors?|colours?|color|colour|red|black|white|blue|green|pink|yellow|orange|purple|grey|brown|silver|gold|beige|navy|company|brand|from|by|and|or|a|an|to|buy|purchase|best|selling|popular|trending|latest|new|arrival|featured|sale|discount|cheap|affordable|premium|recommendations?|similar|compare|t shirt|shirt|tee|hoodie|pants|oversized|crew neck|pocket|stripe)$/i.test(normalizeProductLookup(phrase));
+  const filterOnlyQuery = !normalizeProductLookup(phrase) || filters.excludedColors.length > 0 && filters.colors.length === 0 || /^(?:show|find|search|recommend|browse|me|some|any|anything|something|products?|items?|catalog|collection|the|for|please|in|with|under|below|less than|over|above|more than|greater than|at least|at most|between|price|cost|budget|size|small|medium|large|available|stock|colors?|colours?|color|colour|red|black|white|blue|green|pink|yellow|orange|purple|grey|brown|silver|gold|beige|navy|company|brand|from|by|and|or|a|an|to|buy|purchase|best|selling|popular|trending|latest|new|arrival|featured|sale|discount|cheap|affordable|premium|recommendations?|similar|compare|t shirt|shirt|tee|hoodie|pants|oversized|crew neck|pocket|stripe)$/i.test(normalizeProductLookup(phrase));
   const catalogQuery = filterOnlyQuery ? [filters.brand, ...filters.colors, filters.productType === "shirt" ? "t shirt" : filters.productType, ...filters.features, ...filters.excludeFeatures].filter(Boolean).join(" ") : phrase;
   const sku = String(question || "").match(/\bsku\s*[:#]?\s*([A-Z0-9][A-Z0-9._/-]{2,})\b/i)?.[1] || String(question || "").match(/\b[A-Z0-9]{2,}(?:-[A-Z0-9]+)+\b/i)?.[0] || "";
   const exactNameTerms = normalizeProductLookup(phrase).split(/\s+/).filter((term) => term && !["red", "black", "white", "blue", "green", "pink", "yellow", "orange", "purple", "grey", "gray", "brown", "silver", "gold", "beige", "navy", "t", "tee", "shirt", "shirts", "sizes", "size", "small", "medium", "large", "hoodie", "hoodies", "pants"].includes(term));
@@ -215,6 +215,21 @@ async function discoverShopifyProducts(shop, question, knowledgeRows = []) {
     try { return await searchShopifyProducts(shop, query, limit); }
     catch (error) { console.warn("Shopify product search request failed", { query, message: error?.message }); return []; }
   };
+  if (/\b(?:compare|same price as|cheaper than|costs? less than)\b/i.test(question)) {
+    const comparisonText = String(question).replace(/^.*?\bcompare\b/i, "").replace(/[?.!]+$/, "");
+    const comparisonParts = comparisonText.split(/\b(?:same price as|cheaper than|costs? less than|with|and|versus|vs\.?|to)\b/i).map((part) => part.replace(/^\s*(?:is|are|the|a|an)\s+/i, "").trim()).filter(Boolean);
+    if (comparisonParts.length >= 2) {
+      const comparisonProducts = (await Promise.all(comparisonParts.slice(0, 3).map(async (part) => {
+        const terms = normalizeProductLookup(part).split(/\s+/).filter((term) => term.length > 2 && !["the", "and", "with", "crew", "neck"].includes(term));
+        const candidates = (await Promise.all(terms.map((term) => safeSearch(`"${term}"`, 12)))).flat();
+        const ranked = [...new Map(candidates.filter((product) => productMatchesFilters(product, filters)).map((product) => [product.handle, product])).values()]
+          .map((product) => ({ product, score: productRelevance(product, part) })).sort((left, right) => right.score - left.score);
+        return ranked[0]?.score >= 0.5 ? ranked[0].product : null;
+      }))).filter(Boolean);
+      const distinctComparisonProducts = [...new Map(comparisonProducts.map((product) => [product.handle, product])).values()];
+      if (distinctComparisonProducts.length >= 2) return { exact: false, products: distinctComparisonProducts.slice(0, 3), phrase, filters };
+    }
+  }
   let exactProduct = sku ? (await safeSearch(`sku:${sku}`, 1)).find((product) => exactProductMatch(product, phrase, sku)) : null;
   const handleQuery = normalizeProductLookup(phrase).replace(/\s+/g, "-");
   if (!filterOnlyQuery && likelyExactProductQuery && !exactProduct && handleQuery) {
@@ -271,7 +286,7 @@ async function discoverShopifyProducts(shop, question, knowledgeRows = []) {
   return { exact: false, products, phrase: phrase || catalogQuery, filters, sizeUnavailable };
 }
 
-function productSearchAnswer(discovery) {
+function productSearchAnswer(discovery, question = "") {
   const filterLabels = [];
   const matchedNames = discovery.products.slice(0, 3).map((product) => product.title).filter(Boolean);
   if (discovery.filters?.colors.length) filterLabels.push(`${discovery.filters.colors.join("/")} color`);
@@ -282,6 +297,23 @@ function productSearchAnswer(discovery) {
   if (discovery.exact && discovery.products.length === 1) return `I found an exact match for “${discovery.products[0].title}”. You can review its details below.`;
   if (discovery.exact && discovery.products.length > 1) return `I found an exact match for “${discovery.products[0].title}”. I’ve also included ${discovery.products.length - 1} related items in case you’d like to compare them.`;
   if (discovery.sizeUnavailable && discovery.products.length) return `I found ${discovery.products[0].title}, but the requested size isn’t listed as available. Its available options are shown below.`;
+  if (/\b(?:how much|what(?:'s| is) (?:the )?price|price for)\b/i.test(question) && discovery.products.length) {
+    const prices = discovery.products.slice(0, 3).map((product) => ({ product, price: (product.variants || []).filter((variant) => variant.availableForSale !== false).map((variant) => Number(variant.price)).filter(Number.isFinite).sort((a, b) => a - b)[0] })).filter((item) => item.price !== undefined);
+    if (prices.length === 1) return `${prices[0].product.title} is ₹${prices[0].price.toLocaleString("en-IN")}. Its available options are shown below.`;
+    if (prices.length > 1) return prices.map(({ product, price }) => `${product.title}: ₹${price.toLocaleString("en-IN")}`).join(" · ") + ". Their details are shown below.";
+  }
+  if (/\bsame price\b/i.test(question) && discovery.products.length > 1) {
+    const prices = discovery.products.slice(0, 2).map((product) => ({ product, price: (product.variants || []).filter((variant) => variant.availableForSale !== false).map((variant) => Number(variant.price)).filter(Number.isFinite).sort((a, b) => a - b)[0] }));
+    if (prices.every((item) => item.price !== undefined)) return prices[0].price === prices[1].price
+      ? `Yes, ${prices[0].product.title} and ${prices[1].product.title} are both ₹${prices[0].price.toLocaleString("en-IN")} right now.`
+      : `No. ${prices[0].product.title} is ₹${prices[0].price.toLocaleString("en-IN")}, and ${prices[1].product.title} is ₹${prices[1].price.toLocaleString("en-IN")}.`;
+  }
+  if (/\b(?:which|what).{0,30}\b(?:costs? less|cheaper|least expensive|lowest price)\b/i.test(question) && discovery.products.length > 1) {
+    const priced = discovery.products.map((product) => ({ product, price: (product.variants || []).filter((variant) => variant.availableForSale !== false).map((variant) => Number(variant.price)).filter(Number.isFinite).sort((a, b) => a - b)[0] })).filter((item) => item.price !== undefined).sort((left, right) => left.price - right.price);
+    if (priced.length > 1) return priced[0].price === priced[1].price
+      ? `${priced[0].product.title} and ${priced[1].product.title} are the same price (${priced[0].price}). Their options are shown below.`
+      : `${priced[0].product.title} is the lower-priced option at ${priced[0].price}. Its details and the other option are shown below.`;
+  }
   if (discovery.products.length) return filterLabels.length
     ? `I found ${discovery.products.length === 1 ? "a product" : "products"} matching ${filterLabels.join(", ")}: ${matchedNames.join(", ")}. Their prices and options are shown below.`
     : discovery.phrase
@@ -342,10 +374,29 @@ function extractFaqDocumentAnswer(question, faq) {
 }
 
 const KNOWLEDGE_STOP_WORDS = new Set(["about", "after", "again", "and", "are", "can", "could", "does", "for", "from", "have", "help", "how", "into", "is", "its", "just", "me", "my", "need", "our", "please", "tell", "that", "the", "their", "this", "what", "when", "where", "with", "you", "your"]);
+const POLICY_TOPIC_PATTERNS = [
+  [/\b(?:shipping|delivery|deliver|dispatch|internationally|ship(?:s|ping)? abroad)\b/i, /shipping|delivery|dispatch|fulfillment|fulfilment/i],
+  [/\b(?:return|refund|exchange|send back|doesn['’]?t fit|too (?:big|small))\b/i, /return|refund|exchange/i],
+  [/\b(?:payment|pay|gift card|charged|checkout)\b/i, /payment|gift card|checkout|billing/i],
+  [/\b(?:privacy|customer data|personal data|data protection)\b/i, /privacy|data protection/i],
+  [/\b(?:warranty|guarantee)\b/i, /warranty|guarantee/i],
+  [/\b(?:promo(?:tion)? code|discount code|coupon|free shipping)\b/i, /promotion|discount|coupon|shipping/i],
+];
+
+function scopePolicyKnowledge(rows, question) {
+  const topic = POLICY_TOPIC_PATTERNS.find(([questionPattern]) => questionPattern.test(String(question || "")));
+  if (!topic) return rows;
+  const titleMatches = rows.filter((row) => topic[1].test(String(row.title || "")));
+  if (titleMatches.length) return titleMatches;
+  return rows.filter((row) => !POLICY_TOPIC_PATTERNS.some(([, otherTopic]) => otherTopic.test(String(row.title || "")))
+    && topic[1].test(String(row.content || "")));
+}
 
 function closestKnowledgeAnswer(question, rows = [], storeName = "the shop") {
+  const policyTopic = POLICY_TOPIC_PATTERNS.find(([questionPattern]) => questionPattern.test(String(question || "")));
+  const scopedRows = policyTopic ? scopePolicyKnowledge(rows, question) : rows;
   const terms = [...new Set(String(question || "").toLocaleLowerCase().normalize("NFKD").replace(/[^\p{L}\p{N}\s]/gu, " ").split(/\s+/).filter((term) => term.length > 2 && !KNOWLEDGE_STOP_WORDS.has(term)))];
-  const candidates = rows.map((row) => {
+  const candidates = scopedRows.map((row) => {
     const content = String(row.content || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
     const searchable = `${row.title || ""} ${content}`.toLocaleLowerCase();
     const overlap = terms.filter((term) => searchable.includes(term)).length;
@@ -363,7 +414,9 @@ function closestKnowledgeAnswer(question, rows = [], storeName = "the shop") {
   });
   const best = candidates[0];
   const isClose = best && (best.semantic ? best.similarity >= 0.29 && best.lexicalScore >= 0.15 : best.overlap >= 2 && best.lexicalScore >= 0.28);
-  if (!isClose) return `I can help with ${storeName}’s products, pages, and policies. Could you share the product name or a little more detail about what you’d like to know?`;
+  if (!isClose) return policyTopic
+      ? `I couldn’t find a clear answer to that in the store’s ${policyTopic[0].source.includes("shipping") ? "shipping" : "policy"} information. Please check the relevant store policy or contact the store team for confirmation.`
+    : `I can help with ${storeName}’s products, pages, and policies. Could you share the product name or a little more detail about what you’d like to know?`;
   const title = String(best.row.title || "Store information").replace(/[<>]/g, "").slice(0, 120);
   return `Here’s the most relevant information I found for ${storeName}, from “${title}”:\n\n${best.excerpt.slice(0, 800)}\n\nDoes this answer your question, or would you like me to check a related product or policy?`;
 }
@@ -583,6 +636,7 @@ export const action = async ({ request }) => {
     const priorMessages = Array.isArray(previousConversation?.messages) ? previousConversation.messages : [];
     const previousUserMessage = [...priorMessages].reverse().find((item) => item?.role === "user")?.content || "";
     const previousProductQuestion = [...priorMessages].reverse().find((item) => item?.role === "user" && typeof item.content === "string" && hasProductSearchLanguage(item.content) && !isProductContextFollowup(item.content))?.content || "";
+    const previousProductFollowup = [...priorMessages].reverse().find((item) => item?.role === "user" && typeof item.content === "string" && isProductContextFollowup(item.content) && !isOrderDeliveryQuestion(item.content))?.content || "";
     const refersToPreviousProduct = isProductContextFollowup(userMessage) && !isOrderDeliveryQuestion(userMessage)
       && !/\b(?:t\s*-?\s*shirts?|tees?|shirts?|hoodies?|pants|trousers?|jeans|shoes?|sku|catalog|collection)\b/i.test(userMessage);
     let previousSearchTerms = "";
@@ -592,14 +646,28 @@ export const action = async ({ request }) => {
       const currentFilters = extractProductFilters(userMessage);
       const baseType = baseFilters.productType === "shirt" ? "t shirt" : baseFilters.productType;
       const baseAttributes = [baseFilters.brand, baseType, ...baseFilters.features].filter(Boolean);
-      if (currentFilters.colors.length) {
+      const previousFollowupFilters = extractProductFilters(previousProductFollowup);
+      const inheritedColor = previousFollowupFilters.colors[0] || "";
+      const inheritedSize = previousFollowupFilters.size || "";
+      const sizeFilter = currentFilters.size || inheritedSize;
+      const sizeLabel = sizeFilter ? `size ${sizeFilter}` : "";
+      if (/\b(?:cheaper|less expensive|lower price|lower priced|costs? less|least expensive)\b/i.test(userMessage) && /\bcompare\b/i.test(baseQuestion)) {
+        previousSearchTerms = productSearchPhrase(baseQuestion);
+      } else if (/\b(?:cheaper|less expensive|lower price|lower priced)\b/i.test(userMessage)) {
+        previousSearchTerms = [...baseAttributes, "shirt"].filter(Boolean).join(" ");
+      } else if (/\b(?:short sleeves?|long sleeves?)\b/i.test(userMessage)) {
+        previousSearchTerms = [...baseAttributes, ...currentFilters.features].filter(Boolean).join(" ");
+      } else if (currentFilters.colors.length) {
         const priceFilter = currentFilters.maxPrice !== null ? `under ${currentFilters.maxPrice}` : currentFilters.minPrice !== null ? `over ${currentFilters.minPrice}` : "";
-        previousSearchTerms = [...baseAttributes, priceFilter, ...currentFilters.colors].filter(Boolean).join(" ");
+        previousSearchTerms = [...baseAttributes, sizeLabel, priceFilter, ...currentFilters.colors].filter(Boolean).join(" ");
       } else if (/\b(?:another|different|other)\s+(?:color|colour)\b/i.test(userMessage)) {
-        const priorColor = extractProductFilters(previousUserMessage).colors[0] || baseFilters.colors[0];
+        const priorColor = inheritedColor || extractProductFilters(previousUserMessage).colors[0] || baseFilters.colors[0];
         previousSearchTerms = [...baseAttributes, priorColor ? `not ${priorColor}` : ""].filter(Boolean).join(" ");
       } else {
-        previousSearchTerms = productSearchPhrase(baseQuestion);
+        previousSearchTerms = [...baseAttributes, baseFilters.colors[0] || inheritedColor, sizeLabel,
+          baseFilters.maxPrice !== null ? `under ${baseFilters.maxPrice}` : "",
+          baseFilters.minPrice !== null ? `over ${baseFilters.minPrice}` : "",
+          ...currentFilters.features].filter(Boolean).join(" ");
       }
     }
     productQuestion = [previousSearchTerms, userMessage].filter(Boolean).join(" ").trim();
@@ -614,16 +682,16 @@ export const action = async ({ request }) => {
     const productPurchaseIntent = purchaseRequestedInMessage && (purchasePhraseCandidate.length > 0 || hasProductFilters);
     const explicitOrderReference = /#\s*\d{3,}\b|\b(?:order|tracking|shipment|delivery)\s*(?:number|no\.?|#|id)?\s*#?\d{3,}\b/i.test(userMessage);
     policyIntent = isPolicyIntent(userMessage);
-    const productCategoryIntent = /\b(products?|items?|catalog|collection|t-?shirts?|shirts?|tops?|dresses?|skirts?|pants?|trousers?|jeans?|jackets?|coats?|shoes?|sneakers?|boots?|bags?|backpacks?|hats?|jewelry|jewellery|skincare|makeup|cosmetics?|furniture|sofas?|chairs?|mugs?|toys?|gifts?|gift|books?|electronics?|phones?|laptops?|headphones?|bottles?|waterproof|cotton|menswear|womenswear|kidswear)\b|প্রোডাক্ট|পণ্য|জ্যাকেট|জুতা|জামা|শার্ট|ব্যাগ|উপহার/i.test(userMessage);
-    const productActionIntent = /\b(buy|purchase|shop|sell|recommend|recommendation|show me|looking for|search for|find|look for)\b|কিনতে|দেখাও|খুঁজে|সাজেস্ট/i.test(userMessage);
-    const explicitProductIntent = (productCategoryIntent || hasProductFilters) && (productActionIntent || hasProductFilters || /\b(price|cost|in stock|available|size|colour|color|material|details|sku|compare|similar|alternative)\b/i.test(userMessage)) || /\b(?:show|find|search|recommend|explore|browse)\s+(?:me\s+)?(?:some|any|your|all|the|our)?\s*(?:products?|catalog|collection|category|products? in|items?)\b/i.test(userMessage);
+    const productCategoryIntent = /\b(products?|items?|catalog|collection|t-?shirts?|shirts?|tops?|dresses?|skirts?|pants?|trousers?|jeans?|jackets?|coats?|shoes?|sneakers?|boots?|bags?|backpacks?|hats?|jewelry|jewellery|skincare|makeup|cosmetics?|furniture|sofas?|chairs?|mugs?|toys?|gifts?|gift|books?|electronics?|phones?|laptops?|headphones?|bottles?|waterproof|cotton|menswear|womenswear|kidswear)\b|প্রোডাক্ট|পণ্য|জ্যাকেট|জুতা|জামা|শার্ট|ব্যাগ|উপহার|টি\s*-?শার্ট/i.test(userMessage);
+    const productActionIntent = /\b(buy|purchase|shop|sell|recommend|recommendation|show me|looking for|search for|find|look for|ideas for|gift for|more colorful|different color)\b|কিনতে|দেখাও|খুঁজে|সাজেস্ট/i.test(userMessage);
+    const explicitProductIntent = (productCategoryIntent || hasProductFilters || /\b(?:around|under|below|less than|cheapest|least expensive|best sellers?|best selling|bestsellers?)\b/i.test(userMessage) && /\b(?:shirt|t-?shirt|tee|products?|items?|catalog)\b/i.test(userMessage)) && (productActionIntent || hasProductFilters || /\b(price|cost|in stock|available|size|colour|color|material|details|sku|compare|similar|alternative|cheapest|least expensive|best sellers?|best selling|bestsellers?)\b/i.test(userMessage)) || /\b(?:show|find|search|recommend|explore|browse)\s+(?:me\s+)?(?:some|any|your|all|the|our)?\s*(?:products?|catalog|collection|category|products? in|items?)\b/i.test(userMessage);
     const bestProductIntent = /\b(best|top|popular|most (?:bought|ordered|popular)|bestseller|best selling|trending|latest|new arrivals?|new products?|discounted?|on sale|sale items?|cheap|cheapest|affordable|budget friendly|premium|gift|gifts|similar products?|compare)\b|সেরা|সবচেয়ে ভালো|জনপ্রিয়/i.test(normalizeProductLookup(userMessage));
     const skuCandidate = !explicitOrderReference ? userMessage.match(/\bsku\s*[:#]?\s*([A-Z0-9][A-Z0-9._/-]{2,})\b/i)?.[1] || userMessage.match(/\b[A-Z0-9]{2,}(?:-[A-Z0-9]+)+\b/i)?.[0] : null;
     const vagueProductRequest = !flowId && (/\b(?:buy something|want to buy|looking for a product|looking for something|specific product|this product|this item|do you sell this|do you have this|help me find a product|find a product|recommend something|recommend me something|need a new product|help me find something)\b/i.test(normalizeProductLookup(userMessage)) || purchaseRequestedInMessage && !productPurchaseIntent);
-    const smallTalk = /^(?:thanks?(?: so much)?(?: for your help)?|thank you(?: so much)?(?: for your help)?|okay|ok|got it|bye|goodbye|see you)$/i.test(userMessage.trim().replace(/[.!?]+$/, ""));
+    const smallTalk = /^(?:thanks?(?: so much)?(?: for your help| for helping me out)?|thank you(?: so much)?(?: for your help| for helping me out)?|okay|ok|got it|bye|goodbye|see you)$/i.test(userMessage.trim().replace(/[.!?]+$/, ""));
     const generalHelpRequest = /^(?:(?:i|we)\s+)?(?:need|want|would like|could use)\s+(?:(?:some|a little|your)\s+)?help(?:\s+please)?$|^(?:can|could|would)\s+you\s+help(?:\s+me)?(?:\s+please)?$|^help(?:\s+me)?(?:\s+please)?$/i.test(userMessage.trim().replace(/[.!?]+$/, ""));
     const greetingIntent = /^(?:hi|hello|hey|hiya|howdy|good morning|good afternoon|good evening)$/i.test(userMessage.trim().replace(/[.!?,\s]+$/g, ""));
-    const identityQuestion = /\b(?:who are you|what are you|what can you do|what can you help me with|how can you help|what do you help with|are you (?:a )?(?:real person|human)|are you real)\b/i.test(userMessage);
+    const identityQuestion = /\b(?:who are you|what are you|what(?:'s| is) this store called|what(?:'s| is) the store(?:'s)? name|store name|what can you do|what (?:sort|kind|type) of things can you help me with|what can you help me with|how can you help|what do you help with|are you (?:a )?(?:real person|human)|are you real)\b/i.test(userMessage);
     const asksForAnotherCustomer = /\b(?:another customer|someone else|somebody else|other customer'?s|someone else'?s)\b.{0,50}\b(?:order|email|address|personal|purchase|details)\b/i.test(userMessage);
     const abusiveMessage = /\b(?:fuck(?:ing)?|shit|bitch|asshole|idiot|stupid)\b/i.test(userMessage);
     const storeRelated = greetingIntent || identityQuestion || smallTalk || isConversationalFollowup || hasProductFilters || productCategoryIntent || productActionIntent || productPurchaseIntent || bestProductIntent || Boolean(skuCandidate) || hasProductSearchLanguage(userMessage)
@@ -653,7 +721,7 @@ export const action = async ({ request }) => {
       return Response.json({ answer }, { headers });
     }
     if (canUseGeneralIntent && identityQuestion) {
-      const asksCapabilities = /what can you do|what can you help me with|how can you help|what do you help with/i.test(userMessage);
+      const asksCapabilities = /what can you do|what (?:sort|kind|type) of things can you help me with|what can you help me with|how can you help|what do you help with/i.test(userMessage);
       const answer = asksCapabilities
         ? `I can help you find products, answer questions about ${storeDisplayName}’s products, pages, and policies, check an order, submit a cancellation request for Support Team review, and connect with the team. I can’t cancel or change an order myself.`
         : `I’m ${storeDisplayName}’s AI assistant. I can help with products, order updates, cancellation requests, returns, store information, and support. I can’t cancel or change orders myself.`;
@@ -661,9 +729,9 @@ export const action = async ({ request }) => {
       await saveConversation(normalizedShop, sessionId, userMessage, answer, identity, userCreatedAt).catch((error) => console.error("Assistant introduction save failed", error));
       return Response.json({ answer, ...(flow ? { flow } : {}) }, { headers });
     }
-    const generalQuestion = /\b(?:i have a question about (?:this )?store|do you know (?:the )?store contact page|what colors? are available in (?:the )?catalog|can you check whether a product is in stock|can you check product availability|can you compare (?:two|some) (?:products|items|shirts?)|do you sell anything besides (?:shirts?|tees?))\b/i.test(userMessage);
+    const generalQuestion = /\b(?:i have a question about (?:this )?store|do you know (?:the )?store contact page|where do i find your contact page|what(?:'s| is) the best way to contact the store|what time does customer service open|support opening hours|business hours|where is the store based|what colors? are available in (?:the )?catalog|list all colou?rs?.{0,35}shirt|can you check whether a product is in stock|can you check product availability|can you compare (?:two|some) (?:products|items|shirts?)|do you sell anything besides (?:shirts?|tees?))\b/i.test(userMessage);
     if (canUseGeneralIntent && generalQuestion) {
-      const answer = /contact page/i.test(userMessage)
+      const answer = /contact|hours|open|based/i.test(userMessage)
         ? "You can reach the store through the Contact page or the Contact support option in this chat."
         : /compare/i.test(userMessage)
           ? "Sure—tell me the names of the two products you’d like to compare."
@@ -1003,7 +1071,7 @@ export const action = async ({ request }) => {
         catch (fallbackError) { console.warn("Store knowledge fallback lookup failed", fallbackError?.message); }
       }
       const fallbackProductIntent = fallbackRows.some((row) => ["product", "collection"].includes(row.source_type) && Number(row.similarity) >= 0.25);
-      const answerFallbackRows = filterKnowledgeForIntent(fallbackRows, policyIntent);
+      const answerFallbackRows = policyIntent ? scopePolicyKnowledge(filterKnowledgeForIntent(fallbackRows, true), userMessage) : fallbackRows;
       if (providerKey && answerFallbackRows.length && !productSearchIntent && !orderHelpIntent) {
         try {
           const fallbackFlow = !policyIntent && fallbackRows.filter((row) => row.source_type === "flow").map((row) => normalizeConversationFlows(settings.flows).find((flow) => flow.enabled && flow.id === (row.metadata?.flow_id || row.source_id))).find(Boolean);
@@ -1032,7 +1100,7 @@ export const action = async ({ request }) => {
         const discovery = await discoverShopifyProducts(normalizedShop, productQuestion, fallbackRows);
         const answer = purchaseRequested && discovery.products.length
           ? `I found ${discovery.products[0].title} in the store catalog. Review the details, choose an available option if needed, then select “Yes, buy this” to add it to your cart and go to checkout. You can also choose No thanks or Another product.`
-          : productSearchAnswer(discovery);
+          : productSearchAnswer(discovery, userMessage);
         const products = productCards(discovery.products);
         await saveConversation(normalizedShop, sessionId, userMessage, answer, identity, userCreatedAt).catch((error) => console.error("Fallback product conversation save failed", error));
         return Response.json({ answer, products, ...(productPurchaseIntent && products.length ? { purchaseIntent: true } : {}), ...(discovery.exact ? { exactProductMatch: true } : {}), showBrowseAll: true, ...(continuationFlow ? { flow: continuationFlow } : {}) }, { headers });
@@ -1096,7 +1164,7 @@ export const action = async ({ request }) => {
     // Policy questions should not inherit a recent product match (for example,
     // "Can I return it if it doesn't fit?" after viewing a shirt).
     const answerContext = policyIntent
-      ? filterKnowledgeForIntent(matches, true)
+      ? scopePolicyKnowledge(filterKnowledgeForIntent(matches, true), userMessage)
       : explicitProductIntent
         ? matches.filter((row) => ["product", "collection", "page", "policy", "custom"].includes(row.source_type))
         : matches;
@@ -1136,8 +1204,8 @@ export const action = async ({ request }) => {
         const answer = discovery.products.length
           ? productPurchaseIntent
             ? `I found ${discovery.products[0].title} in the store catalog. Review the details, choose an available option if needed, then select “Yes, buy this” to add it to your cart and go to checkout. You can also choose No thanks or Another product.`
-            : productSearchAnswer(discovery)
-          : productSearchAnswer(discovery);
+            : productSearchAnswer(discovery, userMessage)
+          : productSearchAnswer(discovery, userMessage);
         const recoveryFlow = products.length ? null : getConversationFlowStep(settings.flows, "welcome", "start");
         await saveConversation(normalizedShop, sessionId, userMessage, answer, identity, userCreatedAt);
         return Response.json({ answer, products, ...(productPurchaseIntent && products.length ? { purchaseIntent: true } : {}), ...(discovery.exact ? { exactProductMatch: true } : {}), ...(productSearchIntent ? { showBrowseAll: true } : {}), ...(continuationFlow ? { flow: continuationFlow } : recoveryFlow ? { flow: recoveryFlow } : {}) }, { headers });
@@ -1201,7 +1269,7 @@ export const action = async ({ request }) => {
         if (discovery.products.length || productSearchRequested) {
           const answer = purchaseRequested && discovery.products.length
             ? `I found ${discovery.products[0].title} in the store catalog. Review the details, choose an available option if needed, then select “Yes, buy this” to add it to your cart and go to checkout.`
-            : productSearchAnswer(discovery);
+            : productSearchAnswer(discovery, userMessage);
           const products = productCards(discovery.products);
           await saveConversation(normalizedShop, sessionId, userMessage, answer, identity, userCreatedAt).catch((saveError) => console.error("Fallback product conversation save failed", saveError));
           return Response.json({ answer, products, ...(purchaseRequested && products.length ? { purchaseIntent: true } : {}), ...(discovery.exact ? { exactProductMatch: true } : {}), showBrowseAll: true, ...(continuationFlow ? { flow: continuationFlow } : {}) }, { headers });

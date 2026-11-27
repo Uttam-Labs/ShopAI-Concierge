@@ -3,6 +3,10 @@ const SIZE_WORDS = ["xs", "s", "m", "l", "xl", "xxl", "xxxl", "small", "medium",
 
 export function normalizeProductLookup(value) {
   return String(value || "").toLocaleLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/([\d])[,](?=\d{3}(?:\D|$))/g, "$1")
+    .replace(/কালো/g, " black ").replace(/সাদা/g, " white ").replace(/নীল/g, " blue ").replace(/লাল/g, " red ").replace(/সবুজ/g, " green ")
+    .replace(/টি\s*-?\s*শার্ট/g, " t shirt ").replace(/শার্ট/g, " shirt ").replace(/দোকানে|তোমাদের|আমাদের|আছে|কী|কি/g, " ")
+    .replace(/([\d])[,](?=\d{3}(?:\D|$))/g, "$1")
     .replace(/\b(?:don['’]t|dont)\b/g, "do not").replace(/\b(?:wheres|where's|where’s)\b/g, "where").replace(/\b(?:whats|what's|what’s)\b/g, "what")
     .replace(/\b(?:cheepest|cheep)\b/g, (word) => word === "cheepest" ? "cheapest" : "cheap")
     .replace(/\b(?:t[\s-]*sh(?:i|e)?rts?|tees?)\b/g, " t shirt ")
@@ -15,6 +19,9 @@ export function normalizeProductLookup(value) {
 
 export function productSearchPhrase(value) {
   return String(value || "").replace(/\bdon['’]t\b/gi, "do not").replace(/\b(?:wheres|where's|where’s)\b/gi, "where").replace(/\b(?:whats|what's|what’s)\b/gi, "what")
+    .replace(/কালো/g, " black ").replace(/সাদা/g, " white ").replace(/নীল/g, " blue ").replace(/লাল/g, " red ").replace(/সবুজ/g, " green ")
+    .replace(/টি\s*-?\s*শার্ট/g, " t shirt ").replace(/শার্ট/g, " shirt ").replace(/দোকানে|তোমাদের|আমাদের|আছে|কী|কি/g, " ")
+    .replace(/\b(?:marked as|which are|marked)\b/gi, " ").replace(/\bsellers?\b/gi, " selling ")
     .replace(/\b(?:cheepest|cheep)\b/gi, (word) => word.toLowerCase() === "cheepest" ? "cheapest" : "cheap")
     .replace(/\b(?:t[\s-]*sh(?:i|e)?rts?|tees?)\b/gi, " t shirt ").replace(/\bskyblue\b/gi, "sky blue").replace(/\bgray\b/gi, "grey")
     .replace(/\bshooes?\b/gi, "shoes").replace(/\bproduc\b/gi, "product")
@@ -25,8 +32,8 @@ export function productSearchPhrase(value) {
     .replace(/^\s*(?:what(?:'s|’s| is)|how much (?:is|does)|tell me about|describe|details? (?:for|about))\s+/i, "")
     .replace(/^\s*(?:the|a|an)\s+/i, "")
     .replace(/^\s*(?:please\s+)?(?:can you|could you)\s+/i, "").replace(/^(?:do you have|have you got|is there|can i (?:get|see)|where can i (?:find|buy)|where is)\s+/i, "")
-    .replace(/^(?:i(?:'m|’m| am)?\s+)?(?:want(?:\s+to\s+(?:buy|purchase|find))?|would like(?:\s+to\s+(?:buy|purchase|find))?|would love(?:\s+to\s+(?:buy|purchase|find))?|plan(?:ning)?(?:\s+to\s+(?:buy|purchase|find))?|need|looking for|searching for|show me|find me|find|search for|search|look for|buy|purchase|recommend)\s+/i, "")
-    .replace(/\b(?:can you|could you|please|product|products|item|items|sku|any|show|me|in|colors?|colours?|color|colour|colored|coloured|featured|model|brand|company|under|below|less than|over|above|more than|greater than|at least|at most|between|price|cost|budget|cheap|cheapest|affordable|discounted|sale|premium|for|with|size|sizes|small|medium|large|available|in stock|showing|new|latest|arrival|arrivals|best|selling|popular|trending|similar|recommendations|compare|most|expensive|priciest|highest|costliest|the|a|an|do|you|have|does|is|are|what|much|how|see|it|its|not|without|other|all|men|women|kids|summer|casual|around|about|approximately|store|in|of|my|your|we|got|any|does|come)\b/gi, " ")
+    .replace(/^(?:i(?:'m|’m| am)?\s+)?(?:shopping for|want(?:\s+to\s+(?:buy|purchase|find))?|would like(?:\s+to\s+(?:buy|purchase|find))?|would love(?:\s+to\s+(?:buy|purchase|find))?|plan(?:ning)?(?:\s+to\s+(?:buy|purchase|find))?|need|looking for|searching for|show me|find me|find|search for|search|look for|buy|purchase|recommend)\s+/i, "")
+    .replace(/\b(?:can you|could you|please|product|products|item|items|catalog|collection|sku|any|show|me|in|colors?|colours?|color|colour|colored|coloured|featured|model|brand|company|under|below|less than|over|above|more than|greater than|at least|at most|between|price|cost|budget|cheap|cheapest|affordable|discounted|sale|premium|for|with|size|sizes|small|medium|large|available|anything|something|in stock|showing|new|latest|arrival|arrivals|best|selling|popular|trending|similar|recommend|recommendations|compare|most|expensive|priciest|highest|costliest|the|a|an|do|you|have|does|is|are|what|much|how|see|it|its|not|without|other|all|men|women|kids|summer|casual|around|about|approximately|store|in|of|my|your|we|got|any|does|come|gift|gifts|brother|ideas?|suggestions?|one)\b/gi, " ")
     .replace(/\s+/g, " ").trim();
 }
 
@@ -43,7 +50,8 @@ export function extractProductFilters(question) {
   const targetMatch = text.match(/\b(?:around|about|approximately)\s*(?:(?:rs\.?|inr|rupees?)\s*)?(\d[\d,.]*)/i);
   const priceTarget = targetMatch ? Number(targetMatch[1].replace(/,/g, "")) : null;
   const negativeClause = /\b(?:not|no|without|do not want)\b(.+?)(?:\b(?:but|instead|other|except)\b|$)/i.exec(text)?.[1] || "";
-  const excludedColors = COLOR_WORDS.filter((color) => new RegExp(`\\b${color}\\b`, "i").test(negativeClause));
+  const excludedColors = COLOR_WORDS.filter((color) => new RegExp(`\\b${color}\\b`, "i").test(negativeClause)
+    || /\b(?:more colorful|different color|different colour|another color|another colour)\b/i.test(text) && new RegExp(`\\b${color}\\b`, "i").test(text));
   const colors = COLOR_WORDS.filter((color) => new RegExp(`\\b${color}\\b`, "i").test(text) && !excludedColors.includes(color));
   const sizeAlternatives = [...SIZE_WORDS].sort((left, right) => right.length - left.length).join("|");
   const namedSize = new RegExp(`\\b(?:size|in|available in|comes in)\\s+(${sizeAlternatives})\\b|\\b(${sizeAlternatives})\\s+(?:size|t shirt|shirt|tee|hoodie|pants)\\b`, "i").exec(text);
@@ -83,7 +91,7 @@ export function productMatchesFilters(product, filters) {
   if (filters.colors?.length && !filters.colors.some((color) => fields.split(" ").includes(color))) return false;
   if (filters.excludedColors?.some((color) => fields.split(" ").includes(color) || (color === "blue" && /\bnavy\b/.test(fields)))) return false;
   if (filters.brand && !fields.includes(normalizeProductLookup(filters.brand)) && !normalizeProductLookup(product.vendor).includes(normalizeProductLookup(filters.brand))) return false;
-  if (filters.productType && !(filters.productType === "shirt" ? /\b(?:t shirt|shirt|tee)\b/.test(title) : title.includes(filters.productType))) return false;
+  if (filters.productType && !(filters.productType === "shirt" ? /\b(?:t shirt|shirt|tee)\b/.test(title) : filters.productType === "pants" ? /\b(?:pants|trousers|chinos|jeans|joggers)\b/.test(title) : title.includes(filters.productType))) return false;
   if (filters.features?.some((feature) => !fields.includes(normalizeProductLookup(feature)))) return false;
   if (filters.excludeFeatures?.some((feature) => fields.includes(normalizeProductLookup(feature)))) return false;
   const prices = (product.variants || []).filter((variant) => variant.availableForSale !== false && variant.price !== undefined).map((variant) => Number(variant.price)).filter(Number.isFinite);

@@ -38,6 +38,29 @@
     Array.from(welcome.childNodes).forEach((node) => {
       if (!(node.nodeType === Node.ELEMENT_NODE && node.classList.contains("sac-help-button"))) node.remove();
     });
+    const topicNav = document.createElement("nav");
+    topicNav.className = "sac-topic-nav";
+    topicNav.setAttribute("aria-label", "Chat topics");
+    const topicOptions = [
+      { label: "Product advice", message: "Help me find a product" },
+      { label: "Order updates", message: "Can you help me with my order?" },
+      { label: "Returns & refunds", message: "I want to return or exchange a product" },
+      { label: "Store support", message: "I want to contact store support" },
+    ];
+    topicOptions.forEach((topic) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "sac-topic-button";
+      button.dataset.topic = topic.message.includes("contact store support") ? "support" : topic.label;
+      button.setAttribute("aria-pressed", "false");
+      button.textContent = topic.label;
+      button.addEventListener("click", () => {
+        topicNav.querySelectorAll(".sac-topic-button").forEach((item) => item.setAttribute("aria-pressed", String(item === button)));
+        sendMessage(topic.message, { clearFlow: true, topicLabel: topic.label });
+      });
+      topicNav.append(button);
+    });
+    welcome.append(topicNav);
     panel.insertAdjacentHTML("beforeend", `<div class="sac-order-backdrop" hidden><section class="sac-order-card" role="dialog" aria-modal="true" aria-labelledby="sac-order-title"><button type="button" class="sac-order-close" aria-label="Close order tracking">×</button><span class="sac-order-icon" aria-hidden="true">↗</span><p class="sac-order-kicker">ORDER UPDATES</p><h3 id="sac-order-title">Track your order</h3><p class="sac-order-copy">Enter your order number and the email used at checkout to see its latest status and total.</p><form class="sac-order-form"><label>Order number<input name="orderNumber" autocomplete="off" maxlength="31" placeholder="e.g. #1001 or 1001" required></label><label class="sac-order-email-label">Email used at checkout<input name="customerEmail" type="email" autocomplete="email" maxlength="254" placeholder="you@example.com"></label><div class="sac-order-notice" aria-live="polite"></div><footer><button type="button" class="sac-order-cancel">Cancel</button><button type="submit" class="sac-order-submit">Find my order</button></footer></form><section class="sac-order-result" hidden><div class="sac-order-result-title"></div><p class="sac-order-result-copy"></p><div class="sac-order-details" hidden></div><button type="button" class="sac-order-view">View order details</button></section></section></div>`);
 
     const launcher = document.createElement("button");
@@ -98,14 +121,6 @@
     };
     welcomeActions.append(makeQuickAction("Find products", "Help me find a product"), orderButton, makeQuickAction("Cancel an order", "I want to cancel my order"), makeQuickAction("Returns & refunds", "I want to return a product"));
     panel.querySelector(".sac-welcome").append(welcomeActions);
-    const persistentSupportButton = document.createElement("button");
-    persistentSupportButton.type = "button";
-    persistentSupportButton.className = "sac-quick-action-button sac-persistent-support";
-    persistentSupportButton.setAttribute("aria-label", "Contact store support");
-    persistentSupportButton.textContent = supportButtonLabel || "Contact store support";
-    persistentSupportButton.addEventListener("click", () => openSupportRequest());
-    if (welcomeActions.hidden) welcome.append(persistentSupportButton);
-    else welcomeActions.append(persistentSupportButton);
     const orderBackdrop = panel.querySelector(".sac-order-backdrop");
     const orderForm = panel.querySelector(".sac-order-form");
     const orderNotice = panel.querySelector(".sac-order-notice");
@@ -162,27 +177,6 @@
     const persistChat = () => {
       try { sessionStorage.setItem(storageKey, JSON.stringify({ sessionId, identity, activeFlow, messages: chatHistory.slice(-40) })); } catch { /* Session storage can be disabled by the browser. */ }
     };
-    const exitActiveFlow = () => {
-      if (!activeFlow && !panel.querySelector(".sac-flow-choices")) return;
-      activeFlow = null;
-      chatHistory.forEach((item) => { delete item.flow; });
-      panel.querySelectorAll(".sac-flow-choices").forEach((choices) => choices.remove());
-      panel.querySelectorAll(".sac-helpful-actions").forEach((actions) => actions.remove());
-      const answer = "No problem — you’ve left this topic. What would you like help with next?";
-      addMessage(messages, answer, "assistant");
-      chatHistory.push({ role: "assistant", content: answer, createdAt: Date.now() });
-      welcomeActions.hidden = false;
-      persistChat();
-      messages.scrollTop = messages.scrollHeight;
-      input.focus();
-    };
-    messages.addEventListener("click", (event) => {
-      const exitButton = event.target instanceof Element ? event.target.closest(".sac-flow-exit") : null;
-      if (!exitButton) return;
-      event.preventDefault();
-      event.stopPropagation();
-      exitActiveFlow();
-    });
     const openOrderTracking = () => {
       orderNotice.textContent = "";
       orderResult.hidden = true;
@@ -202,13 +196,15 @@
     const restoredOrderRows = [];
     if (chatHistory.length) {
       initialGreeting.remove();
-      const latestAssistantIndex = chatHistory.map((item) => item.role).lastIndexOf("assistant");
       chatHistory.forEach((item, index) => {
         const restored = addMessage(messages, item.content, item.role === "user" ? "user" : "assistant", item.createdAt);
         if (item.ticketReference && item.role === "assistant") addTicketReference(restored.row, item.ticketReference);
         if (item.openOrderTracking && item.role === "assistant") addOrderTrackingAction(restored.row);
         if (item.flow && item.role === "assistant" && activeFlow?.id === item.flow.id && activeFlow?.stepId === item.flow.stepId) renderFlowChoices(restored.row, item.flow, sendMessage);
-        if (item.role === "assistant" && index === latestAssistantIndex && chatHistory.some((entry) => entry.role === "user") && !item.flow && !item.purchaseIntent) renderHelpfulActions(restored.row, chatHistory[index - 1]?.content || "", item.content, sendMessage, openOrderTracking);
+        if (item.role === "assistant" && index > 0 && chatHistory.slice(0, index).some((entry) => entry.role === "user")) {
+          if (item.topicChooser) renderTopicOptions(restored.row, sendMessage, topicOptions);
+          renderTopicActions(restored.row, sendMessage);
+        }
         if (item.order && item.role === "assistant") restoredOrderRows.push({ row: restored.row, order: item.order, answer: item.content });
         if (item.products?.length && item.role === "assistant") renderProducts(messages, item.products, { persist: false, purchaseIntent: item.purchaseIntent === true });
       });
@@ -246,9 +242,7 @@
             }
           }
           humanHandoffEnabled = config.humanHandoff !== false;
-          if (!humanHandoffEnabled) {
-            persistentSupportButton.hidden = true;
-          }
+          topicNav.querySelector('[data-topic="support"]')?.toggleAttribute("hidden", !humanHandoffEnabled);
           orderButton.hidden = !enableOrderLookup || config.orderLookup === false;
           setOrderEmailRequirement(config.orderEmailRequired !== false);
           if (enableFaqs && Array.isArray(config.faqs) && config.faqs.length) renderFaqs(config.faqs, faqSection, faqList, sendMessage);
@@ -357,6 +351,7 @@
         addOrderDetailsAction(reply.row, data.order, data.answer);
         activeFlow = data.flow || null;
         if (activeFlow) renderFlowChoices(reply.row, activeFlow, sendMessage);
+        renderTopicActions(reply.row, sendMessage, topicOptions);
         chatHistory.push({ role: "assistant", content: data.answer || "Your order status is ready.", createdAt: Date.now(), order: data.order, ...(activeFlow ? { flow: activeFlow } : {}) });
         setOrderResult(data.order, data.answer);
         persistChat();
@@ -367,6 +362,7 @@
           : (error.message || "Order tracking is temporarily unavailable. Please try again.");
         orderNotice.textContent = errorMessage;
         const reply = addMessage(messages, errorMessage, "assistant");
+        renderTopicActions(reply.row, sendMessage, topicOptions);
         chatHistory.push({ role: "assistant", content: errorMessage, createdAt: Date.now() });
         reply.bubble.classList.add("error");
         persistChat();
@@ -385,15 +381,19 @@
       const message = String(rawMessage || "").trim();
       const faqId = typeof options.faqId === "string" ? options.faqId : "";
       if (form.dataset.sending === "true") return;
-      if (options.exitFlow) {
+      if (options.chooseTopic || options.endTopic) {
         activeFlow = null;
+        topicNav.querySelectorAll(".sac-topic-button").forEach((button) => button.setAttribute("aria-pressed", "false"));
         chatHistory.forEach((item) => { delete item.flow; });
         panel.querySelectorAll(".sac-flow-choices").forEach((choices) => choices.remove());
         panel.querySelectorAll(".sac-helpful-actions").forEach((actions) => actions.remove());
-        const answer = "Okay, we’ve left this topic. What else can I help you with?";
-        addMessage(messages, answer, "assistant");
-        chatHistory.push({ role: "assistant", content: answer, createdAt: Date.now() });
-        welcomeActions.hidden = false;
+        const answer = options.chooseTopic
+          ? "What would you like to discuss next? Choose a topic below, or type your question."
+          : "Thank you for chatting with me. This topic has ended. Choose another topic above whenever you need help.";
+        const reply = addMessage(messages, answer, "assistant");
+        if (options.chooseTopic) renderTopicOptions(reply.row, sendMessage, topicOptions);
+        renderTopicActions(reply.row, sendMessage, topicOptions);
+        chatHistory.push({ role: "assistant", content: answer, createdAt: Date.now(), ...(options.chooseTopic ? { topicChooser: true } : {}) });
         persistChat();
         messages.scrollTop = messages.scrollHeight;
         input.focus();
@@ -409,7 +409,8 @@
           addMessage(messages, message, "user");
           chatHistory.push({ role: "user", content: message, createdAt: Date.now() });
           persistChat();
-          addMessage(messages, "Great, I’ll add that item to your cart and take you to checkout.", "assistant");
+          const purchaseReply = addMessage(messages, "Great, I’ll add that item to your cart and take you to checkout.", "assistant");
+          renderTopicActions(purchaseReply.row, sendMessage);
           pendingPurchase.click();
           input.value = "";
           resizeComposer();
@@ -427,7 +428,6 @@
       if (emailFromMessage && !identity?.email) identity = { ...(identity || {}), name: identity?.name || "Anonymous shopper", email: emailFromMessage.toLowerCase() };
       addMessage(messages, message, "user");
       welcomeActions.hidden = true;
-      welcome.append(persistentSupportButton);
       input.value = "";
       resizeComposer();
       form.dataset.sending = "true";
@@ -476,7 +476,7 @@
         if (data.openSupport) openSupportRequest(data.openSupport);
         activeFlow = data.flow || null;
         if (activeFlow) renderFlowChoices(reply.row, activeFlow, sendMessage);
-        if (!purchaseIntent && !data.openSupport && !data.openOrderTracking && (!activeFlow || !activeFlow.choices?.length)) renderHelpfulActions(reply.row, message, answer, sendMessage, openOrderTracking, humanHandoffEnabled);
+        renderTopicActions(reply.row, sendMessage, topicOptions);
         const recommendedProducts = enableRecommendations && Array.isArray(data.products) ? data.products.slice(0, 5) : [];
         const savedProducts = recommendedProducts.slice(0, 5);
         chatHistory.push({ role: "assistant", content: answer, createdAt: Date.now(), ...(purchaseIntent ? { purchaseIntent: true } : {}), ...(activeFlow ? { flow: activeFlow } : {}), ...(data.openOrderTracking ? { openOrderTracking: true } : {}), ...(data.order ? { order: data.order } : {}), ...(savedProducts.length ? { products: savedProducts } : {}) });
@@ -494,6 +494,7 @@
             : "I’m sorry, I can’t reach the store service right now. You can use the order or support options above, or try your question again in a moment.";
         activeFlow = flowState || null;
         if (activeFlow) renderFlowChoices(pending.row, activeFlow, sendMessage);
+        renderTopicActions(pending.row, sendMessage, topicOptions);
         chatHistory.push({ role: "assistant", content: pending.bubble.textContent, createdAt: Date.now(), ...(activeFlow ? { flow: activeFlow } : {}) });
         persistChat();
       } finally {
@@ -574,6 +575,7 @@
         addTicketReference(reply.row, ticketReference);
         activeFlow = data.flow || null;
         if (activeFlow) renderFlowChoices(reply.row, activeFlow, sendMessage);
+        renderTopicActions(reply.row, sendMessage, topicOptions);
         chatHistory.push({ role: "assistant", content: confirmedReply, createdAt: Date.now(), ticketReference, ...(activeFlow ? { flow: activeFlow } : {}) });
         persistChat();
         supportFollowup = null;
@@ -581,6 +583,7 @@
         const errorMessage = error.message || "We couldn’t create your ticket. Please try again.";
         pending.row.remove();
         const reply = addMessage(messages, errorMessage, "assistant");
+        renderTopicActions(reply.row, sendMessage, topicOptions);
         reply.bubble.classList.add("error");
         chatHistory.push({ role: "assistant", content: errorMessage, createdAt: Date.now() });
         persistChat();
@@ -793,12 +796,46 @@
       button.addEventListener("click", () => sendMessage(choice.label, { flow: { id: flow.id, stepId: flow.stepId, choiceId: choice.id, data: flow.data || {} } }));
       group.append(button);
     });
-    const exitButton = document.createElement("button");
-    exitButton.type = "button";
-    exitButton.className = "sac-flow-choice sac-flow-exit";
-    exitButton.textContent = "Exit from this topic";
-    exitButton.addEventListener("click", () => sendMessage("", { exitFlow: true }));
-    group.append(exitButton);
+    const time = content.querySelector(".sac-message-time");
+    if (time) content.insertBefore(group, time);
+    else content.append(group);
+  }
+  function renderTopicOptions(row, sendMessage, topics) {
+    const content = row?.querySelector(".sac-message-content");
+    if (!content || content.querySelector(".sac-topic-options")) return;
+    const group = document.createElement("div");
+    group.className = "sac-topic-options";
+    group.setAttribute("role", "group");
+    group.setAttribute("aria-label", "Choose a chat topic");
+    topics.forEach((topic) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "sac-topic-option";
+      button.textContent = topic.label;
+      button.addEventListener("click", () => sendMessage(topic.message, { clearFlow: true, topicLabel: topic.label }));
+      group.append(button);
+    });
+    const time = content.querySelector(".sac-message-time");
+    if (time) content.insertBefore(group, time);
+    else content.append(group);
+  }
+  function renderTopicActions(row, sendMessage) {
+    const content = row?.querySelector(".sac-message-content");
+    if (!content || content.querySelector(".sac-topic-actions")) return;
+    const group = document.createElement("div");
+    group.className = "sac-topic-actions";
+    group.setAttribute("role", "group");
+    group.setAttribute("aria-label", "Topic controls");
+    const addAction = (label, action) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "sac-topic-action";
+      button.textContent = label;
+      button.addEventListener("click", action);
+      group.append(button);
+    };
+    addAction("Another topic", () => sendMessage("", { chooseTopic: true }));
+    addAction("End topic", () => sendMessage("", { endTopic: true }));
     const time = content.querySelector(".sac-message-time");
     if (time) content.insertBefore(group, time);
     else content.append(group);
@@ -824,47 +861,6 @@
       button.className = "sac-flow-choice sac-helpful-action";
       button.textContent = choice.label;
       button.addEventListener("click", () => sendMessage(choice.message));
-      group.append(button);
-    });
-    const time = content.querySelector(".sac-message-time");
-    if (time) content.insertBefore(group, time);
-    else content.append(group);
-  }
-  function renderHelpfulActions(row, question, answer, sendMessage, openOrderTracking, humanHandoffEnabled = true) {
-    const content = row?.querySelector(".sac-message-content");
-    if (!content || content.querySelector(".sac-helpful-actions")) return;
-    const context = `${question || ""} ${answer || ""}`.toLowerCase();
-    const actions = [];
-    const addSupport = () => { if (humanHandoffEnabled) actions.push({ label: "Contact support", run: () => sendMessage("I want to contact store support", { clearFlow: true }) }); };
-    if (/cancel|cancellation/.test(context)) {
-      actions.push({ label: "Start cancellation request", run: () => sendMessage("I want to cancel my order", { clearFlow: true }) });
-      addSupport();
-    } else if (/return|refund|exchange/.test(context)) {
-      actions.push({ label: "Ask about a return", run: () => sendMessage("I want to return or exchange a product", { clearFlow: true }) });
-      addSupport();
-    } else if (/order|shipping|delivery|tracking|shipped|package/.test(context)) {
-      actions.push({ label: "Track an order", run: openOrderTracking });
-      addSupport();
-    } else if (/support|damaged|broken|complaint|agent|human|person/.test(context)) {
-      addSupport();
-    } else if (/product|products|catalog|shopping|buy|price|size|stock/.test(context)) {
-      actions.push({ label: "Find a product", run: () => sendMessage("Help me find a product", { clearFlow: true }) });
-    }
-    if (!actions.length) return;
-    const group = document.createElement("div");
-    group.className = "sac-helpful-actions";
-    group.setAttribute("role", "group");
-    group.setAttribute("aria-label", "Related next step");
-    const title = document.createElement("span");
-    title.className = "sac-helpful-title";
-    title.textContent = "What would you like to do next?";
-    group.append(title);
-    actions.forEach((action) => {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "sac-flow-choice sac-helpful-action";
-      button.textContent = action.label;
-      button.addEventListener("click", action.run);
       group.append(button);
     });
     const time = content.querySelector(".sac-message-time");
