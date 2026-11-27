@@ -85,6 +85,33 @@
     window.addEventListener("beforeunload", confirmLeavingOpenChat);
 
     const messages = panel.querySelector(".sac-messages");
+    const scrollHint = document.createElement("button");
+    scrollHint.type = "button";
+    scrollHint.className = "sac-scroll-hint";
+    scrollHint.setAttribute("aria-label", "Scroll down for more messages");
+    scrollHint.innerHTML = '<span aria-hidden="true">↓</span>';
+    scrollHint.hidden = true;
+    panel.append(scrollHint);
+    const syncScrollHint = () => {
+      const panelRect = panel.getBoundingClientRect();
+      const messagesRect = messages.getBoundingClientRect();
+      const hasContentBelow = messages.scrollHeight > messages.clientHeight + 8 && messages.scrollHeight - messages.scrollTop - messages.clientHeight > 16;
+      scrollHint.hidden = !panel.classList.contains("is-open") || !hasContentBelow;
+      scrollHint.style.top = `${Math.max(0, messagesRect.bottom - panelRect.top - 43)}px`;
+    };
+    scrollHint.addEventListener("click", () => {
+      const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+      messages.scrollTo({ top: messages.scrollHeight, behavior: reducedMotion ? "auto" : "smooth" });
+    });
+    messages.addEventListener("scroll", syncScrollHint, { passive: true });
+    window.addEventListener("resize", syncScrollHint, { passive: true });
+    const messageObserver = new MutationObserver(() => window.requestAnimationFrame(syncScrollHint));
+    messageObserver.observe(messages, { childList: true, characterData: true, subtree: true });
+    if (window.ResizeObserver) {
+      const messageResizeObserver = new ResizeObserver(syncScrollHint);
+      messageResizeObserver.observe(messages);
+      messageResizeObserver.observe(panel.querySelector(".sac-form-wrap"));
+    }
     const form = panel.querySelector(".sac-form");
     const input = panel.querySelector(".sac-input");
     const productExamples = [
@@ -348,7 +375,7 @@
     launcher.addEventListener("click", () => {
       const open = panel.classList.toggle("is-open");
       launcher.setAttribute("aria-expanded", String(open));
-      if (open) input.focus();
+      if (open) { input.focus(); window.requestAnimationFrame(syncScrollHint); }
     });
     panel.querySelector(".sac-close").addEventListener("click", () => {
       clearPopupAutoOpen();
@@ -1016,33 +1043,6 @@
   async function renderProducts(container, products, options = {}) {
     const wrap = document.createElement("div");
     wrap.className = "sac-products";
-    const cue = document.createElement("button");
-    cue.type = "button";
-    cue.className = "sac-products-cue";
-    cue.setAttribute("aria-label", "View product options below");
-    const cueArrow = document.createElement("span");
-    cueArrow.className = "sac-products-cue-arrow";
-    cueArrow.setAttribute("aria-hidden", "true");
-    cueArrow.textContent = "↓";
-    const cueLabel = document.createElement("span");
-    cueLabel.textContent = "View products";
-    cue.append(cueArrow, cueLabel);
-    cue.addEventListener("click", () => {
-      const target = wrap.querySelector(".sac-card") || wrap.querySelector(".sac-view-all-products");
-      const scroller = target?.closest(".sac-messages") || container.closest?.(".sac-messages");
-      if (!target || !scroller) return;
-      const scrollerTop = scroller.getBoundingClientRect().top;
-      const targetTop = target.getBoundingClientRect().top;
-      const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-      scroller.scrollTo({ top: scroller.scrollTop + targetTop - scrollerTop - 10, behavior: reducedMotion ? "auto" : "smooth" });
-      if (target.classList.contains("sac-card")) {
-        target.classList.remove("is-suggested");
-        void target.offsetWidth;
-        target.classList.add("is-suggested");
-        window.setTimeout(() => target.classList.remove("is-suggested"), 1400);
-      }
-    });
-    wrap.append(cue);
     if (options.purchaseIntent) wrap.dataset.purchaseIntent = "true";
     const rootUrl = window.Shopify?.routes?.root || "/";
     const currentProducts = await Promise.all(products.map(async (product) => {
@@ -1144,7 +1144,8 @@
       if (product.url) { const details = document.createElement("a"); details.className = "sac-product-details-link"; details.href = product.url; details.target = "_blank"; details.rel = "noopener noreferrer"; details.textContent = "View product details ↗"; info.append(details); }
       card.append(media, info); wrap.append(card);
     });
-    if (wrap.querySelector(".sac-card") || options.showBrowseAll) {
+    const hasProductCards = Boolean(wrap.querySelector(".sac-card"));
+    if (hasProductCards || options.showBrowseAll) {
       const allProducts = document.createElement("a");
       allProducts.className = "sac-view-all-products";
       allProducts.href = `${rootUrl.replace(/\/?$/, "/")}collections/all`;
@@ -1152,7 +1153,6 @@
       allProducts.rel = "noopener noreferrer";
       allProducts.textContent = "View all products ↗";
       wrap.append(allProducts);
-      container.querySelectorAll(".sac-products-cue").forEach((previousCue) => previousCue.remove());
       container.append(wrap);
     }
   }

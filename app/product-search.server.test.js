@@ -84,3 +84,38 @@ test("recognizes price ranking requests", () => {
   assert.equal(extractProductFilters("most expensive tee").sort, "price-desc");
   assert.equal(extractProductFilters("best selling tshirt").sort, "best-selling");
 });
+
+test("understands common short search, ranking, spelling, and sort phrases", () => {
+  assert.equal(productSearchPhrase("top products"), "");
+  assert.equal(extractProductFilters("top products").sort, "best-selling");
+  assert.equal(extractProductFilters("top 10 products").limit, 10);
+  assert.equal(extractProductFilters("best sell product").sort, "best-selling");
+  assert.equal(extractProductFilters("best rated").sort, "rating-desc");
+  assert.equal(extractProductFilters("4 star products").minRating, 4);
+  assert.equal(extractProductFilters("best deal plz").sort, "discount-desc");
+  assert.equal(extractProductFilters("price 20-50").minPrice, 20);
+  assert.equal(extractProductFilters("price 20-50").maxPrice, 50);
+  assert.equal(extractProductFilters("shoes 50 dollar").maxPrice, 50);
+  assert.equal(extractProductFilters("under 100 doller").maxPrice, 100);
+  assert.equal(extractProductFilters("mens collection").audience, "men");
+  assert.equal(extractProductFilters("new stock").sort, "newest");
+  assert.equal(extractProductFilters("50% off").discountPercent, 50);
+  assert.match(productSearchPhrase("show me best produts"), /^$/);
+  assert.match(productSearchPhrase("do u have black tshirt"), /black.*t shirt/);
+  assert.equal(productSearchPhrase("show me somthing good"), "");
+});
+
+test("filters sale, rating, and audience from actual product fields", () => {
+  const ratedSaleShoe = {
+    title: "Men's Running Shoes",
+    description: "Lightweight shoes for everyday runs.",
+    tags: [],
+    metafields: [{ namespace: "reviews", key: "rating", value: "4.7" }],
+    variants: [{ title: "Size 9", price: "50", compareAtPrice: "100", availableForSale: true, selectedOptions: [{ name: "Size", value: "9" }] }],
+  };
+  assert.equal(productMatchesFilters(ratedSaleShoe, extractProductFilters("mens shoes")), true);
+  assert.equal(productMatchesFilters(ratedSaleShoe, extractProductFilters("size 9 shoes")), true);
+  assert.equal(productMatchesFilters(ratedSaleShoe, extractProductFilters("4 star products")), true);
+  assert.equal(productMatchesFilters(ratedSaleShoe, extractProductFilters("50% off")), true);
+  assert.equal(productMatchesFilters(ratedSaleShoe, extractProductFilters("60% off")), false);
+});
