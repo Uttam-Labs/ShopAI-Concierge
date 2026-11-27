@@ -42,10 +42,10 @@
     topicNav.className = "sac-topic-nav";
     topicNav.setAttribute("aria-label", "Chat topics");
     const topicOptions = [
-      { label: "Product advice", message: "Help me find a product" },
-      { label: "Order updates", message: "Can you help me with my order?" },
-      { label: "Returns & refunds", message: "I want to return or exchange a product" },
-      { label: "Store support", message: "I want to contact store support" },
+      { label: "Product advice", icon: "⌕", message: "Help me find a product" },
+      { label: "Order updates", icon: "↗", message: "Can you help me with my order?" },
+      { label: "Returns & refunds", icon: "↩", message: "I want to return or exchange a product" },
+      { label: "Store support", icon: "?", message: "I want to contact store support" },
     ];
     topicOptions.forEach((topic) => {
       const button = document.createElement("button");
@@ -53,7 +53,11 @@
       button.className = "sac-topic-button";
       button.dataset.topic = topic.message.includes("contact store support") ? "support" : topic.label;
       button.setAttribute("aria-pressed", "false");
-      button.textContent = topic.label;
+      const icon = document.createElement("span");
+      icon.className = "sac-topic-icon";
+      icon.setAttribute("aria-hidden", "true");
+      icon.textContent = topic.icon;
+      button.append(icon, document.createTextNode(topic.label));
       button.addEventListener("click", () => {
         topicNav.querySelectorAll(".sac-topic-button").forEach((item) => item.setAttribute("aria-pressed", String(item === button)));
         sendMessage(topic.message, { clearFlow: true, topicLabel: topic.label });
@@ -100,27 +104,6 @@
     input.addEventListener("focus", () => { window.clearInterval(productExampleTimer); input.placeholder = "Ask us anything…"; });
     const faqSection = panel.querySelector(".sac-faqs");
     const faqList = panel.querySelector(".sac-faq-list");
-    const enableOrderLookup = root.dataset.enableOrderLookup !== "false";
-    const orderButton = document.createElement("button");
-    orderButton.type = "button";
-    orderButton.className = "sac-order-button";
-    // Show the tracking entry point immediately from the theme setting. Waiting
-    // for the async app-proxy config caused it to appear only after a reflow/scroll.
-    orderButton.hidden = !enableOrderLookup;
-    orderButton.innerHTML = '<span aria-hidden="true">↗</span><span>Track an order</span>';
-    const welcomeActions = document.createElement("div");
-    welcomeActions.className = "sac-welcome-actions";
-    welcomeActions.hidden = chatHistory.some((item) => item.role === "user");
-    const makeQuickAction = (label, message) => {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "sac-quick-action-button";
-      button.textContent = label;
-      button.addEventListener("click", () => sendMessage(message));
-      return button;
-    };
-    welcomeActions.append(makeQuickAction("Find products", "Help me find a product"), orderButton, makeQuickAction("Cancel an order", "I want to cancel my order"), makeQuickAction("Returns & refunds", "I want to return a product"));
-    panel.querySelector(".sac-welcome").append(welcomeActions);
     const orderBackdrop = panel.querySelector(".sac-order-backdrop");
     const orderForm = panel.querySelector(".sac-order-form");
     const orderNotice = panel.querySelector(".sac-order-notice");
@@ -243,7 +226,6 @@
           }
           humanHandoffEnabled = config.humanHandoff !== false;
           topicNav.querySelector('[data-topic="support"]')?.toggleAttribute("hidden", !humanHandoffEnabled);
-          orderButton.hidden = !enableOrderLookup || config.orderLookup === false;
           setOrderEmailRequirement(config.orderEmailRequired !== false);
           if (enableFaqs && Array.isArray(config.faqs) && config.faqs.length) renderFaqs(config.faqs, faqSection, faqList, sendMessage);
           const configuredOptions = Array.isArray(config.ticketOptions) ? config.ticketOptions : [];
@@ -316,7 +298,6 @@
       content.insertBefore(button, content.querySelector(".sac-message-time"));
     };
     restoredOrderRows.forEach(({ row, order, answer }) => addOrderDetailsAction(row, order, answer));
-    orderButton.addEventListener("click", openOrderTracking);
     panel.querySelector(".sac-order-close").addEventListener("click", closeOrderLookup);
     panel.querySelector(".sac-order-cancel").addEventListener("click", closeOrderLookup);
     orderBackdrop.addEventListener("click", (event) => { if (event.target === orderBackdrop) closeOrderLookup(); });
@@ -427,7 +408,6 @@
       const emailFromMessage = message.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0];
       if (emailFromMessage && !identity?.email) identity = { ...(identity || {}), name: identity?.name || "Anonymous shopper", email: emailFromMessage.toLowerCase() };
       addMessage(messages, message, "user");
-      welcomeActions.hidden = true;
       input.value = "";
       resizeComposer();
       form.dataset.sending = "true";
@@ -811,7 +791,11 @@
       const button = document.createElement("button");
       button.type = "button";
       button.className = "sac-topic-option";
-      button.textContent = topic.label;
+      const icon = document.createElement("span");
+      icon.className = "sac-topic-icon";
+      icon.setAttribute("aria-hidden", "true");
+      icon.textContent = topic.icon;
+      button.append(icon, document.createTextNode(topic.label));
       button.addEventListener("click", () => sendMessage(topic.message, { clearFlow: true, topicLabel: topic.label }));
       group.append(button);
     });
