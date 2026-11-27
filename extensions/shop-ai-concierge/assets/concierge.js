@@ -356,7 +356,12 @@
       launcher.setAttribute("aria-expanded", "false");
       launcher.focus();
     });
-    const closeOrderLookup = () => { orderBackdrop.hidden = true; };
+    const orderCard = panel.querySelector(".sac-order-card");
+    const closeOrderLookup = () => {
+      orderBackdrop.hidden = true;
+      orderCard.classList.remove("is-details-only");
+      orderResultCopy.hidden = false;
+    };
     const trackingUrlFor = (tracking) => {
       if (tracking.url && /^https:\/\//i.test(tracking.url)) return tracking.url;
       const number = encodeURIComponent(tracking.number || "");
@@ -371,6 +376,7 @@
     };
     const setOrderResult = (order, answer) => {
       orderResult.hidden = false;
+      orderResultCopy.hidden = false;
       orderResultTitle.textContent = `${order.name} · ${String(order.fulfillmentStatus || "Status unavailable").replaceAll("_", " ")}`;
       orderResultCopy.textContent = answer;
       orderDetails.replaceChildren();
@@ -437,6 +443,8 @@
       button.addEventListener("click", () => {
         setOrderResult(order, answer);
         orderBackdrop.hidden = false;
+        orderCard.classList.add("is-details-only");
+        orderResultCopy.hidden = true;
         orderDetails.hidden = false;
         panel.querySelector(".sac-order-view").textContent = "Hide order details";
       });

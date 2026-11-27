@@ -99,7 +99,7 @@ async function lookupShopifyOrder(shop, orderNumber, email, requireEmail = true,
   const token = await getShopifyAdminToken(shop);
   if (!token) throw new Error("Order lookup could not authenticate with Shopify. Check the app installation, API secret and read_orders access.");
   const query = trackingNumber
-    ? `query FindTracking($query: String!, $after: String) { orders(first: 250, query: $query, after: $after, sortKey: CREATED_AT, reverse: true) { nodes { name createdAt displayFulfillmentStatus statusPageUrl fulfillments(first: 5) { displayStatus estimatedDeliveryAt deliveredAt trackingInfo { company number url } } } pageInfo { hasNextPage endCursor } } }`
+    ? `query FindTracking($query: String!, $after: String) { orders(first: 250, query: $query, after: $after, sortKey: CREATED_AT, reverse: true) { nodes { id name fulfillments(first: 5) { trackingInfo { number } } } pageInfo { hasNextPage endCursor } } }`
     : `query OrderLookup($query: String!, $after: String) { orders(first: 250, query: $query, after: $after, sortKey: CREATED_AT, reverse: true) { nodes { name email createdAt displayFinancialStatus displayFulfillmentStatus statusPageUrl currentTotalPriceSet { shopMoney { amount currencyCode } } lineItems(first: 50) { nodes { title quantity } pageInfo { hasNextPage } } fulfillments(first: 5) { displayStatus estimatedDeliveryAt deliveredAt trackingInfo { company number url } } } pageInfo { hasNextPage endCursor } } }`;
   // Search by order name first so an optional email never prevents finding the order.
   // Shopify may return nearby name matches, so verify the normalized name exactly below.
@@ -132,8 +132,21 @@ async function lookupShopifyOrder(shop, orderNumber, email, requireEmail = true,
     cursor = connection?.pageInfo?.endCursor || null;
     page += 1;
   }
-  const order = matchedOrder || candidates.find((candidate) => String(candidate.name || "").replace(/^#/, "").toLowerCase() === normalizedOrderNumber);
+  let order = matchedOrder || candidates.find((candidate) => String(candidate.name || "").replace(/^#/, "").toLowerCase() === normalizedOrderNumber);
   if (!order) return null;
+  if (trackingNumber) {
+    const detailQuery = `query TrackingOrderDetails($id: ID!) { order(id: $id) { id name email createdAt displayFinancialStatus displayFulfillmentStatus statusPageUrl currentTotalPriceSet { shopMoney { amount currencyCode } } lineItems(first: 50) { nodes { title quantity } pageInfo { hasNextPage } } fulfillments(first: 5) { displayStatus estimatedDeliveryAt deliveredAt trackingInfo { company number url } } } }`;
+    const response = await fetch(`https://${shop}/admin/api/2026-07/graphql.json`, { method: "POST", headers: { "content-type": "application/json", "X-Shopify-Access-Token": token }, body: JSON.stringify({ query: detailQuery, variables: { id: order.id } }) });
+    if (!response.ok) throw new Error(`Shopify order details returned HTTP ${response.status}.`);
+    const payload = await response.json();
+    if (payload.errors?.length || !payload.data?.order) {
+      const error = new Error(payload.errors?.map((item) => item.message).join("; ") || "Shopify returned no details for the matched order.");
+      error.shopifyRequestId = response.headers.get("x-request-id") || "";
+      error.shopifyErrorCodes = payload.errors?.map((item) => item.extensions?.code).filter(Boolean) || [];
+      throw error;
+    }
+    order = payload.data.order;
+  }
   const orderEmails = [order.email].map((value) => String(value || "").trim().toLowerCase()).filter(Boolean);
   if (email && !orderEmails.includes(email)) return null;
   if (requireEmail && !email && !trackingNumber) return null;
@@ -150,7 +163,7 @@ async function lookupShopifyOrder(shop, orderNumber, email, requireEmail = true,
     tracking: (order.fulfillments || []).flatMap((fulfillment) => (fulfillment.trackingInfo || []).filter((tracking) => tracking.number).map((tracking) => ({ company: tracking.company, number: tracking.number, url: tracking.url, estimatedDeliveryAt: fulfillment.estimatedDeliveryAt, deliveredAt: fulfillment.deliveredAt }))),
     statusPageUrl: order.statusPageUrl,
   };
-  return trackingNumber ? { ...result, email: undefined, total: undefined, currency: undefined, financialStatus: undefined, items: [], trackingOnly: true } : result;
+  return result;
 }
 
 function mapAdminProduct(product) {
@@ -949,12 +962,20 @@ export const action = async ({ request }) => {
         try { await prisma.orderLookupAttempt.updateMany({ where: { shop: normalizedShop, orderHint: attemptKey, result: { path: ["ok"], equals: false } }, data: { result: { ok: true, status: order.fulfillmentStatus } } }); }
         catch (error) { console.error("Order lookup audit update failed", error); }
         const fulfillment = String(order.fulfillmentStatus || "Not yet fulfilled").replaceAll("_", " ").toLowerCase();
-        const payment = String(order.financialStatus || "Payment status unavailable").replaceAll("_", " ").toLowerCase();
         const placed = order.createdAt ? new Intl.DateTimeFormat("en", { dateStyle: "medium" }).format(new Date(order.createdAt)) : "Date unavailable";
-        const total = order.total && order.currency ? new Intl.NumberFormat("en", { style: "currency", currency: order.currency }).format(Number(order.total)) : "Total unavailable";
+        const paymentLine = order.financialStatus ? `Payment: ${String(order.financialStatus).replaceAll("_", " ").toLowerCase()}` : "";
+        const totalLine = order.total !== null && order.total !== undefined && order.currency ? `Total: ${new Intl.NumberFormat("en", { style: "currency", currency: order.currency }).format(Number(order.total))}` : "";
         const estimatedDelivery = order.fulfillments?.find((item) => item.estimatedDeliveryAt)?.estimatedDeliveryAt;
-        const estimatedLine = estimatedDelivery ? `\nEstimated delivery: ${new Intl.DateTimeFormat("en", { dateStyle: "medium" }).format(new Date(estimatedDelivery))}` : "";
-        const answer = `Order ${order.name}\nPlaced ${placed} · ${fulfillment[0].toUpperCase()}${fulfillment.slice(1)}\nPayment: ${payment} · Total: ${total}${estimatedLine}${order.tracking.length ? "\nTracking details are available below." : ""}\n\nIs there anything else you’d like to know about this order?`;
+        const estimatedLine = estimatedDelivery ? `Estimated delivery: ${new Intl.DateTimeFormat("en", { dateStyle: "medium" }).format(new Date(estimatedDelivery))}` : "";
+        const answer = [
+          `Order ${order.name}`,
+          `Placed ${placed} · ${fulfillment[0].toUpperCase()}${fulfillment.slice(1)}`,
+          paymentLine,
+          totalLine,
+          estimatedLine,
+          order.tracking.length ? "Tracking details are available below." : "",
+          ...(lookupTracking ? [] : ["Is there anything else you’d like to know about this order?"]),
+        ].filter(Boolean).join("\n");
         const followupFlow = lookupTracking ? null : getConversationFlowStep(settings.flows, "order-updates", "followup", { orderNumber: order.name.replace(/^#/, ""), orderEmail: lookupEmail, orderVerified: true, verifiedOrder: order });
         await saveConversation(normalizedShop, sessionId, lookupTracking ? `Track shipment ${lookupTracking}` : `Track order ${order.name}`, answer, { name: identity.name, email: lookupEmail }, userCreatedAt)
           .catch((saveError) => console.error("Order conversation save failed after successful lookup", saveError));
@@ -1047,10 +1068,10 @@ export const action = async ({ request }) => {
         const order = await lookupShopifyOrder(normalizedShop, matchedOrderNumber, email, settings.orderEmailRequired);
         if (order) {
           const fulfillment = String(order.fulfillmentStatus || "Not yet fulfilled").replaceAll("_", " ").toLowerCase();
-          const payment = String(order.financialStatus || "Payment status unavailable").replaceAll("_", " ").toLowerCase();
           const placed = order.createdAt ? new Intl.DateTimeFormat("en", { dateStyle: "medium" }).format(new Date(order.createdAt)) : "Date unavailable";
-          const total = order.total && order.currency ? new Intl.NumberFormat("en", { style: "currency", currency: order.currency }).format(Number(order.total)) : "Total unavailable";
-          const answer = `Order ${order.name}\nPlaced ${placed} · ${fulfillment[0].toUpperCase()}${fulfillment.slice(1)}\nPayment: ${payment} · Total: ${total}`;
+          const paymentLine = order.financialStatus ? `Payment: ${String(order.financialStatus).replaceAll("_", " ").toLowerCase()}` : "";
+          const totalLine = order.total !== null && order.total !== undefined && order.currency ? `Total: ${new Intl.NumberFormat("en", { style: "currency", currency: order.currency }).format(Number(order.total))}` : "";
+          const answer = [`Order ${order.name}`, `Placed ${placed} · ${fulfillment[0].toUpperCase()}${fulfillment.slice(1)}`, paymentLine, totalLine].filter(Boolean).join("\n");
           await saveConversation(normalizedShop, sessionId, userMessage, answer, identity, userCreatedAt);
           return Response.json({ answer, order }, { headers });
         }
